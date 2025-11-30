@@ -1,36 +1,192 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-## Getting Started
+# 🎩 Social Genie — AI-Powered Social Concierge (Phase 1)
+*By Social Bevy*
 
-First, run the development server:
+Social Genie is an AI-powered social concierge that helps people get social instantly. Users simply tell Genie what vibe they want — “cute patio,” “R&B brunch,” “grown and sexy lounge,” etc. Genie responds with curated venues, personalized suggestions, conversational guidance, and saved spots.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+This repo contains the **Genie-first frontend**, built with Next.js + React 19, integrated with **Xano** as the backend for Genie’s venues, and includes the Phase 1 UI used for live user testing.
+
+---
+
+## 🚀 What Genie Does (Phase 1)
+
+### ✔ Conversational-style input  
+Users type into Genie’s “How can I get you social?” prompt. Genie parses the vibe keywords and returns matching venues.
+
+### ✔ Venue search powered by Xano  
+- All venue data comes from Xano’s *Genie Brain* table.  
+- Genie returns matches based on name, neighborhood, vibe notes, energy, music, and general descriptive text.
+
+### ✔ Saved Spots  
+Users can save/unsave venues. All saved venue IDs are stored in:
+
+```
+localStorage["genie_saved_venues_v1"]
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Saved spots appear on Genie’s Home Screen under “Your Saved Spots.”
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### ✔ Venue detail pages  
+Each venue has a full-screen detail page with:
+- Hero image  
+- Name, neighborhood, city  
+- Vibe line  
+- Description  
+- Hours  
+- Save button  
+- Share button  
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### ✔ Mobile-first UI  
+Genie is optimized for iPhone and mobile experience.
 
-## Learn More
+---
 
-To learn more about Next.js, take a look at the following resources:
+## 🧠 Current Genie Architecture
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### **Frontend (this repo)**
+- Next.js 14  
+- React 19  
+- Tailwind CSS  
+- Client-side rendering  
+- LocalStorage for saved venues  
+- Next/Image for optimized images  
+- Deployed on Vercel  
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### **Backend**
+**Xano** holds all venue data:
+- `id`
+- `venue_name`
+- `area_neighborhood`
+- `city`
+- `vibe_notes`
+- `crowd`
+- `music`
+- `energy_level`
+- `image_primary_url`
+- `image_fallback_url`
+- `image_url`
+- `best_time_to_go`
+- `hours`
 
-## Deploy on Vercel
+### **Analytics**
+Basic event tracking:
+- Query text  
+- Venue clicks  
+- Shares  
+- Weekly picks  
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 📁 Project Structure
+
+```
+social-genie/
+│
+├── app/
+│   ├── page.tsx               → Genie Home Screen
+│   ├── venue/
+│   │   └── [id]/page.tsx      → Venue Detail Screen
+│
+├── lib/
+│   ├── genieClient.ts         → Xano API calls
+│   ├── analytics.ts           → Tracking events
+│
+├── public/                    → Genie images, icons, placeholders
+│
+├── next.config.ts             → Image domain config
+├── tailwind.config.js
+├── package.json
+└── README.md
+```
+
+---
+
+## 🔧 Local Development Setup
+
+### 1. Clone the repo
+```bash
+git clone https://github.com/socialbevy/social-genie.git
+cd social-genie
+```
+
+### 2. Install dependencies
+```bash
+npm install
+```
+
+### 3. Add environment variables  
+Create `.env.local`:
+
+```
+NEXT_PUBLIC_XANO_API_BASE_URL=https://xano.com/.../api
+```
+
+### 4. Start dev server
+```bash
+npm run dev
+```
+
+Visit at:  
+```
+http://localhost:3000
+```
+
+---
+
+## 🖼️ Image Handling (Important)
+
+Genie uses this priority order:
+
+```
+image_primary_url
+> image_fallback_url
+> image
+> image_url
+> /sample-venue-1.jpeg
+```
+
+⚠ *Most venues still need valid direct image URLs in Xano.*  
+A cleanup task is underway to update the table via Max.
+
+---
+
+## 🧪 Phase 1 Completion Checklist
+
+### ✔ Genie UI  
+### ✔ Venue search  
+### ✔ Saved spots  
+### ✔ Save toggle  
+### ✔ Share button  
+### ✔ Xano integration  
+### ✔ Mobile-first layout  
+### ✔ Vercel deployment  
+### ✔ Github repo connected  
+
+### ❗ Pending  
+- Xano image cleanup  
+- Conversational Genie  
+- Voice input  
+- Outside-city fallback  
+- Multi-city rollout  
+
+---
+
+## 🤝 Developer Notes
+
+This Phase 1 repo is built for **fast iteration**, not final production architecture.
+
+Upcoming major changes:
+- Conversational Genie interface  
+- Server-side search  
+- Multi-city support  
+- Account system  
+- Image CDN  
+
+---
+
+## 📬 Contact
+
+**Alphonso Roundtree**  
+Founder & CEO — Social Bevy  
+Social Genie Team Lead  
+
