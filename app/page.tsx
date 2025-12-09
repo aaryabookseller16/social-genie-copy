@@ -338,7 +338,8 @@ export default function Home() {
                     key={venue.id}
                     type="button"
                     onClick={() => {
-  trackVenueClick(String(venue.id), {
+  (trackVenueClick as any)({
+    venueId: String(venue.id),
     venueName: venue.venue_name,
     position: 0,
     queryText: input,
@@ -408,7 +409,8 @@ export default function Home() {
                     key={venue.id}
                     type="button"
                     onClick={() => {
-  trackVenueClick(String(venue.id), {
+  (trackVenueClick as any)({
+    venueId: String(venue.id),
     venueName: venue.venue_name,
     position: index,
     queryText: input,
