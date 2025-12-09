@@ -338,15 +338,15 @@ export default function Home() {
                     key={venue.id}
                     type="button"
                     onClick={() => {
-                      trackVenueClick({
-                        venueId: venue.id,
-                        venueName: venue.venue_name,
-                        position: 0,
-                        queryText: input,
-                        city: venue.city ?? "",
-                      });
-                      router.push(`/venue/${venue.id}`);
-                    }}
+  trackVenueClick(String(venue.id), {
+    venueName: venue.venue_name,
+    position: 0,
+    queryText: input,
+    city: venue.city ?? "",
+  });
+  router.push(`/venue/${venue.id}`);
+}}
+
                     className="w-full text-left rounded-3xl border border-gray-100 shadow-sm overflow-hidden bg-white hover:shadow-md transition"
                   >
                     <div className="flex">
@@ -408,15 +408,15 @@ export default function Home() {
                     key={venue.id}
                     type="button"
                     onClick={() => {
-                      trackVenueClick({
-                        venueId: venue.id,
-                        venueName: venue.venue_name, // <-- change
-                        position: index,
-                        queryText: input,
-                        city: venue.city ?? "", // <-- change
-                      });
-                      router.push(`/venue/${venue.id}`);
-                    }}
+  trackVenueClick(String(venue.id), {
+    venueName: venue.venue_name,
+    position: index,
+    queryText: input,
+    city: venue.city ?? "",
+  });
+  router.push(`/venue/${venue.id}`);
+}}
+
                     className="w-full text-left rounded-3xl border border-gray-100 shadow-sm overflow-hidden bg-white hover:shadow-md transition"
                   >
                     <div className="flex">
