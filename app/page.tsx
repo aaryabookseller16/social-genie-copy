@@ -142,10 +142,14 @@ export default function Home() {
         crowd_filter: "",
       });
 
-      const filtered = genieVenues.filter((v) => {
-        const haystack = `${v.venue_name} ${v.area_neighborhood} ${v.vibe_notes} ${v.address}`.toLowerCase();
-        return haystack.includes(query);
-      });
+      const filtered = genieVenues.filter((v: GenieVenue) => {
+  const haystack = `${v.venue_name} ${v.area_neighborhood ?? ""} ${
+    v.vibe_notes ?? ""
+  } ${v.address ?? ""}`.toLowerCase();
+
+  return haystack.includes(query.toLowerCase());
+});
+
 
       const hasAny = filtered.length > 0;
 
