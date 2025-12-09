@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { venues } from "../venue/data";
+import { fetchGenieVenues, type GenieVenue } from "../lib/genieClient";
 
-type Venue = (typeof venues)[number];
+type Venue = GenieVenue;
 
 const STORAGE_KEY = "genie_saved_venues_v1";
 
@@ -13,32 +13,43 @@ export default function SavedPage() {
   const [savedVenues, setSavedVenues] = useState<Venue[]>([]);
   const [loaded, setLoaded] = useState(false);
 
-useEffect(() => {
-  if (typeof window === "undefined") return;
+  useEffect(() => {
+    if (typeof window === "undefined") return;
 
-  const raw = window.localStorage.getItem(STORAGE_KEY);
-  const ids: string[] = raw ? JSON.parse(raw) : [];
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    let ids: string[] = [];
 
-  async function loadSaved() {
-    if (!Array.isArray(ids) || ids.length === 0) {
-      setSavedVenues([]);
-    } else {
-      const genieVenues = await fetchGenieVenues({ limit: 200 }); 
-      const list = genieVenues.filter((v) => ids.includes(v.id));
-      setSavedVenues(list);
-    }
-
-    setLoaded(true);
-  }
-
-  loadSaved();
-}, []);
-
+    try {
+      ids = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(ids)) {
+        ids = [];
+      }
     } catch {
-      setSavedVenues([]);
-    } finally {
-      setLoaded(true);
+      ids = [];
     }
+
+    async function loadSaved() {
+      try {
+        if (ids.length === 0) {
+          setSavedVenues([]);
+          return;
+        }
+
+        // Load a reasonable batch of venues from Genie/Xano
+        const genieVenues = await fetchGenieVenues({ limit: 200 });
+
+        // Match by id (stored as string in localStorage)
+        const list = genieVenues.filter((v) => ids.includes(String(v.id)));
+        setSavedVenues(list);
+      } catch (err) {
+        console.error("Failed to load saved venues:", err);
+        setSavedVenues([]);
+      } finally {
+        setLoaded(true);
+      }
+    }
+
+    loadSaved();
   }, []);
 
   const hasAny = savedVenues.length > 0;
@@ -47,9 +58,7 @@ useEffect(() => {
     <main className="min-h-screen bg-white flex flex-col px-4 pt-10 pb-6">
       {/* Header */}
       <header className="max-w-md mx-auto w-full flex items-center justify-between mb-6">
-        <h1 className="text-xl font-semibold text-gray-900">
-          Saved spots
-        </h1>
+        <h1 className="text-xl font-semibold text-gray-900">Saved spots</h1>
         <Link href="/" className="text-sm text-red-500 underline">
           ← Back to Genie
         </Link>
@@ -82,8 +91,12 @@ useEffect(() => {
                   {/* Image */}
                   <div className="relative w-24 h-24 flex-shrink-0 bg-gray-100">
                     <Image
-                      src={venue.image}
-                      alt={venue.name}
+                      src={
+                        (venue as any).image ||
+                        (venue as any).image_url ||
+                        "/sample-venue-1.jpeg"
+                      }
+                      alt={venue.venue_name || "Venue"}
                       fill
                       className="object-cover"
                     />
@@ -92,13 +105,14 @@ useEffect(() => {
                   {/* Content */}
                   <div className="flex-1 px-4 py-3">
                     <h2 className="text-sm font-semibold text-gray-900 mb-1">
-                      {venue.name}
+                      {venue.venue_name}
                     </h2>
                     <p className="text-xs text-gray-500 mb-1">
-                      {venue.address}
+                      {venue.area_neighborhood}
+                      {venue.city ? ` · ${venue.city}` : ""}
                     </p>
                     <p className="text-xs text-red-500 font-medium">
-                      {venue.vibe}
+                      {venue.vibe_notes}
                     </p>
                   </div>
                 </div>
