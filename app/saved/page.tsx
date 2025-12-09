@@ -13,20 +13,27 @@ export default function SavedPage() {
   const [savedVenues, setSavedVenues] = useState<Venue[]>([]);
   const [loaded, setLoaded] = useState(false);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
+useEffect(() => {
+  if (typeof window === "undefined") return;
 
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      const ids: string[] = raw ? JSON.parse(raw) : [];
-      if (!Array.isArray(ids) || ids.length === 0) {
-        setSavedVenues([]);
-      } else {
-        const genieVenues = await fetchGenieVenues({ limit: 200 }); // load all
-const list = genieVenues.filter((v) => ids.includes(v.id));
-setSavedVenues(list);
+  const raw = window.localStorage.getItem(STORAGE_KEY);
+  const ids: string[] = raw ? JSON.parse(raw) : [];
 
-      }
+  async function loadSaved() {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      setSavedVenues([]);
+    } else {
+      const genieVenues = await fetchGenieVenues({ limit: 200 }); 
+      const list = genieVenues.filter((v) => ids.includes(v.id));
+      setSavedVenues(list);
+    }
+
+    setLoaded(true);
+  }
+
+  loadSaved();
+}, []);
+
     } catch {
       setSavedVenues([]);
     } finally {
