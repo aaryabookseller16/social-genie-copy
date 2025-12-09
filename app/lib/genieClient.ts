@@ -94,22 +94,35 @@ const data = await res.json();
 
 export type GenieFilters = {
   limit?: number;
+  city_filter?: string;
   energy_level_filter?: string;
   music_filter?: string;
   crowd_filter?: string;
+  vibe_filter?: string;
 };
+
 
 const GENIE_BASE_URL =
   "https://xwpg-kuah-brlj.n7d.xano.io/api:mY7zYhwk/genie_v1";
 
-export async function fetchGenieVenues(filters: GenieFilters) {
+export async function fetchGenieVenues(
+  filters: GenieFilters
+): Promise<GenieVenue[]> {
   const params = new URLSearchParams();
 
   params.set("limit", String(filters.limit ?? 10));
 
+  if (filters.city_filter !== undefined) {
+    params.set("city_filter", filters.city_filter ?? "");
+  }
+
   params.set("energy_level_filter", filters.energy_level_filter ?? "");
   params.set("music_filter", filters.music_filter ?? "");
   params.set("crowd_filter", filters.crowd_filter ?? "");
+
+  if (filters.vibe_filter !== undefined) {
+    params.set("vibe_filter", filters.vibe_filter ?? "");
+  }
 
   const url = `${GENIE_BASE_URL}?${params.toString()}`;
 
