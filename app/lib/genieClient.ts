@@ -1,5 +1,16 @@
 // lib/genieClient.ts
 
+export type GenieVenue = {
+  id: number | string;
+  venue_name: string;
+  area_neighborhood?: string | null;
+  city?: string | null;
+  address?: string | null;
+  vibe_notes?: string | null;
+  image?: string | null;
+  image_url?: string | null;
+};
+
 export interface GenieChatResponse {
   reply: string;
   session_token?: string;
