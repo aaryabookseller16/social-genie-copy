@@ -58,19 +58,20 @@ export default function Home() {
       }
 
       fetchGenieVenues({ limit: 200 })
-        .then((genieVenues) => {
-          console.log("[HOME] fetched venues count:", genieVenues.length);
+  .then((genieVenues: GenieVenue[]) => {
+    console.log("[HOME] fetched venues count:", genieVenues.length);
 
-          const list = genieVenues.filter((v) =>
-            ids.includes(String(v.id)) // 👈 KEY LINE: compare string to string
-          );
+    const list = genieVenues.filter((v: GenieVenue) =>
+      ids.includes(String(v.id)) // compare string to string
+    );
 
-          console.log("[HOME] matched saved venues count:", list.length);
-          setSavedVenues(list);
-        })
-        .catch((err) => {
-          console.error("Failed to load Genie venues:", err);
-        });
+    console.log("[HOME] matched saved venues count:", list.length);
+    setSavedVenues(list);
+  })
+  .catch((err) => {
+    console.error("Failed to load Genie venues:", err);
+  });
+
     } catch (e) {
       console.error("Error reading saved venues:", e);
     }
