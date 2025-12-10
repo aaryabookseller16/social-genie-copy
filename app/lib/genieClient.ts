@@ -9,6 +9,11 @@ export type GenieVenue = {
   vibe_notes?: string | null;
   image?: string | null;
   image_url?: string | null;
+
+  // Genie-specific vibe fields
+  energy_level?: string | null;
+  music?: string | null;
+  crowd?: string | null;
 };
 
 export interface GenieChatResponse {
