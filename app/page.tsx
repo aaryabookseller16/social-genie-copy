@@ -301,7 +301,7 @@ export default function Home() {
         <div className="absolute top-0 w-[280px] h-[280px] bg-red-300/40 rounded-full blur-3xl"></div>
 
         <Image
-          src="/genie-pic.png"
+          src="/genie-pic2.png"
           alt="Genie"
           width={330}
           height={330}
