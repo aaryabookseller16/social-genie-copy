@@ -23,7 +23,7 @@ export const metadata: Metadata = {
 
   // ✅ Browser tab icon (favicon)
   icons: {
-    icon: "/sb-logo-icon.png",
+    icon: "/public/sb-logo-icon.png",
   },
 
   themeColor: [
