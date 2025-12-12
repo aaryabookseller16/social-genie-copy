@@ -24,3 +24,23 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+@layer utilities {
+  @keyframes orbPulse {
+    0%, 100% { transform: scale(1); opacity: 0.95; }
+    50% { transform: scale(1.06); opacity: 1; }
+  }
+
+  @keyframes orbGlow {
+    0%, 100% { transform: scale(1); opacity: 0.25; }
+    50% { transform: scale(1.25); opacity: 0.55; }
+  }
+
+  .animate-orbPulse {
+    animation: orbPulse 1.2s ease-in-out infinite;
+  }
+
+  .animate-orbGlow {
+    animation: orbGlow 1.2s ease-in-out infinite;
+  }
+}

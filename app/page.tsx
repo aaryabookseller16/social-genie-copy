@@ -24,6 +24,24 @@ export default function Home() {
   const [isSearching, setIsSearching] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
+  // ✅ Thinking indicator (orb)
+  const [isThinking, setIsThinking] = useState(false);
+  const thinkingStartRef = useRef<number>(0);
+
+  const startThinking = () => {
+    thinkingStartRef.current = Date.now();
+    setIsThinking(true);
+  };
+
+  const stopThinking = async () => {
+    const elapsed = Date.now() - thinkingStartRef.current;
+    const MIN_MS = 800; // ensures users see the orb even on fast responses
+    if (elapsed < MIN_MS) {
+      await new Promise((r) => setTimeout(r, MIN_MS - elapsed));
+    }
+    setIsThinking(false);
+  };
+
   // Weekly picks modal
   const [showWeeklyModal, setShowWeeklyModal] = useState(false);
   const [weeklyContact, setWeeklyContact] = useState("");
@@ -107,6 +125,9 @@ export default function Home() {
 
     trackQuery(queryRaw);
 
+    // ✅ start thinking immediately
+    startThinking();
+
     setIsSearching(true);
     setMessage(null);
     setShowSaved(false);
@@ -173,6 +194,7 @@ export default function Home() {
       );
     } finally {
       setIsSearching(false);
+      await stopThinking(); // ✅ ensure orb shows for minimum time
     }
   };
 
@@ -201,6 +223,9 @@ export default function Home() {
     e.preventDefault();
     const trimmed = input.trim();
     if (!trimmed) return;
+
+    // ✅ start thinking immediately
+    startThinking();
 
     setIsSearching(true);
     setMessage(null);
@@ -237,6 +262,7 @@ export default function Home() {
       );
     } finally {
       setIsSearching(false);
+      await stopThinking(); // ✅ ensure orb shows for minimum time
     }
   };
 
@@ -274,6 +300,32 @@ export default function Home() {
           className="relative z-20 mt-2"
         />
       </div>
+
+      {/* Thinking Orb */}
+      {isThinking && (
+        <div className="mt-2 mb-2 flex flex-col items-center justify-center">
+          <div className="relative w-16 h-16">
+            <div className="absolute inset-0 rounded-full blur-xl animate-orbGlow bg-red-500/20 dark:bg-red-500/30" />
+
+            <Image
+              src="/orb.png"
+              alt="Genie is thinking"
+              fill
+              sizes="64px"
+              className="
+                object-contain animate-orbPulse
+                drop-shadow-[0_0_18px_rgba(239,68,68,0.25)]
+                dark:drop-shadow-[0_0_24px_rgba(239,68,68,0.45)]
+              "
+              priority
+            />
+          </div>
+
+          <p className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">
+            Genie’s thinking…
+          </p>
+        </div>
+      )}
 
       {/* Genie conversational reply */}
       {genieReply && (
@@ -421,18 +473,18 @@ export default function Home() {
       {/* Sticky Input + icons */}
       <div className="fixed bottom-6 left-0 right-0 px-4 z-30">
         <form onSubmit={handleSubmit} className="w-full max-w-md mx-auto">
-          <div className="relative w-full group"> 
-            {/* subtle bar backdrop so input floats nicely in dark mode */}
+          <div className="relative w-full group">
             <div
-  className="
-    absolute inset-0 -z-10 rounded-full
-    bg-white/70 dark:bg-black/40 backdrop-blur-md
-    border border-zinc-200/60 dark:border-red-500/40
-    shadow-sm
-    group-focus-within:border-red-500/70
-    group-focus-within:shadow-[0_0_0_3px_rgba(239,68,68,0.25)]
-  "
-/>
+              className="
+                absolute inset-0 -z-10 rounded-full
+                bg-white/70 dark:bg-black/40 backdrop-blur-md
+                border border-zinc-200/60 dark:border-red-500/40
+                shadow-sm
+                group-focus-within:border-red-500/70
+                group-focus-within:shadow-[0_0_0_3px_rgba(239,68,68,0.25)]
+              "
+            />
+
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -451,7 +503,11 @@ export default function Home() {
             />
 
             <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-3 text-red-600 dark:text-red-400">
-              <button type="button" onClick={startListening} aria-label="Speak to Genie">
+              <button
+                type="button"
+                onClick={startListening}
+                aria-label="Speak to Genie"
+              >
                 🎤
               </button>
 
@@ -469,7 +525,11 @@ export default function Home() {
                 />
               </button>
 
-              <button type="button" onClick={handleHomeShare} aria-label="Share Genie">
+              <button
+                type="button"
+                onClick={handleHomeShare}
+                aria-label="Share Genie"
+              >
                 <Image
                   src="/share-icon.png"
                   alt="Share"
