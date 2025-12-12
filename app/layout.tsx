@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { Providers } from "./providers";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -17,13 +18,17 @@ export const metadata: Metadata = {
   title: "Genie – Your Social Concierge",
   description:
     "Ask Genie, she’ll find your vibe — brunches, happy hours, lounges, patios, and more.",
-  
+
   metadataBase: new URL("https://genie.socialbevy.com"),
+
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#000000" },
+  ],
 
   openGraph: {
     title: "Genie – Your Social Concierge",
-    description:
-      "Ask Genie, she’ll find your vibe.",
+    description: "Ask Genie, she’ll find your vibe.",
     url: "https://genie.socialbevy.com",
     siteName: "Genie · Social Bevy",
     images: [
@@ -53,13 +58,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );
 }
-
