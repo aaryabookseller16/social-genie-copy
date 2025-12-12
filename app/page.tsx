@@ -421,10 +421,18 @@ export default function Home() {
       {/* Sticky Input + icons */}
       <div className="fixed bottom-6 left-0 right-0 px-4 z-30">
         <form onSubmit={handleSubmit} className="w-full max-w-md mx-auto">
-          <div className="relative w-full">
+          <div className="relative w-full group"> 
             {/* subtle bar backdrop so input floats nicely in dark mode */}
-            <div className="absolute inset-0 -z-10 rounded-full bg-white/70 dark:bg-black/40 backdrop-blur-md border border-zinc-200/60 dark:border-zinc-800/60" />
-
+            <div
+  className="
+    absolute inset-0 -z-10 rounded-full
+    bg-white/70 dark:bg-black/40 backdrop-blur-md
+    border border-zinc-200/60 dark:border-red-500/40
+    shadow-sm
+    group-focus-within:border-red-500/70
+    group-focus-within:shadow-[0_0_0_3px_rgba(239,68,68,0.25)]
+  "
+/>
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
