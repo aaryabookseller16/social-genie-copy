@@ -21,6 +21,11 @@ export const metadata: Metadata = {
 
   metadataBase: new URL("https://genie.socialbevy.com"),
 
+  // ✅ Browser tab icon (favicon)
+  icons: {
+    icon: "/sb-logo-icon.png",
+  },
+
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#ffffff" },
     { media: "(prefers-color-scheme: dark)", color: "#000000" },
@@ -59,9 +64,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <Providers>{children}</Providers>
       </body>
     </html>
