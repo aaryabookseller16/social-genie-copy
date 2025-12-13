@@ -21,10 +21,18 @@ export const metadata: Metadata = {
 
   metadataBase: new URL("https://genie.socialbevy.com"),
 
-  // ✅ Browser tab icon (favicon)
+  // ✅ Favicons + Apple touch icon (files live in /public)
   icons: {
-    icon: "/public/sb-logo-icon.png",
+    icon: [
+      { url: "/favicon.ico" },
+      { url: "/favicon-32x32.png", type: "image/png", sizes: "32x32" },
+      { url: "/favicon-16x16.png", type: "image/png", sizes: "16x16" },
+    ],
+    apple: "/apple-touch-icon.png",
   },
+
+  // ✅ PWA manifest (file lives in /public)
+  manifest: "/site.webmanifest",
 
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#ffffff" },
