@@ -190,3 +190,4 @@ Upcoming major changes:
 Founder & CEO — Social Bevy  
 Social Genie Team Lead  
 
+ 
