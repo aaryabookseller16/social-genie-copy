@@ -120,13 +120,32 @@ export async function writeApiStore(store: ApiStore) {
   await writeFile(STORE_PATH, JSON.stringify(store, null, 2));
 }
 
+// Serialise all store mutations so concurrent requests cannot corrupt the
+// JSON file or silently overwrite each other's changes.
+let storeWriteQueue: Promise<unknown> = Promise.resolve();
+
 export async function updateApiStore<T>(
   updater: (store: ApiStore) => T | Promise<T>
 ): Promise<T> {
-  const store = await readApiStore();
-  const result = await updater(store);
-  await writeApiStore(store);
-  return result;
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+
+  storeWriteQueue = storeWriteQueue.then(async () => {
+    try {
+      const store = await readApiStore();
+      const result = await updater(store);
+      await writeApiStore(store);
+      resolve(result);
+    } catch (error) {
+      reject(error);
+    }
+  });
+
+  return promise;
 }
 
 export function sanitizeUser(user: StoredUser) {

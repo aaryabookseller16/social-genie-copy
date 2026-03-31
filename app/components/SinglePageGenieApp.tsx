@@ -314,10 +314,23 @@ export function SinglePageGenieApp() {
       setIsAuthChecked(true);
     } catch (error) {
       console.error("Failed to hydrate authenticated session", error);
-      clearStoredSession();
-      setAccount(null);
-      setSavedVenueIds([]);
-      setSavedVenues([]);
+
+      // Only clear the saved session when the server explicitly rejects the
+      // token (401). Other failures (500, network errors, Xano catalog
+      // unreachable) should NOT nuke the auth token — the user is still
+      // legitimately signed in.
+      const isAuthError =
+        error instanceof Error &&
+        (error.message.includes("401") ||
+          error.message.toLowerCase().includes("unauthorized"));
+
+      if (isAuthError) {
+        clearStoredSession();
+        setAccount(null);
+        setSavedVenueIds([]);
+        setSavedVenues([]);
+      }
+
       setIsAuthChecked(true);
     }
   }, []);
@@ -546,8 +559,14 @@ export function SinglePageGenieApp() {
       const errorMessage =
         error instanceof Error ? error.message : "Could not update your saved spots right now.";
 
-      if (errorMessage.toLowerCase().includes("unauthorized")) {
-        clearStoredSession();
+      // apiJson already clears the session on a genuine 401 response.
+      // Only react to auth-specific failures here — don't redundantly
+      // nuke the token for network errors or 500s.
+      const isAuthError =
+        errorMessage.includes("401") ||
+        errorMessage.toLowerCase() === "unauthorized";
+
+      if (isAuthError) {
         setAccount(null);
         setSavedVenueIds([]);
         setSavedVenues([]);
