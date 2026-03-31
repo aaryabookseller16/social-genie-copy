@@ -1,5 +1,10 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import {
+  Cormorant_Garamond,
+  Geist,
+  Geist_Mono,
+} from "next/font/google";
+
 import "./globals.css";
 import { Providers } from "./providers";
 
@@ -13,15 +18,17 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-// ---------- SITE METADATA (FOR LINK PREVIEWS) ----------
+const displaySerif = Cormorant_Garamond({
+  variable: "--font-display-serif",
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
+});
+
 export const metadata: Metadata = {
-  title: "Genie – Your Social Concierge",
+  title: "Genie - Your Social Concierge",
   description:
-    "Ask Genie, she’ll find your vibe — brunches, happy hours, lounges, patios, and more.",
-
+    "Ask Genie and she'll find your vibe - brunches, happy hours, lounges, patios, and more.",
   metadataBase: new URL("https://genie.socialbevy.com"),
-
-  // ✅ Favicons + Apple touch icon (files live in /public)
   icons: {
     icon: [
       { url: "/favicon.ico" },
@@ -30,40 +37,35 @@ export const metadata: Metadata = {
     ],
     apple: "/apple-touch-icon.png",
   },
-
-  // ✅ PWA manifest (file lives in /public)
   manifest: "/site.webmanifest",
-
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#000000" },
-  ],
-
   openGraph: {
-    title: "Genie – Your Social Concierge",
-    description: "Ask Genie, she’ll find your vibe.",
+    title: "Genie - Your Social Concierge",
+    description: "Ask Genie and she'll find your vibe.",
     url: "https://genie.socialbevy.com",
-    siteName: "Genie · Social Bevy",
+    siteName: "Genie - Social Bevy",
     images: [
       {
         url: "https://genie.socialbevy.com/genie-profile-pic.png",
         width: 1024,
         height: 1024,
-        alt: "Genie – Your Social Concierge",
+        alt: "Genie - Your Social Concierge",
       },
     ],
     type: "website",
   },
-
   twitter: {
     card: "summary_large_image",
-    title: "Genie – Your AI-Powered Social Concierge",
+    title: "Genie - Your AI-Powered Social Concierge",
     description:
-      "Tell Genie your vibe and she’ll instantly pull the perfect Houston spots for you.",
+      "Tell Genie your vibe and she'll instantly pull the perfect Houston spots for you.",
     images: ["https://genie.socialbevy.com/genie-profile-pic.png"],
   },
 };
-// --------------------------------------------------------
+
+export const viewport: Viewport = {
+  themeColor: "#140000",
+  viewportFit: "cover",
+};
 
 export default function RootLayout({
   children,
@@ -72,10 +74,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+      <body
+        suppressHydrationWarning
+        className={`${geistSans.variable} ${geistMono.variable} ${displaySerif.variable} antialiased`}
+      >
         <Providers>{children}</Providers>
       </body>
     </html>
   );
 }
-

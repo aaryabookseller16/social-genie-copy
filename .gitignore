@@ -39,3 +39,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.social-bevy-website
+images/
+codex-plan-gpt-4.md
+codex-plan-mini.md
+.cursor/
+V1_API_Documentation_Xano.docx
+api_docs.md
