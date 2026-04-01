@@ -1347,6 +1347,7 @@ export function SinglePageGenieApp() {
           config={config}
           onOpenAccount={() => navigateTo("account")}
           onContinueHome={() => goBack("home")}
+          onRefreshSession={() => void hydrateAuthenticatedSession()}
         />
       </div>
 

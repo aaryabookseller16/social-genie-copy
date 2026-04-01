@@ -3,6 +3,7 @@
 import {
   type FormEvent,
   type RefObject,
+  useCallback,
   useDeferredValue,
   useEffect,
   useState,
@@ -16,14 +17,20 @@ import { type ConsumerAccount } from "@/app/lib/localState";
 import {
   claimVendorBusiness,
   createVendorBusiness,
+  fetchVendorDashboard,
   searchVendorBusinesses,
+  updateVendorProfile,
 } from "@/app/lib/publicApiClient";
 import {
   readVendorDraft,
   writeVendorDraft,
 } from "@/app/lib/vendorOnboarding";
 
-import { ActionButton, Field, SectionShell } from "./ui";
+import { ActionButton } from "./ui";
+
+/* ------------------------------------------------------------------ */
+/*  Types                                                              */
+/* ------------------------------------------------------------------ */
 
 type VendorStep =
   | "claim"
@@ -31,10 +38,11 @@ type VendorStep =
   | "not-found"
   | "match"
   | "contact"
-  | "location"
   | "plan"
   | "success"
-  | "manual";
+  | "manual"
+  | "dashboard"
+  | "profile";
 
 type VendorContactState = {
   firstName: string;
@@ -45,18 +53,39 @@ type VendorContactState = {
 
 type VendorManualState = {
   businessName: string;
-  fullName: string;
+  firstName: string;
+  lastName: string;
   email: string;
   phone: string;
-  businessAddress: string;
-  cityStateZip: string;
 };
+
+type DashboardMetrics = {
+  views: number;
+  clicks: number;
+  saves: number;
+  genie_appearances: number;
+};
+
+type ProfileFormState = {
+  description: string;
+  phone: string;
+  website_url: string;
+  reservation_url: string;
+  hours: string;
+  image_primary_url: string;
+};
+
+/* ------------------------------------------------------------------ */
+/*  Helpers                                                            */
+/* ------------------------------------------------------------------ */
 
 function isEmailValid(value: string) {
   return /\S+@\S+\.\S+/.test(value);
 }
 
-function createContactState(account: ConsumerAccount | null): VendorContactState {
+function createContactState(
+  account: ConsumerAccount | null
+): VendorContactState {
   return {
     firstName: account?.firstName ?? "",
     lastName: account?.lastName ?? "",
@@ -65,21 +94,101 @@ function createContactState(account: ConsumerAccount | null): VendorContactState
   };
 }
 
-function createManualState(searchText = "", account: ConsumerAccount | null = null): VendorManualState {
+function createManualState(
+  searchText = "",
+  account: ConsumerAccount | null = null
+): VendorManualState {
   return {
     businessName: searchText,
-    fullName:
-      account ? `${account.firstName} ${account.lastName}`.trim() : "",
+    firstName: account?.firstName ?? "",
+    lastName: account?.lastName ?? "",
     email: account?.email ?? "",
     phone: account?.phone ?? "",
-    businessAddress: "",
-    cityStateZip: "Houston, TX 77008",
   };
 }
 
 function getVenueId(venue: GenieVenue) {
   return String(venue.id);
 }
+
+function createEmptyProfile(): ProfileFormState {
+  return {
+    description: "",
+    phone: "",
+    website_url: "",
+    reservation_url: "",
+    hours: "",
+    image_primary_url: "",
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/*  Small presentational pieces                                        */
+/* ------------------------------------------------------------------ */
+
+function StatCard({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value: number;
+  icon: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-2 rounded-2xl border border-[#7a3030] bg-black/10 px-3 py-5">
+      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#e83434]/15 text-[#e83434]">
+        {icon}
+      </div>
+      <p className="text-2xl font-bold text-white">
+        {value.toLocaleString()}
+      </p>
+      <p className="text-[13px] text-white/50">{label}</p>
+    </div>
+  );
+}
+
+function ProgressBar({ step }: { step: number }) {
+  const total = 4;
+  return (
+    <div className="flex items-center gap-1.5">
+      {Array.from({ length: total }).map((_, i) => (
+        <div
+          key={`pb-${i}`}
+          className={`h-[3px] flex-1 rounded-full ${
+            i < step ? "bg-[#e83434]" : "bg-white/16"
+          }`}
+        />
+      ))}
+    </div>
+  );
+}
+
+function VendorInput({
+  value,
+  placeholder,
+  type = "text",
+  onChange,
+}: {
+  value: string;
+  placeholder: string;
+  type?: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <input
+      type={type}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      className="w-full rounded-2xl border border-[#7a3030] bg-transparent px-4 py-3.5 text-[15px] text-white placeholder:text-white/35 focus:border-[#e05050] focus:outline-none"
+    />
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Main component                                                     */
+/* ------------------------------------------------------------------ */
 
 export function VendorSection({
   visible,
@@ -88,6 +197,7 @@ export function VendorSection({
   config,
   onContinueHome,
   onOpenAccount,
+  onRefreshSession,
 }: {
   visible: boolean;
   sectionRef: RefObject<HTMLElement | null>;
@@ -95,6 +205,7 @@ export function VendorSection({
   config: RuntimeConfig;
   onContinueHome: () => void;
   onOpenAccount: () => void;
+  onRefreshSession?: () => void;
 }) {
   const [step, setStep] = useState<VendorStep>("claim");
   const [initialDraft] = useState(() => readVendorDraft());
@@ -103,6 +214,7 @@ export function VendorSection({
   );
   const deferredSearch = useDeferredValue(searchInput);
   const [suggestions, setSuggestions] = useState<GenieVenue[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const [candidate, setCandidate] = useState<GenieVenue | null>(null);
   const [contact, setContact] = useState<VendorContactState>(() =>
     createContactState(account)
@@ -121,77 +233,132 @@ export function VendorSection({
       ? initialDraft.selectedPlanId
       : null
   );
-  const [locationEnabled, setLocationEnabled] = useState<boolean | null>(
-    typeof initialDraft.locationEnabled === "boolean"
-      ? initialDraft.locationEnabled
-      : null
-  );
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  /* Dashboard & profile state */
+  const [dashboardMetrics, setDashboardMetrics] =
+    useState<DashboardMetrics | null>(null);
+  const [isDashboardLoading, setIsDashboardLoading] = useState(false);
+  const [profileForm, setProfileForm] = useState<ProfileFormState>(
+    createEmptyProfile
+  );
+  const [isProfileSaving, setIsProfileSaving] = useState(false);
+  const [profileMessage, setProfileMessage] = useState<string | null>(null);
+
+  /* Map steps to 4-segment progress */
+  const progressStep: Record<VendorStep, number> = {
+    claim: 1,
+    finding: 1,
+    "not-found": 1,
+    match: 1,
+    contact: 2,
+    manual: 2,
+    plan: 3,
+    success: 4,
+    dashboard: 4,
+    profile: 4,
+  };
+
+  /* ---- Effects ---- */
 
   useEffect(() => {
     if (!account) {
       setContact(createContactState(null));
       return;
     }
-
-    setContact((current) => ({
-      firstName: current.firstName || account.firstName,
-      lastName: current.lastName || account.lastName,
-      email: current.email || account.email,
-      phone: current.phone || account.phone || "",
+    setContact((c) => ({
+      firstName: c.firstName || account.firstName,
+      lastName: c.lastName || account.lastName,
+      email: c.email || account.email,
+      phone: c.phone || account.phone || "",
     }));
-
-    setManual((current) => ({
-      ...current,
-      fullName:
-        current.fullName || `${account.firstName} ${account.lastName}`.trim(),
-      email: current.email || account.email,
-      phone: current.phone || account.phone || "",
+    setManual((c) => ({
+      ...c,
+      firstName: c.firstName || account.firstName,
+      lastName: c.lastName || account.lastName,
+      email: c.email || account.email,
+      phone: c.phone || account.phone || "",
     }));
   }, [account]);
 
   useEffect(() => {
-    if (!visible || !account || step !== "claim") {
-      return;
-    }
-
+    if (!visible || !account || step !== "claim") return;
     trackEvent(analyticsEvents.vendorClaimStarted);
   }, [account, step, visible]);
 
+  /* Auto-redirect to dashboard if vendor already registered */
   useEffect(() => {
-    if (!visible || !account || step !== "claim" || deferredSearch.trim().length < 2) {
+    if (!visible || !account?.vendorId) return;
+    if (
+      step !== "claim" &&
+      step !== "dashboard" &&
+      step !== "profile" &&
+      step !== "success"
+    )
+      return;
+
+    // If we arrive on the vendor tab and the user already has a vendor_id,
+    // jump straight to the dashboard.
+    if (step === "claim") {
+      setStep("dashboard");
+    }
+  }, [visible, account, step]);
+
+  /* Fetch dashboard metrics when on the dashboard step */
+  const loadDashboard = useCallback(async () => {
+    setIsDashboardLoading(true);
+    try {
+      const data = await fetchVendorDashboard();
+      setDashboardMetrics(data);
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not load dashboard data."
+      );
+    } finally {
+      setIsDashboardLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!visible || step !== "dashboard") return;
+    void loadDashboard();
+  }, [visible, step, loadDashboard]);
+
+  /* Live auto-suggest while typing in the claim search */
+  useEffect(() => {
+    if (
+      !visible ||
+      !account ||
+      step !== "claim" ||
+      deferredSearch.trim().length < 2
+    ) {
       setSuggestions([]);
+      setIsSearching(false);
       return;
     }
 
     let cancelled = false;
+    setIsSearching(true);
 
     void (async () => {
       try {
         const results = await searchVendorBusinesses(deferredSearch.trim());
-        if (cancelled) {
-          return;
-        }
-
+        if (cancelled) return;
         setSuggestions(results);
+        setIsSearching(false);
         if (results.length) {
           trackEvent(analyticsEvents.vendorBusinessSuggestionShown, {
             searchText: deferredSearch,
             suggestionCount: results.length,
           });
         }
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
-
+      } catch {
+        if (cancelled) return;
         setSuggestions([]);
-        setStatusMessage(
-          error instanceof Error
-            ? error.message
-            : "Could not search businesses right now."
-        );
+        setIsSearching(false);
       }
     })();
 
@@ -200,50 +367,50 @@ export function VendorSection({
     };
   }, [account, deferredSearch, step, visible]);
 
-  if (!visible) {
-    return null;
-  }
+  /* ---- Early returns ---- */
+
+  if (!visible) return null;
 
   if (!account) {
     return (
-      <SectionShell
-        sectionRef={sectionRef}
-        title="Sign in to claim your business"
-        subtitle="Vendor search, claim, and manual business creation all require an authenticated account."
+      <section
+        ref={sectionRef}
+        className="relative min-h-screen overflow-hidden px-5 pb-32 pt-14"
       >
-        <div className="space-y-4">
-          <div className="rounded-[24px] border border-white/10 bg-black/18 px-4 py-5 text-sm leading-6 text-white/74">
-            Create an account first, then come back here to search your listing or add your business manually.
-          </div>
+        <h2 className="text-center text-2xl font-semibold text-white">
+          Sign in to claim your business
+        </h2>
+        <p className="mt-3 text-center text-sm text-white/60">
+          Create an account first, then come back here to list your business.
+        </p>
+        <div className="mt-8 space-y-3">
           <ActionButton onClick={onOpenAccount} className="w-full">
             Open account screen
           </ActionButton>
-          <ActionButton onClick={onContinueHome} variant="secondary" className="w-full">
+          <ActionButton
+            onClick={onContinueHome}
+            variant="secondary"
+            className="w-full"
+          >
             Back to home
           </ActionButton>
         </div>
-      </SectionShell>
+      </section>
     );
   }
 
-  const stepIndex: Record<VendorStep, number> = {
-    claim: 1,
-    finding: 1,
-    "not-found": 2,
-    match: 2,
-    manual: 2,
-    contact: 3,
-    location: 4,
-    plan: 5,
-    success: 6,
-  };
+  /* ---- Navigation ---- */
 
   const goBack = () => {
     setStatusMessage(null);
-
+    setProfileMessage(null);
     switch (step) {
       case "claim":
+      case "dashboard":
         onContinueHome();
+        break;
+      case "profile":
+        setStep("dashboard");
         break;
       case "finding":
       case "not-found":
@@ -251,30 +418,27 @@ export function VendorSection({
         setStep("claim");
         break;
       case "contact":
-        setStep("match");
-        break;
-      case "location":
-        setStep(entryMode === "manual" ? "manual" : "contact");
-        break;
-      case "plan":
-        setStep("location");
-        break;
-      case "success":
-        setStep("plan");
+        setStep(candidate ? "match" : "claim");
         break;
       case "manual":
         setStep("not-found");
+        break;
+      case "plan":
+        setStep(entryMode === "manual" ? "manual" : "contact");
+        break;
+      case "success":
+        onContinueHome();
         break;
       default:
         onContinueHome();
     }
   };
 
+  /* ---- API calls ---- */
+
   const runSearch = async (searchText: string) => {
     const trimmed = searchText.trim();
-    if (!trimmed) {
-      return;
-    }
+    if (!trimmed) return;
 
     setStep("finding");
     setStatusMessage(null);
@@ -288,8 +452,10 @@ export function VendorSection({
       const results = await searchVendorBusinesses(trimmed);
       const match =
         results.find(
-          (venue) => venue.venue_name.toLowerCase() === trimmed.toLowerCase()
-        ) ?? results[0] ?? null;
+          (v) => v.venue_name.toLowerCase() === trimmed.toLowerCase()
+        ) ??
+        results[0] ??
+        null;
 
       if (match) {
         setCandidate(match);
@@ -341,14 +507,13 @@ export function VendorSection({
       if (entryMode === "manual") {
         await createVendorBusiness({
           business_name: manual.businessName.trim(),
-          full_name: manual.fullName.trim(),
+          full_name: `${manual.firstName} ${manual.lastName}`.trim(),
           email: manual.email.trim(),
           phone: manual.phone.trim() || undefined,
-          address: manual.businessAddress.trim(),
-          city_state_zip: manual.cityStateZip.trim() || undefined,
+          address: manual.businessName.trim(),
+          city_state_zip: "Houston, TX",
           is_manual_entry: true,
           selected_plan_id: selectedPlan,
-          location_enabled: Boolean(locationEnabled),
         });
       } else if (candidate) {
         await claimVendorBusiness({
@@ -357,7 +522,6 @@ export function VendorSection({
           email: contact.email.trim(),
           phone: contact.phone.trim() || undefined,
           selected_plan_id: selectedPlan,
-          location_enabled: Boolean(locationEnabled),
         });
       }
 
@@ -366,6 +530,9 @@ export function VendorSection({
         planId: selectedPlan,
         mode: entryMode,
       });
+
+      // Re-hydrate session so account.vendorId is populated
+      onRefreshSession?.();
     } catch (error) {
       setStatusMessage(
         error instanceof Error
@@ -377,222 +544,273 @@ export function VendorSection({
     }
   };
 
+  const handleSaveProfile = async () => {
+    setIsProfileSaving(true);
+    setProfileMessage(null);
+
+    try {
+      // Build payload — only include fields that have values
+      const payload: Record<string, string> = {};
+      if (profileForm.description.trim())
+        payload.description = profileForm.description.trim();
+      if (profileForm.phone.trim())
+        payload.phone = profileForm.phone.trim();
+      if (profileForm.website_url.trim())
+        payload.website_url = profileForm.website_url.trim();
+      if (profileForm.reservation_url.trim())
+        payload.reservation_url = profileForm.reservation_url.trim();
+      if (profileForm.hours.trim())
+        payload.hours = profileForm.hours.trim();
+      if (profileForm.image_primary_url.trim())
+        payload.image_primary_url = profileForm.image_primary_url.trim();
+
+      await updateVendorProfile(payload);
+      setProfileMessage("Profile updated successfully.");
+    } catch (error) {
+      setProfileMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not update your profile."
+      );
+    } finally {
+      setIsProfileSaving(false);
+    }
+  };
+
+  /* ---- Step title ---- */
+
+  const stepTitle: Record<VendorStep, string> = {
+    claim: "Claim your business on Genie",
+    finding: "Select your business",
+    "not-found": "Select your business",
+    match: "Select your business",
+    contact: "Your contact info",
+    manual: "Add your business",
+    plan: "Choose your plan",
+    success: "Choose your plan",
+    dashboard: "Vendor Dashboard",
+    profile: "Edit Profile",
+  };
+
+  /* ---------------------------------------------------------------- */
+  /*  Render                                                           */
+  /* ---------------------------------------------------------------- */
+
   return (
-    <SectionShell
-      sectionRef={sectionRef}
-      title={
-        step === "claim"
-          ? "Claim your business on Genie"
-          : step === "finding"
-            ? "Finding your business..."
-            : step === "not-found"
-              ? "Select your business"
-              : step === "match"
-                ? "Select your business"
-                : step === "contact"
-                  ? "Your contact info"
-                  : step === "location"
-                    ? "Improve your visibility"
-                    : step === "plan"
-                      ? "Choose your plan"
-                      : step === "success"
-                        ? "You're live on Genie"
-                        : "Add your business"
-      }
-      subtitle={
-        step === "claim"
-          ? "Get discovered by people looking for your kind of vibe."
-          : step === "location"
-            ? "Enable location to help customers find you more easily."
-            : step === "success"
-              ? "Customers can now discover your business instantly."
-              : "Follow the steps to complete your Genie vendor setup."
-      }
+    <section
+      ref={sectionRef}
+      className="relative min-h-screen overflow-hidden px-5 pb-32 pt-6"
     >
-      <div className="mb-5 flex items-center justify-between">
+      {/* Back arrow + progress bar */}
+      <div className="mb-6 flex items-center gap-3">
         <button
           type="button"
           onClick={goBack}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/12 bg-black/20 text-white/78"
+          className="flex-none text-white/80"
           aria-label="Go back"
         >
           <svg
             viewBox="0 0 24 24"
-            className="h-5 w-5"
+            className="h-6 w-6"
             fill="none"
             stroke="currentColor"
-            strokeWidth="1.8"
+            strokeWidth="2"
           >
-            <path d="m15 18-6-6 6-6" />
+            <path d="M19 12H6m0 0 5-5m-5 5 5 5" />
           </svg>
         </button>
-        <p className="text-xs uppercase tracking-[0.28em] text-white/34">
-          Step {stepIndex[step]} of 6
+        {step !== "dashboard" && step !== "profile" && (
+          <div className="flex-1">
+            <ProgressBar step={progressStep[step]} />
+          </div>
+        )}
+      </div>
+
+      {/* Step title */}
+      <h2 className="mb-1 text-center text-[1.65rem] font-semibold leading-tight text-white">
+        {stepTitle[step]}
+      </h2>
+
+      {/* Subtitle only on claim screen */}
+      {step === "claim" && (
+        <p className="mb-6 text-center text-[15px] leading-relaxed text-white/55">
+          Get discovered by people looking{"\n"}for spots like yours.
         </p>
-      </div>
+      )}
 
-      <div className="mb-5 flex items-center gap-2">
-        {Array.from({ length: 6 }).map((_, index) => (
-          <div
-            key={`vendor-step-${index + 1}`}
-            className={`h-2 flex-1 rounded-full ${
-              index + 1 <= stepIndex[step] ? "bg-[#ff4f4f]" : "bg-white/16"
-            }`}
-          />
-        ))}
-      </div>
+      {/* Dashboard subtitle */}
+      {step === "dashboard" && (
+        <p className="mb-4 text-center text-[14px] text-white/45">
+          Track how customers interact with your business.
+        </p>
+      )}
 
-      {step === "claim" ? (
-        <div className="space-y-4">
-          <div className="rounded-[22px] border border-[#8d3535] bg-black/18 p-3">
-            <div className="flex items-center gap-3">
-              <input
-                value={searchInput}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setSearchInput(value);
-                  setManual(createManualState(value, account));
-                  trackEvent(analyticsEvents.vendorBusinessSearchTyped, {
-                    searchText: value,
-                  });
-                }}
-                placeholder="Search your venue"
-                className="flex-1 bg-transparent text-lg text-white placeholder:text-white/34 focus:outline-none"
-              />
-              <svg viewBox="0 0 24 24" className="h-5 w-5 text-white/42" fill="none" stroke="currentColor" strokeWidth="1.8">
-                <circle cx="11" cy="11" r="6.5" />
-                <path d="m16 16 4 4" />
-              </svg>
-            </div>
+      {/* Profile subtitle */}
+      {step === "profile" && (
+        <p className="mb-4 text-center text-[14px] text-white/45">
+          Update your business details visible to Genie users.
+        </p>
+      )}
+
+      {/* ======== STEP: CLAIM (initial search) ======== */}
+      {step === "claim" && (
+        <div className="mt-5 space-y-3">
+          {/* Search box */}
+          <div className="flex items-center gap-3 rounded-2xl border border-[#7a3030] px-4 py-3">
+            <svg
+              viewBox="0 0 24 24"
+              className="h-5 w-5 flex-none text-white/40"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <circle cx="11" cy="11" r="6.5" />
+              <path d="m16 16 4.5 4.5" />
+            </svg>
+            <input
+              value={searchInput}
+              onChange={(e) => {
+                const v = e.target.value;
+                setSearchInput(v);
+                trackEvent(analyticsEvents.vendorBusinessSearchTyped, {
+                  searchText: v,
+                });
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void runSearch(searchInput);
+                }
+              }}
+              placeholder="Search your business name"
+              className="min-w-0 flex-1 bg-transparent text-[15px] text-white placeholder:text-white/35 focus:outline-none"
+            />
           </div>
 
-          {suggestions.length ? (
-            <div className="overflow-hidden rounded-[22px] border border-[#8d3535] bg-black/18">
+          {/* Live suggestions */}
+          {suggestions.length > 0 && (
+            <div>
               {suggestions.map((venue) => (
                 <button
-                  key={`suggestion-${venue.id}`}
+                  key={`sug-${venue.id}`}
                   type="button"
                   onClick={() => {
                     setSearchInput(venue.venue_name);
-                    trackEvent(analyticsEvents.vendorBusinessSuggestionSelected, {
-                      businessId: getVenueId(venue),
-                      venueName: venue.venue_name,
-                    });
+                    trackEvent(
+                      analyticsEvents.vendorBusinessSuggestionSelected,
+                      {
+                        businessId: getVenueId(venue),
+                        venueName: venue.venue_name,
+                      }
+                    );
                     void runSearch(venue.venue_name);
                   }}
-                  className="flex w-full items-center justify-between border-b border-white/8 px-4 py-3 text-left last:border-b-0"
+                  className="w-full border-b border-white/10 px-1 py-3 text-left last:border-b-0"
                 >
-                  <div>
-                    <p className="text-lg text-white">{venue.venue_name}</p>
-                    <p className="text-sm text-white/48">
-                      {venue.area_neighborhood || venue.city || "Houston"} - business
-                    </p>
-                  </div>
-                  <span className="text-white/66">✓</span>
+                  <p className="text-[15px] font-medium text-white">
+                    {venue.venue_name}
+                  </p>
+                  <p className="text-[13px] text-white/45">
+                    {venue.area_neighborhood || "Midtown"} Business
+                  </p>
                 </button>
               ))}
             </div>
+          )}
+
+          {/* Helper text or searching state */}
+          {isSearching && deferredSearch.trim().length >= 2 ? (
+            <p className="text-center text-sm text-white/45">Searching...</p>
+          ) : suggestions.length === 0 ? (
+            <p className="text-sm text-white/45">
+              We&apos;ll match your business so you don&apos;t have to start
+              from scratch
+            </p>
           ) : null}
-
-          <p className="text-sm leading-6 text-white/62">
-            We&apos;ll match your business so you do not have to start from scratch.
-          </p>
-
-          <ActionButton
-            onClick={() => void runSearch(searchInput)}
-            className="w-full"
-            disabled={searchInput.trim().length < 2 || isSubmitting}
-          >
-            Find my business
-          </ActionButton>
         </div>
-      ) : null}
+      )}
 
-      {step === "finding" ? (
-        <div className="flex min-h-[18rem] flex-col items-center justify-center text-center">
-          <p className="text-lg text-white/82">Finding your business...</p>
-          <div className="mt-4 flex gap-3">
-            {[0, 1, 2, 3, 4].map((dot) => (
-              <span
-                key={`dot-${dot}`}
-                className="h-2.5 w-2.5 rounded-full bg-[#ff4f4f] animate-orbGlow"
-              />
-            ))}
+      {/* ======== STEP: FINDING (loading state) ======== */}
+      {step === "finding" && (
+        <div className="mt-8 space-y-4">
+          <div className="flex items-center gap-3 rounded-2xl border border-[#7a3030] px-4 py-3">
+            <svg
+              viewBox="0 0 24 24"
+              className="h-5 w-5 flex-none text-white/40"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <circle cx="11" cy="11" r="6.5" />
+              <path d="m16 16 4.5 4.5" />
+            </svg>
+            <span className="text-[15px] text-white">{searchInput}</span>
           </div>
-          <div className="mt-6 w-full rounded-[18px] border border-[#8d3535] bg-black/18 px-4 py-3 text-left text-lg text-white">
-            {searchInput}
-          </div>
+          <p className="text-center text-sm text-white/45">Searching. . .</p>
         </div>
-      ) : null}
+      )}
 
-      {step === "not-found" ? (
-        <div className="space-y-4">
-          <div className="rounded-[18px] border border-[#8d3535] bg-black/18 px-4 py-3 text-lg text-white">
-            <div className="flex items-center justify-between gap-3">
-              <span>{searchInput || "Your search"}</span>
-              <svg
-                viewBox="0 0 24 24"
-                className="h-5 w-5 text-white/42"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-              >
-                <circle cx="11" cy="11" r="6.5" />
-                <path d="m16 16 4 4" />
-              </svg>
-            </div>
+      {/* ======== STEP: NOT-FOUND ======== */}
+      {step === "not-found" && (
+        <div className="mt-8 space-y-4">
+          <div className="flex items-center gap-3 rounded-2xl border border-[#7a3030] px-4 py-3">
+            <svg
+              viewBox="0 0 24 24"
+              className="h-5 w-5 flex-none text-white/40"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <circle cx="11" cy="11" r="6.5" />
+              <path d="m16 16 4.5 4.5" />
+            </svg>
+            <span className="text-[15px] text-white">
+              {searchInput || "Your search"}
+            </span>
           </div>
-          <p className="text-lg leading-8 text-white/82">
-            Please check your details or add it manually.
-          </p>
+
+          <div className="text-sm leading-relaxed text-white/55">
+            <p>
+              Sorry we didn&apos;t find &ldquo;{searchInput}&rdquo;
+            </p>
+            <p>Please check your details or add it manually.</p>
+          </div>
+
           <ActionButton
             onClick={() => {
               setEntryMode("manual");
               setStep("manual");
+              setManual(createManualState(searchInput, account));
               trackEvent(analyticsEvents.vendorAddBusinessCtaTapped, {
                 searchText: searchInput,
               });
               trackEvent(analyticsEvents.vendorManualAddStarted);
-              setManual(createManualState(searchInput, account));
             }}
             className="w-full"
           >
-            Add my business
-          </ActionButton>
-          <ActionButton
-            onClick={() => {
-              setStep("claim");
-              setStatusMessage(null);
-            }}
-            variant="secondary"
-            className="w-full"
-          >
-            Try another search
+            Add my business manually
           </ActionButton>
         </div>
-      ) : null}
+      )}
 
-      {step === "match" && candidate ? (
-        <div className="space-y-4">
-          <div className="overflow-hidden rounded-[24px] border border-[#e05d5d] bg-black/18 p-4 shadow-[0_0_24px_rgba(255,90,90,0.18)]">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-3xl font-semibold text-white">{candidate.venue_name}</p>
-                <p className="mt-1 text-white/56">
-                  {(candidate.area_neighborhood || "Midtown")} · {candidate.city || "Houston"}
-                </p>
-                <p className="mt-4 flex items-center gap-1.5 text-sm text-white/72">
-                  <svg viewBox="0 0 24 24" className="h-4 w-4 text-[#ff7b7b]" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M12 21s6-5.4 6-11a6 6 0 1 0-12 0c0 5.6 6 11 6 11Z" />
-                    <circle cx="12" cy="10" r="2" />
-                  </svg>
-                  {candidate.address || "Houston, Texas"}
-                </p>
-              </div>
-              <span className="mt-2 text-2xl text-white/40">&rsaquo;</span>
-            </div>
+      {/* ======== STEP: MATCH ======== */}
+      {step === "match" && candidate && (
+        <div className="mt-8 space-y-5">
+          {/* Venue card */}
+          <div className="rounded-2xl border border-[#7a3030] px-5 py-4 text-center">
+            <p className="text-lg font-semibold text-white">
+              {candidate.venue_name}
+            </p>
+            <p className="mt-1 text-sm text-white/50">
+              {candidate.address ||
+                `${candidate.area_neighborhood || "Midtown"}, ${candidate.city || "Houston"}`}
+            </p>
           </div>
-          <p className="text-xl text-white/84">Is this your business?</p>
+
+          <p className="text-center text-sm text-white/50">
+            Is this your business?
+          </p>
+
           <ActionButton
             onClick={() => {
               setStep("contact");
@@ -607,156 +825,172 @@ export function VendorSection({
             }}
             className="w-full"
           >
-            Yes, this is my business
+            Yes, This is my business
           </ActionButton>
-          <ActionButton
+
+          <button
+            type="button"
             onClick={() => {
               setEntryMode("manual");
-              setStep("manual");
-              setManual(createManualState(candidate.venue_name, account));
+              setStep("not-found");
               trackEvent(analyticsEvents.vendorBusinessRejected, {
                 matchedBusinessId: getVenueId(candidate),
               });
             }}
-            variant="secondary"
-            className="w-full"
+            className="w-full py-2 text-center text-sm text-white/50"
           >
-            This isn&apos;t my business
-          </ActionButton>
+            My business isn&apos;t listed
+          </button>
         </div>
-      ) : null}
+      )}
 
-      {step === "contact" ? (
+      {/* ======== STEP: CONTACT ======== */}
+      {step === "contact" && (
         <form
-          className="space-y-4"
-          onSubmit={(event: FormEvent<HTMLFormElement>) => {
-            event.preventDefault();
+          className="mt-8 space-y-4"
+          onSubmit={(e: FormEvent<HTMLFormElement>) => {
+            e.preventDefault();
             if (
               !contact.firstName.trim() ||
               !contact.lastName.trim() ||
               !isEmailValid(contact.email)
             ) {
-              setStatusMessage("Enter a valid name and email before continuing.");
+              setStatusMessage(
+                "Enter a valid name and email before continuing."
+              );
               trackEvent(analyticsEvents.vendorContactInfoValidationError);
               return;
             }
-
-            setStep("location");
             setStatusMessage(null);
+            setStep("plan");
             trackEvent(analyticsEvents.vendorContactInfoCompleted, {
               email: contact.email,
             });
-            trackEvent(analyticsEvents.vendorLocationPromptViewed);
+            trackEvent(analyticsEvents.vendorPlanScreenViewed);
           }}
         >
-          <div className="grid grid-cols-2 gap-3">
-            <Field
-              label="First Name"
-              value={contact.firstName}
-              placeholder="John"
-              onChange={(value) =>
-                setContact((current) => ({ ...current, firstName: value }))
-              }
-            />
-            <Field
-              label="Last Name"
-              value={contact.lastName}
-              placeholder="Doe"
-              onChange={(value) =>
-                setContact((current) => ({ ...current, lastName: value }))
-              }
-            />
-          </div>
-          <Field
-            label="Email"
+          <VendorInput
+            value={contact.firstName}
+            placeholder="First Name"
+            onChange={(v) =>
+              setContact((c) => ({ ...c, firstName: v }))
+            }
+          />
+          <VendorInput
+            value={contact.lastName}
+            placeholder="Last Name"
+            onChange={(v) =>
+              setContact((c) => ({ ...c, lastName: v }))
+            }
+          />
+          <VendorInput
             type="email"
             value={contact.email}
-            placeholder="name@email.com"
-            onChange={(value) =>
-              setContact((current) => ({ ...current, email: value }))
+            placeholder="Email"
+            onChange={(v) =>
+              setContact((c) => ({ ...c, email: v }))
             }
           />
-          <Field
-            label="Phone"
+          <VendorInput
             value={contact.phone}
-            placeholder="(123) 456-7890"
-            onChange={(value) =>
-              setContact((current) => ({ ...current, phone: value }))
+            placeholder="Phone (optional)"
+            onChange={(v) =>
+              setContact((c) => ({ ...c, phone: v }))
             }
           />
-          <p className="text-sm text-white/58">
+          <p className="text-[13px] text-white/45">
             We&apos;ll only use this to contact you about your account.
           </p>
           <ActionButton type="submit" className="w-full">
             Next
           </ActionButton>
         </form>
-      ) : null}
+      )}
 
-      {step === "location" ? (
-        <div className="space-y-6 text-center">
-          <div className="mx-auto flex h-28 w-28 items-center justify-center rounded-full border border-[#e05d5d] bg-black/18 shadow-[0_0_26px_rgba(255,89,89,0.22)]">
-            <svg viewBox="0 0 24 24" className="h-12 w-12 text-white" fill="none" stroke="currentColor" strokeWidth="1.8">
-              <path d="M12 21s6-5.4 6-11a6 6 0 1 0-12 0c0 5.6 6 11 6 11Z" />
-              <circle cx="12" cy="10" r="2.5" />
-            </svg>
-          </div>
-          <ActionButton
-            onClick={() => {
-              if (!navigator.geolocation) {
-                setStatusMessage("Location services are unavailable on this device.");
-                trackEvent(analyticsEvents.vendorLocationDenied, {
-                  reason: "unsupported",
-                });
-                return;
-              }
-
-              navigator.geolocation.getCurrentPosition(
-                () => {
-                  writeVendorDraft({
-                    ...readVendorDraft(),
-                    locationEnabled: true,
-                  });
-                  setLocationEnabled(true);
-                  setStep("plan");
-                  setStatusMessage(null);
-                  trackEvent(analyticsEvents.vendorLocationEnabled);
-                  trackEvent(analyticsEvents.vendorPlanScreenViewed);
-                },
-                () => {
-                  setStatusMessage("Location was blocked. You can still continue.");
-                  trackEvent(analyticsEvents.vendorLocationDenied, {
-                    reason: "blocked",
-                  });
-                }
+      {/* ======== STEP: MANUAL ADD ======== */}
+      {step === "manual" && (
+        <form
+          className="mt-8 space-y-4"
+          onSubmit={(e: FormEvent<HTMLFormElement>) => {
+            e.preventDefault();
+            if (
+              !manual.businessName.trim() ||
+              !manual.firstName.trim() ||
+              !manual.lastName.trim() ||
+              !isEmailValid(manual.email)
+            ) {
+              setStatusMessage(
+                "Complete the required fields before continuing."
               );
-            }}
-            className="w-full"
-          >
-            Enable Location
+              trackEvent(analyticsEvents.vendorManualAddValidationError);
+              return;
+            }
+            writeVendorDraft({
+              ...readVendorDraft(),
+              searchText: manual.businessName,
+              isManualEntry: true,
+            });
+            setEntryMode("manual");
+            setStatusMessage(null);
+            setStep("plan");
+            trackEvent(analyticsEvents.vendorManualAddSubmitted, {
+              businessName: manual.businessName,
+            });
+            trackEvent(analyticsEvents.vendorManualAddCompleted, {
+              businessName: manual.businessName,
+            });
+            trackEvent(analyticsEvents.vendorPlanScreenViewed);
+          }}
+        >
+          <VendorInput
+            value={manual.businessName}
+            placeholder="Business Name"
+            onChange={(v) =>
+              setManual((c) => ({ ...c, businessName: v }))
+            }
+          />
+          <VendorInput
+            value={manual.firstName}
+            placeholder="First Name"
+            onChange={(v) =>
+              setManual((c) => ({ ...c, firstName: v }))
+            }
+          />
+          <VendorInput
+            value={manual.lastName}
+            placeholder="Last Name"
+            onChange={(v) =>
+              setManual((c) => ({ ...c, lastName: v }))
+            }
+          />
+          <VendorInput
+            type="email"
+            value={manual.email}
+            placeholder="Email"
+            onChange={(v) =>
+              setManual((c) => ({ ...c, email: v }))
+            }
+          />
+          <VendorInput
+            value={manual.phone}
+            placeholder="Phone (optional)"
+            onChange={(v) =>
+              setManual((c) => ({ ...c, phone: v }))
+            }
+          />
+          <p className="text-[13px] text-white/45">
+            We&apos;ll only use this to contact you about your account.
+          </p>
+          <ActionButton type="submit" className="w-full">
+            Next
           </ActionButton>
-          <ActionButton
-            onClick={() => {
-              writeVendorDraft({
-                ...readVendorDraft(),
-                locationEnabled: false,
-              });
-              setLocationEnabled(false);
-              setStep("plan");
-              setStatusMessage(null);
-              trackEvent(analyticsEvents.vendorLocationSkipped);
-              trackEvent(analyticsEvents.vendorPlanScreenViewed);
-            }}
-            variant="secondary"
-            className="w-full"
-          >
-            Skip for now
-          </ActionButton>
-        </div>
-      ) : null}
+        </form>
+      )}
 
-      {step === "plan" ? (
-        <div className="space-y-4">
+      {/* ======== STEP: PLAN ======== */}
+      {step === "plan" && (
+        <div className="mt-8 space-y-4">
+          {/* Founding Partner */}
           <button
             type="button"
             onClick={() => {
@@ -769,23 +1003,27 @@ export function VendorSection({
                 planId: "founding_partner",
               });
             }}
-            className={`w-full rounded-[24px] border p-4 text-left ${
+            className={`w-full rounded-2xl border p-5 text-center transition ${
               selectedPlan === "founding_partner"
-                ? "border-[#ff9f7a] bg-[linear-gradient(180deg,rgba(58,20,10,0.95),rgba(28,7,4,0.98))] shadow-[0_0_26px_rgba(255,132,89,0.18)]"
-                : "border-white/10 bg-black/18"
+                ? "border-[#c03030] bg-[linear-gradient(180deg,rgba(120,15,15,0.7),rgba(60,5,5,0.85))] shadow-[0_0_30px_rgba(200,40,40,0.25)]"
+                : "border-[#7a3030] bg-black/10"
             }`}
           >
-            <p className="text-3xl font-semibold text-white">Founding Partner</p>
-            <p className="mt-2 text-2xl text-[#ffcf9f]">
+            <p className="text-2xl font-bold text-white">Founding Partner</p>
+            <p className="mt-1 text-2xl font-bold text-white">
               {config.vendorPlans.foundingPartnerMonthly}
             </p>
-            <ul className="mt-3 space-y-2 text-sm text-white/74">
-              {config.vendorPlans.foundingPartnerBenefits.map((benefit) => (
-                <li key={benefit}>- {benefit}</li>
+            <ul className="mt-4 space-y-1.5 text-left text-sm text-white/70">
+              {config.vendorPlans.foundingPartnerBenefits.map((b) => (
+                <li key={b} className="flex items-start gap-2">
+                  <span className="mt-0.5">•</span>
+                  {b}
+                </li>
               ))}
             </ul>
           </button>
 
+          {/* Boost Placement */}
           <button
             type="button"
             onClick={() => {
@@ -798,149 +1036,300 @@ export function VendorSection({
                 planId: "boost_placement",
               });
             }}
-            className={`w-full rounded-[24px] border p-4 text-left ${
+            className={`w-full rounded-2xl border p-5 text-center transition ${
               selectedPlan === "boost_placement"
-                ? "border-[#ff9f7a] bg-[linear-gradient(180deg,rgba(58,20,10,0.95),rgba(28,7,4,0.98))] shadow-[0_0_26px_rgba(255,132,89,0.18)]"
-                : "border-white/10 bg-black/18"
+                ? "border-[#c03030] bg-[linear-gradient(180deg,rgba(120,15,15,0.7),rgba(60,5,5,0.85))] shadow-[0_0_30px_rgba(200,40,40,0.25)]"
+                : "border-[#7a3030] bg-black/10"
             }`}
           >
-            <p className="text-3xl font-semibold text-white">Boost Placement</p>
-            <p className="mt-2 text-2xl text-[#ffcf9f]">
-              {config.vendorPlans.boostPlacementOneTime}
+            <p className="text-xl font-bold text-white">Boost Placement</p>
+            <p className="mt-1 text-xl font-bold text-white">
+              One time {config.vendorPlans.boostPlacementOneTime}
             </p>
-            <ul className="mt-3 space-y-2 text-sm text-white/74">
-              {config.vendorPlans.boostPlacementBenefits.map((benefit) => (
-                <li key={benefit}>- {benefit}</li>
-              ))}
-            </ul>
+            <p className="mt-2 text-sm text-white/55">
+              {config.vendorPlans.boostPlacementBenefits[0]}
+            </p>
           </button>
-
-          <p className="text-center text-sm text-white/58">
-            No long-term contracts. Cancel anytime.
-          </p>
 
           <ActionButton
             onClick={() => void completeRegistration()}
             className="w-full"
-            disabled={isSubmitting}
+            disabled={isSubmitting || !selectedPlan}
           >
             Continue
           </ActionButton>
         </div>
-      ) : null}
+      )}
 
-      {step === "manual" ? (
-        <form
-          className="space-y-4"
-          onSubmit={(event: FormEvent<HTMLFormElement>) => {
-            event.preventDefault();
-            if (
-              !manual.businessName.trim() ||
-              !manual.fullName.trim() ||
-              !isEmailValid(manual.email) ||
-              !manual.businessAddress.trim()
-            ) {
-              setStatusMessage("Complete the required business fields before continuing.");
-              trackEvent(analyticsEvents.vendorManualAddValidationError);
-              return;
-            }
-
-            writeVendorDraft({
-              ...readVendorDraft(),
-              searchText: manual.businessName,
-              isManualEntry: true,
-            });
-            setEntryMode("manual");
-            setStep("location");
-            setStatusMessage(null);
-            trackEvent(analyticsEvents.vendorManualAddSubmitted, {
-              businessName: manual.businessName,
-            });
-            trackEvent(analyticsEvents.vendorManualAddCompleted, {
-              businessName: manual.businessName,
-            });
-            trackEvent(analyticsEvents.vendorLocationPromptViewed);
-          }}
-        >
-          <Field
-            label="Business Name"
-            value={manual.businessName}
-            placeholder="Sunset Grill"
-            onChange={(value) =>
-              setManual((current) => ({ ...current, businessName: value }))
-            }
-          />
-          <Field
-            label="Full Name"
-            value={manual.fullName}
-            placeholder="First Last"
-            onChange={(value) =>
-              setManual((current) => ({ ...current, fullName: value }))
-            }
-          />
-          <Field
-            label="Email"
-            type="email"
-            value={manual.email}
-            placeholder="name@email.com"
-            onChange={(value) =>
-              setManual((current) => ({ ...current, email: value }))
-            }
-          />
-          <Field
-            label="Phone (optional)"
-            value={manual.phone}
-            placeholder="(123) 456-7890"
-            onChange={(value) =>
-              setManual((current) => ({ ...current, phone: value }))
-            }
-          />
-          <Field
-            label="Business Address"
-            value={manual.businessAddress}
-            placeholder="2945 Westheimer Rd"
-            onChange={(value) =>
-              setManual((current) => ({ ...current, businessAddress: value }))
-            }
-          />
-          <Field
-            label="City, State, Zip"
-            value={manual.cityStateZip}
-            placeholder="Houston, TX 77008"
-            onChange={(value) =>
-              setManual((current) => ({ ...current, cityStateZip: value }))
-            }
-          />
-          <ActionButton type="submit" className="w-full">
-            Continue
-          </ActionButton>
-        </form>
-      ) : null}
-
-      {step === "success" ? (
-        <div className="space-y-6 text-center">
-          <div className="mx-auto flex h-28 w-28 items-center justify-center rounded-full border border-[#ff6666] bg-black/18 shadow-[0_0_26px_rgba(255,89,89,0.22)]">
-            <svg viewBox="0 0 24 24" className="h-14 w-14 text-[#ff6767]" fill="none" stroke="currentColor" strokeWidth="1.8">
-              <path d="m5 12 4 4L19 6" />
+      {/* ======== STEP: SUCCESS ======== */}
+      {step === "success" && (
+        <div className="mt-12 flex flex-col items-center text-center">
+          {/* Checkmark circle */}
+          <div className="flex h-40 w-40 items-center justify-center rounded-full border border-white/15 bg-white/5">
+            <svg
+              viewBox="0 0 24 24"
+              className="h-20 w-20 text-[#e83434]"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="m5 12 5 5L20 7" />
             </svg>
           </div>
+
+          <h3 className="mt-8 text-2xl font-semibold text-white">
+            Your business is live!
+          </h3>
+          <p className="mt-4 text-sm leading-relaxed text-white/50">
+            Customers can now discover your business through Genie. Check your
+            vendor dashboard for performance insights.
+          </p>
+
+          <div className="mt-8 w-full space-y-3">
+            <ActionButton
+              onClick={() => {
+                trackEvent(analyticsEvents.vendorSuccessContinueTapped);
+                setStep("dashboard");
+              }}
+              className="w-full"
+            >
+              View Dashboard
+            </ActionButton>
+            <ActionButton
+              onClick={() => {
+                trackEvent(analyticsEvents.vendorSuccessContinueTapped);
+                onContinueHome();
+              }}
+              variant="secondary"
+              className="w-full"
+            >
+              Back to Home
+            </ActionButton>
+          </div>
+        </div>
+      )}
+
+      {/* ======== STEP: DASHBOARD ======== */}
+      {step === "dashboard" && (
+        <div className="mt-6">
+          {isDashboardLoading && !dashboardMetrics ? (
+            <div className="flex min-h-[12rem] items-center justify-center">
+              <p className="text-sm text-white/45">Loading dashboard...</p>
+            </div>
+          ) : dashboardMetrics ? (
+            <div className="space-y-6">
+              {/* Metric cards grid */}
+              <div className="grid grid-cols-2 gap-3">
+                <StatCard
+                  label="Profile Views"
+                  value={dashboardMetrics.views}
+                  icon={
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12Z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                  }
+                />
+                <StatCard
+                  label="CTA Clicks"
+                  value={dashboardMetrics.clicks}
+                  icon={
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5" />
+                    </svg>
+                  }
+                />
+                <StatCard
+                  label="Saves"
+                  value={dashboardMetrics.saves}
+                  icon={
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.5-7 10-7 10Z" />
+                    </svg>
+                  }
+                />
+                <StatCard
+                  label="Genie Appearances"
+                  value={dashboardMetrics.genie_appearances}
+                  icon={
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M12 2L2 7l10 5 10-5-10-5Z" />
+                      <path d="M2 17l10 5 10-5" />
+                      <path d="M2 12l10 5 10-5" />
+                    </svg>
+                  }
+                />
+              </div>
+
+              {/* Quick actions */}
+              <div className="space-y-3">
+                <ActionButton
+                  onClick={() => {
+                    setStep("profile");
+                    setProfileMessage(null);
+                  }}
+                  className="w-full"
+                >
+                  Edit Business Profile
+                </ActionButton>
+                <ActionButton
+                  onClick={() => void loadDashboard()}
+                  variant="secondary"
+                  className="w-full"
+                  disabled={isDashboardLoading}
+                >
+                  {isDashboardLoading ? "Refreshing..." : "Refresh Metrics"}
+                </ActionButton>
+              </div>
+
+              {/* Insights summary */}
+              <div className="rounded-2xl border border-[#7a3030] bg-black/10 p-4">
+                <p className="text-sm font-medium text-white/70">Performance Summary</p>
+                <p className="mt-2 text-[13px] leading-relaxed text-white/45">
+                  Your business has been viewed{" "}
+                  <span className="text-white font-medium">
+                    {dashboardMetrics.views.toLocaleString()}
+                  </span>{" "}
+                  times and appeared in{" "}
+                  <span className="text-white font-medium">
+                    {dashboardMetrics.genie_appearances.toLocaleString()}
+                  </span>{" "}
+                  Genie recommendations.{" "}
+                  <span className="text-white font-medium">
+                    {dashboardMetrics.saves.toLocaleString()}
+                  </span>{" "}
+                  users saved your spot.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4 text-center">
+              <p className="text-sm text-white/50">
+                Could not load dashboard data.
+              </p>
+              <ActionButton
+                onClick={() => void loadDashboard()}
+                variant="secondary"
+                className="w-full"
+              >
+                Try again
+              </ActionButton>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ======== STEP: PROFILE EDIT ======== */}
+      {step === "profile" && (
+        <form
+          className="mt-6 space-y-4"
+          onSubmit={(e: FormEvent<HTMLFormElement>) => {
+            e.preventDefault();
+            void handleSaveProfile();
+          }}
+        >
+          <div>
+            <label className="mb-1.5 block text-[13px] font-medium text-white/55">
+              Business Description
+            </label>
+            <textarea
+              value={profileForm.description}
+              onChange={(e) =>
+                setProfileForm((c) => ({
+                  ...c,
+                  description: e.target.value,
+                }))
+              }
+              placeholder="An upscale poolside nightclub with craft cocktails..."
+              rows={3}
+              className="w-full resize-none rounded-2xl border border-[#7a3030] bg-transparent px-4 py-3 text-[15px] text-white placeholder:text-white/35 focus:border-[#e05050] focus:outline-none"
+            />
+          </div>
+
+          <VendorInput
+            value={profileForm.phone}
+            placeholder="Phone number"
+            onChange={(v) =>
+              setProfileForm((c) => ({ ...c, phone: v }))
+            }
+          />
+
+          <VendorInput
+            value={profileForm.website_url}
+            placeholder="Website URL"
+            type="url"
+            onChange={(v) =>
+              setProfileForm((c) => ({ ...c, website_url: v }))
+            }
+          />
+
+          <VendorInput
+            value={profileForm.reservation_url}
+            placeholder="Reservation URL (OpenTable, Resy, etc.)"
+            type="url"
+            onChange={(v) =>
+              setProfileForm((c) => ({ ...c, reservation_url: v }))
+            }
+          />
+
+          <VendorInput
+            value={profileForm.hours}
+            placeholder="Hours (e.g. Open Until 2 AM)"
+            onChange={(v) =>
+              setProfileForm((c) => ({ ...c, hours: v }))
+            }
+          />
+
+          <VendorInput
+            value={profileForm.image_primary_url}
+            placeholder="Primary image URL"
+            type="url"
+            onChange={(v) =>
+              setProfileForm((c) => ({ ...c, image_primary_url: v }))
+            }
+          />
+
+          <ActionButton
+            type="submit"
+            className="w-full"
+            disabled={isProfileSaving}
+          >
+            {isProfileSaving ? "Saving..." : "Save Profile"}
+          </ActionButton>
+
           <ActionButton
             onClick={() => {
-              trackEvent(analyticsEvents.vendorSuccessContinueTapped);
-              onContinueHome();
+              setStep("dashboard");
+              setProfileMessage(null);
             }}
+            variant="secondary"
             className="w-full"
           >
-            Continue
+            Back to Dashboard
           </ActionButton>
-        </div>
-      ) : null}
 
-      {statusMessage ? (
-        <div className="mt-5 rounded-[20px] border border-white/10 bg-black/18 px-4 py-3 text-sm leading-6 text-white/74">
+          {profileMessage && (
+            <div
+              className={`rounded-2xl border px-4 py-3 text-sm ${
+                profileMessage.includes("success")
+                  ? "border-green-700/40 text-green-400/80"
+                  : "border-white/10 text-white/65"
+              }`}
+            >
+              {profileMessage}
+            </div>
+          )}
+        </form>
+      )}
+
+      {/* Status message */}
+      {statusMessage && (
+        <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/65">
           {statusMessage}
         </div>
-      ) : null}
-    </SectionShell>
+      )}
+    </section>
   );
 }
