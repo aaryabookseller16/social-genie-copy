@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 import { updateApiStore } from "@/app/lib/server/apiStore";
@@ -9,18 +10,19 @@ export async function POST(request: NextRequest) {
     return errorResponse;
   }
 
-  const userFound = await updateApiStore((store) => {
+  const checkoutSessionId = await updateApiStore((store) => {
     const user = store.users.find((entry) => entry.id === auth.user.id);
     if (!user) {
-      return false;
+      return null;
     }
 
-    user.membership = "vibee";
-    user.subscription_status = "active";
-    return true;
+    const mockSessionId = `cs_test_${randomUUID().replace(/-/g, "")}`;
+    user.pending_checkout_session_id = mockSessionId;
+    user.pending_checkout_started_at = Date.now();
+    return mockSessionId;
   });
 
-  if (!userFound) {
+  if (!checkoutSessionId) {
     return NextResponse.json(
       { error: "User not found" },
       { status: 404 }
@@ -29,6 +31,7 @@ export async function POST(request: NextRequest) {
 
   const checkoutUrl = new URL("/", request.nextUrl.origin);
   checkoutUrl.searchParams.set("checkout", "success");
+  checkoutUrl.searchParams.set("session_id", checkoutSessionId);
 
   return NextResponse.json({
     checkout_url: checkoutUrl.toString(),

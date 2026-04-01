@@ -23,6 +23,7 @@ export async function POST(request: NextRequest) {
   const email = String(body.email ?? "").trim().toLowerCase();
   const phone = String(body.phone ?? "").trim();
   const password = String(body.password ?? "");
+  const sessionToken = String(body.session_token ?? "").trim();
 
   if (!firstName || !lastName || !email || !password) {
     return NextResponse.json(
@@ -56,12 +57,36 @@ export async function POST(request: NextRequest) {
       password_hash: hashPassword(password),
       membership: "free" as const,
       subscription_status: "inactive" as const,
+      pending_checkout_session_id: null,
+      pending_checkout_started_at: null,
       saved_venue_ids: [] as number[],
       vendor_id: null,
       created_at: Date.now(),
     };
 
     store.users.push(user);
+
+    // When a guest signs up, re-associate any pre-signup analytics events for
+    // the same session token to this newly created user.
+    if (sessionToken) {
+      for (const event of store.analytics) {
+        if (event.user_id) {
+          continue;
+        }
+
+        const eventSessionToken = event.metadata?.session_token;
+        const eventSessionId = event.metadata?.session_id;
+        const matchedToken =
+          (typeof eventSessionToken === "string" && eventSessionToken) ||
+          (typeof eventSessionId === "string" && eventSessionId) ||
+          "";
+
+        if (matchedToken === sessionToken) {
+          event.user_id = user.id;
+        }
+      }
+    }
+
     const token = createAuthToken({ user_id: user.id });
 
     return {

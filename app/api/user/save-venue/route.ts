@@ -28,13 +28,14 @@ export async function POST(request: NextRequest) {
       return;
     }
 
-    if (!user.saved_venue_ids.includes(venueId)) {
+    const wasAlreadySaved = user.saved_venue_ids.includes(venueId);
+    if (!wasAlreadySaved) {
       user.saved_venue_ids.unshift(venueId);
-    }
 
-    const vendor = findStoredVendorByVenueId(store, venueId);
-    if (vendor) {
-      vendor.dashboard.saves += 1;
+      const vendor = findStoredVendorByVenueId(store, venueId);
+      if (vendor) {
+        vendor.dashboard.saves += 1;
+      }
     }
   });
 

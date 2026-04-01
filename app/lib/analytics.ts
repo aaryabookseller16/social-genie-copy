@@ -17,9 +17,22 @@ function getSessionId() {
   return readSessionToken() || undefined;
 }
 
+function getVenueIdFromData(data?: Record<string, unknown>) {
+  if (!data) {
+    return undefined;
+  }
+
+  const candidate = data.venue_id ?? data.venueId;
+  const parsed = Number(candidate);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 async function sendToBackend(payload: AnalyticsPayload) {
+  const venueId = getVenueIdFromData(payload.data);
+
   void trackAnalyticsEvent({
     event: payload.event,
+    venue_id: venueId,
     metadata: {
       timestamp: payload.timestamp,
       session_id: payload.sessionId,

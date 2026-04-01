@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { SinglePageGenieApp } from "../components/SinglePageGenieApp";
 
 export default function SavedPage() {
-  redirect("/");
+  return <SinglePageGenieApp initialScreen="saved" />;
 }

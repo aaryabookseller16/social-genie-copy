@@ -166,7 +166,7 @@ export function AccountSection({
       });
 
       if (membership === "vibee") {
-        const provisionalAccount = persistAuthSession(token, user, "active");
+        const provisionalAccount = persistAuthSession(token, user, "inactive");
         onAccountChange(provisionalAccount, "Redirecting to secure checkout...");
         trackEvent(eventMap.submit, { membership, email: provisionalAccount.email });
 

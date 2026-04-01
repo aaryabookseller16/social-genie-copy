@@ -16,6 +16,8 @@ export type StoredUser = {
   password_hash: string;
   membership: "free" | "vibee";
   subscription_status: SubscriptionStatus;
+  pending_checkout_session_id?: string | null;
+  pending_checkout_started_at?: number | null;
   saved_venue_ids: number[];
   vendor_id?: number | null;
   created_at: number;

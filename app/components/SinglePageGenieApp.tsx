@@ -46,6 +46,7 @@ import {
   fetchCurrentUser,
   fetchSavedVenues,
   fetchSubscriptionStatus,
+  fetchSubscriptionStatusForSession,
   saveVenueForUser,
   syncSavedVenueIds,
   toConsumerAccount,
@@ -163,7 +164,15 @@ function buildStaticMapUrl(venue: GenieVenue) {
   return `https://maps.googleapis.com/maps/api/staticmap?center=${encodedLocation}&zoom=15&size=1200x720&scale=2&markers=color:0xff4f4f%7C${encodedLocation}&key=${apiKey}`;
 }
 
-export function SinglePageGenieApp() {
+type SinglePageGenieAppProps = {
+  initialScreen?: FlowAnchor;
+  initialVenueId?: string | null;
+};
+
+export function SinglePageGenieApp({
+  initialScreen = "home",
+  initialVenueId = null,
+}: SinglePageGenieAppProps = {}) {
   const config = getRuntimeConfig();
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const hasTrackedTypingRef = useRef(false);
@@ -182,7 +191,7 @@ export function SinglePageGenieApp() {
   const savedRef = useRef<HTMLElement | null>(null);
   const accountRef = useRef<HTMLElement | null>(null);
   const vendorRef = useRef<HTMLElement | null>(null);
-  const [activeScreen, setActiveScreen] = useState<FlowAnchor>("home");
+  const [activeScreen, setActiveScreen] = useState<FlowAnchor>(initialScreen);
   const [detailReturnScreen, setDetailReturnScreen] = useState<
     "decision" | "more" | "saved"
   >("decision");
@@ -193,7 +202,9 @@ export function SinglePageGenieApp() {
   const [response, setResponse] = useState<GenieResponseEnvelope | null>(null);
   const [savedVenueIds, setSavedVenueIds] = useState<string[]>([]);
   const [savedVenues, setSavedVenues] = useState<GenieVenue[]>([]);
-  const [selectedVenueId, setSelectedVenueId] = useState<string | null>(null);
+  const [selectedVenueId, setSelectedVenueId] = useState<string | null>(
+    initialVenueId ? String(initialVenueId) : null
+  );
   const [account, setAccount] = useState<ConsumerAccount | null>(null);
   const [isAuthChecked, setIsAuthChecked] = useState(false);
   const [mapPreviewFailed, setMapPreviewFailed] = useState(false);
@@ -656,6 +667,20 @@ export function SinglePageGenieApp() {
   }, [selectedVenueId]);
 
   useEffect(() => {
+    if (
+      activeScreen !== "detail" ||
+      !selectedVenueId ||
+      selectedVenue ||
+      !isAuthChecked
+    ) {
+      return;
+    }
+
+    setStatusMessage("That venue was not found. Try searching again.");
+    setActiveScreen("home");
+  }, [activeScreen, isAuthChecked, selectedVenue, selectedVenueId]);
+
+  useEffect(() => {
     const media = window.matchMedia("(display-mode: standalone)");
     setIsStandalone(media.matches);
 
@@ -667,6 +692,82 @@ export function SinglePageGenieApp() {
     window.addEventListener("beforeinstallprompt", handler);
     return () => window.removeEventListener("beforeinstallprompt", handler);
   }, []);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const checkoutState = url.searchParams.get("checkout");
+    const sessionId = url.searchParams.get("session_id");
+    if (!checkoutState && !sessionId) {
+      return;
+    }
+
+    const clearCheckoutParams = () => {
+      url.searchParams.delete("checkout");
+      url.searchParams.delete("session_id");
+      const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+      window.history.replaceState({}, "", nextUrl);
+    };
+
+    if (checkoutState === "cancel") {
+      trackEvent(analyticsEvents.vibeeCheckoutCancelled, {
+        sessionId: sessionId ?? undefined,
+      });
+      setStatusMessage("Checkout was cancelled. You can try again any time.");
+      clearCheckoutParams();
+      return;
+    }
+
+    if (checkoutState !== "success" && !sessionId) {
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        if (!readAuthToken()) {
+          return;
+        }
+
+        const subscription = sessionId
+          ? await fetchSubscriptionStatusForSession(sessionId)
+          : await fetchSubscriptionStatus();
+
+        if (cancelled) {
+          return;
+        }
+
+        if (subscription.status === "active") {
+          setStatusMessage("Your V.I.Bee membership is active.");
+          trackEvent(analyticsEvents.vibeeCheckoutCompleted, {
+            sessionId: sessionId ?? undefined,
+          });
+        } else {
+          setStatusMessage(
+            "Checkout completed. Your membership is still syncing."
+          );
+        }
+
+        await hydrateAuthenticatedSession();
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        console.error("Failed to confirm checkout status", error);
+        setStatusMessage(
+          "We could not confirm your checkout yet. Pull to refresh shortly."
+        );
+      } finally {
+        if (!cancelled) {
+          clearCheckoutParams();
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrateAuthenticatedSession]);
 
   useEffect(() => {
     if (queryCount >= 2) {

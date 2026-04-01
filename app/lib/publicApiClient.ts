@@ -139,8 +139,14 @@ export async function fetchCurrentUser() {
 
 export async function fetchSubscriptionStatus() {
   requireAuthToken();
+  return apiJson<{ status: ConsumerSubscriptionStatus }>("/api/subscription/status");
+}
+
+export async function fetchSubscriptionStatusForSession(sessionId: string) {
+  requireAuthToken();
+  const params = new URLSearchParams({ session_id: sessionId });
   return apiJson<{ status: ConsumerSubscriptionStatus }>(
-    "/api/subscription/status"
+    `/api/subscription/status?${params.toString()}`
   );
 }
 
@@ -268,25 +274,36 @@ export function persistSessionState(payload: {
 
 export async function trackAnalyticsEvent(payload: {
   event: string;
-  venue_id?: number;
+  venue_id?: number | string;
   metadata?: Record<string, unknown>;
 }) {
   const token = readAuthToken();
+  if (!token) {
+    // /analytics/track is an authenticated endpoint. Skip guest submissions.
+    return;
+  }
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,
   };
 
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
+  const metadata = payload.metadata ?? {};
+  const venueIdCandidate =
+    payload.venue_id ??
+    metadata.venue_id ??
+    metadata.venueId;
+  const parsedVenueId = Number(venueIdCandidate);
+  const venueId = Number.isFinite(parsedVenueId) ? parsedVenueId : undefined;
 
   await fetch("/api/analytics/track", {
     method: "POST",
     headers,
     body: JSON.stringify({
-      ...payload,
+      event: payload.event,
+      venue_id: venueId,
       metadata: {
-        ...(payload.metadata ?? {}),
+        ...metadata,
         session_token: readSessionToken() || undefined,
       },
     }),

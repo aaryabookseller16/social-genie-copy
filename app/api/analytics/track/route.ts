@@ -5,21 +5,18 @@ import {
   nextStoreId,
   updateApiStore,
 } from "@/app/lib/server/apiStore";
-import { getAuthenticatedUser } from "@/app/lib/server/requestAuth";
+import { requireAuthenticatedUser } from "@/app/lib/server/requestAuth";
 
 function bumpVendorMetrics(
   event: string,
-  venueId: number | null,
   vendor: ReturnType<typeof findStoredVendorByVenueId>
 ) {
   if (!vendor) {
     return;
   }
 
+  // Dashboard "clicks" tracks CTA interactions only (call/reserve/share).
   if (
-    event === "venue_click" ||
-    event === "decision_card_tapped" ||
-    event === "more_nearby_card_tapped" ||
     event === "call_click" ||
     event === "reserve_click" ||
     event === "vendor_share_tap"
@@ -41,13 +38,15 @@ function bumpVendorMetrics(
     vendor.dashboard.genie_appearances += 1;
   }
 
-  if ((event === "save_click" || event === "venue_saved") && venueId) {
-    vendor.dashboard.saves += 1;
-  }
+  // "saves" is mutated by /user/save-venue after a successful save operation.
+  // Avoid incrementing from analytics events to prevent duplicate counts.
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await getAuthenticatedUser(request);
+  const { auth, errorResponse } = await requireAuthenticatedUser(request);
+  if (!auth) {
+    return errorResponse;
+  }
 
   const body = (await request.json().catch(() => ({}))) as Record<
     string,
@@ -59,6 +58,12 @@ export async function POST(request: NextRequest) {
     typeof body.metadata === "object" && body.metadata
       ? (body.metadata as Record<string, unknown>)
       : undefined;
+  const metadataVenueId = metadata
+    ? (metadata.venue_id ?? metadata.venueId)
+    : undefined;
+  const resolvedVenueId = Number(
+    Number.isFinite(venueId) ? venueId : metadataVenueId
+  );
 
   if (!event) {
     return NextResponse.json({ error: "event is required" }, { status: 400 });
@@ -68,16 +73,19 @@ export async function POST(request: NextRequest) {
     store.analytics.push({
       id: nextStoreId(store, "analytics"),
       event,
-      user_id: auth?.user.id,
-      venue_id: Number.isFinite(venueId) ? venueId : undefined,
+      user_id: auth.user.id,
+      venue_id: Number.isFinite(resolvedVenueId) ? resolvedVenueId : undefined,
       metadata,
       timestamp: Date.now(),
     });
 
-    const vendor = Number.isFinite(venueId)
-      ? findStoredVendorByVenueId(store, venueId)
+    const vendor = Number.isFinite(resolvedVenueId)
+      ? findStoredVendorByVenueId(store, resolvedVenueId)
       : undefined;
-    bumpVendorMetrics(event, Number.isFinite(venueId) ? venueId : null, vendor);
+    bumpVendorMetrics(
+      event,
+      vendor
+    );
   });
 
   return NextResponse.json({ success: true });

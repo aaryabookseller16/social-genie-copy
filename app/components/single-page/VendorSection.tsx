@@ -4,7 +4,6 @@ import {
   type FormEvent,
   type RefObject,
   useCallback,
-  useDeferredValue,
   useEffect,
   useState,
 } from "react";
@@ -38,6 +37,7 @@ type VendorStep =
   | "not-found"
   | "match"
   | "contact"
+  | "location"
   | "plan"
   | "success"
   | "manual"
@@ -53,6 +53,8 @@ type VendorContactState = {
 
 type VendorManualState = {
   businessName: string;
+  address: string;
+  cityStateZip: string;
   firstName: string;
   lastName: string;
   email: string;
@@ -100,6 +102,8 @@ function createManualState(
 ): VendorManualState {
   return {
     businessName: searchText,
+    address: "",
+    cityStateZip: "Houston, TX",
     firstName: account?.firstName ?? "",
     lastName: account?.lastName ?? "",
     email: account?.email ?? "",
@@ -212,7 +216,6 @@ export function VendorSection({
   const [searchInput, setSearchInput] = useState(
     () => initialDraft.searchText ?? ""
   );
-  const deferredSearch = useDeferredValue(searchInput);
   const [suggestions, setSuggestions] = useState<GenieVenue[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [candidate, setCandidate] = useState<GenieVenue | null>(null);
@@ -231,6 +234,11 @@ export function VendorSection({
     initialDraft.selectedPlanId === "founding_partner" ||
     initialDraft.selectedPlanId === "boost_placement"
       ? initialDraft.selectedPlanId
+      : null
+  );
+  const [locationEnabled, setLocationEnabled] = useState<boolean | null>(
+    typeof initialDraft.locationEnabled === "boolean"
+      ? initialDraft.locationEnabled
       : null
   );
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -254,6 +262,7 @@ export function VendorSection({
     match: 1,
     contact: 2,
     manual: 2,
+    location: 3,
     plan: 3,
     success: 4,
     dashboard: 4,
@@ -286,6 +295,14 @@ export function VendorSection({
     if (!visible || !account || step !== "claim") return;
     trackEvent(analyticsEvents.vendorClaimStarted);
   }, [account, step, visible]);
+
+  useEffect(() => {
+    if (!visible || step !== "location") {
+      return;
+    }
+
+    trackEvent(analyticsEvents.vendorLocationPromptViewed);
+  }, [step, visible]);
 
   /* Auto-redirect to dashboard if vendor already registered */
   useEffect(() => {
@@ -333,7 +350,7 @@ export function VendorSection({
       !visible ||
       !account ||
       step !== "claim" ||
-      deferredSearch.trim().length < 2
+      searchInput.trim().length < 2
     ) {
       setSuggestions([]);
       setIsSearching(false);
@@ -342,30 +359,32 @@ export function VendorSection({
 
     let cancelled = false;
     setIsSearching(true);
-
-    void (async () => {
-      try {
-        const results = await searchVendorBusinesses(deferredSearch.trim());
-        if (cancelled) return;
-        setSuggestions(results);
-        setIsSearching(false);
-        if (results.length) {
-          trackEvent(analyticsEvents.vendorBusinessSuggestionShown, {
-            searchText: deferredSearch,
-            suggestionCount: results.length,
-          });
+    const timeout = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const results = await searchVendorBusinesses(searchInput.trim());
+          if (cancelled) return;
+          setSuggestions(results);
+          setIsSearching(false);
+          if (results.length) {
+            trackEvent(analyticsEvents.vendorBusinessSuggestionShown, {
+              searchText: searchInput,
+              suggestionCount: results.length,
+            });
+          }
+        } catch {
+          if (cancelled) return;
+          setSuggestions([]);
+          setIsSearching(false);
         }
-      } catch {
-        if (cancelled) return;
-        setSuggestions([]);
-        setIsSearching(false);
-      }
-    })();
+      })();
+    }, 300);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(timeout);
     };
-  }, [account, deferredSearch, step, visible]);
+  }, [account, searchInput, step, visible]);
 
   /* ---- Early returns ---- */
 
@@ -424,6 +443,9 @@ export function VendorSection({
         setStep("not-found");
         break;
       case "plan":
+        setStep("location");
+        break;
+      case "location":
         setStep(entryMode === "manual" ? "manual" : "contact");
         break;
       case "success":
@@ -510,10 +532,15 @@ export function VendorSection({
           full_name: `${manual.firstName} ${manual.lastName}`.trim(),
           email: manual.email.trim(),
           phone: manual.phone.trim() || undefined,
-          address: manual.businessName.trim(),
-          city_state_zip: "Houston, TX",
+          address: manual.address.trim(),
+          city_state_zip: manual.cityStateZip.trim() || undefined,
           is_manual_entry: true,
           selected_plan_id: selectedPlan,
+          location_enabled:
+            locationEnabled === null ? undefined : locationEnabled,
+        });
+        trackEvent(analyticsEvents.vendorManualAddCompleted, {
+          businessName: manual.businessName.trim(),
         });
       } else if (candidate) {
         await claimVendorBusiness({
@@ -522,6 +549,8 @@ export function VendorSection({
           email: contact.email.trim(),
           phone: contact.phone.trim() || undefined,
           selected_plan_id: selectedPlan,
+          location_enabled:
+            locationEnabled === null ? undefined : locationEnabled,
         });
       }
 
@@ -542,6 +571,50 @@ export function VendorSection({
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const continueToPlan = (enabled: boolean) => {
+    setLocationEnabled(enabled);
+    writeVendorDraft({
+      ...readVendorDraft(),
+      locationEnabled: enabled,
+    });
+    setStep("plan");
+    trackEvent(analyticsEvents.vendorPlanScreenViewed);
+  };
+
+  const handleEnableLocation = () => {
+    if (!("geolocation" in navigator)) {
+      trackEvent(analyticsEvents.vendorLocationDenied, {
+        reason: "unsupported",
+      });
+      setStatusMessage(
+        "Location services are unavailable on this device. Continuing without location."
+      );
+      continueToPlan(false);
+      return;
+    }
+
+    setIsSubmitting(true);
+    setStatusMessage(null);
+    navigator.geolocation.getCurrentPosition(
+      () => {
+        setIsSubmitting(false);
+        trackEvent(analyticsEvents.vendorLocationEnabled);
+        continueToPlan(true);
+      },
+      (error) => {
+        setIsSubmitting(false);
+        trackEvent(analyticsEvents.vendorLocationDenied, {
+          reason: error.code,
+        });
+        setStatusMessage(
+          "Location access was denied. You can continue without location."
+        );
+        continueToPlan(false);
+      },
+      { enableHighAccuracy: false, timeout: 8000 }
+    );
   };
 
   const handleSaveProfile = async () => {
@@ -586,8 +659,9 @@ export function VendorSection({
     match: "Select your business",
     contact: "Your contact info",
     manual: "Add your business",
+    location: "Share your location (optional)",
     plan: "Choose your plan",
-    success: "Choose your plan",
+    success: "Submission received",
     dashboard: "Vendor Dashboard",
     profile: "Edit Profile",
   };
@@ -719,7 +793,7 @@ export function VendorSection({
           )}
 
           {/* Helper text or searching state */}
-          {isSearching && deferredSearch.trim().length >= 2 ? (
+          {isSearching && searchInput.trim().length >= 2 ? (
             <p className="text-center text-sm text-white/45">Searching...</p>
           ) : suggestions.length === 0 ? (
             <p className="text-sm text-white/45">
@@ -862,11 +936,10 @@ export function VendorSection({
               return;
             }
             setStatusMessage(null);
-            setStep("plan");
+            setStep("location");
             trackEvent(analyticsEvents.vendorContactInfoCompleted, {
               email: contact.email,
             });
-            trackEvent(analyticsEvents.vendorPlanScreenViewed);
           }}
         >
           <VendorInput
@@ -915,6 +988,7 @@ export function VendorSection({
             e.preventDefault();
             if (
               !manual.businessName.trim() ||
+              !manual.address.trim() ||
               !manual.firstName.trim() ||
               !manual.lastName.trim() ||
               !isEmailValid(manual.email)
@@ -932,14 +1006,10 @@ export function VendorSection({
             });
             setEntryMode("manual");
             setStatusMessage(null);
-            setStep("plan");
+            setStep("location");
             trackEvent(analyticsEvents.vendorManualAddSubmitted, {
               businessName: manual.businessName,
             });
-            trackEvent(analyticsEvents.vendorManualAddCompleted, {
-              businessName: manual.businessName,
-            });
-            trackEvent(analyticsEvents.vendorPlanScreenViewed);
           }}
         >
           <VendorInput
@@ -947,6 +1017,20 @@ export function VendorSection({
             placeholder="Business Name"
             onChange={(v) =>
               setManual((c) => ({ ...c, businessName: v }))
+            }
+          />
+          <VendorInput
+            value={manual.address}
+            placeholder="Business Address"
+            onChange={(v) =>
+              setManual((c) => ({ ...c, address: v }))
+            }
+          />
+          <VendorInput
+            value={manual.cityStateZip}
+            placeholder="City, State ZIP"
+            onChange={(v) =>
+              setManual((c) => ({ ...c, cityStateZip: v }))
             }
           />
           <VendorInput
@@ -985,6 +1069,36 @@ export function VendorSection({
             Next
           </ActionButton>
         </form>
+      )}
+
+      {/* ======== STEP: LOCATION PROMPT ======== */}
+      {step === "location" && (
+        <div className="mt-8 space-y-4">
+          <div className="rounded-2xl border border-[#7a3030] bg-black/10 p-4 text-sm leading-relaxed text-white/65">
+            Enable location so Genie can better match nearby customers to your
+            business. You can skip this and continue.
+          </div>
+
+          <ActionButton
+            onClick={handleEnableLocation}
+            className="w-full"
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? "Checking location..." : "Enable location"}
+          </ActionButton>
+
+          <ActionButton
+            onClick={() => {
+              trackEvent(analyticsEvents.vendorLocationSkipped);
+              continueToPlan(false);
+            }}
+            variant="secondary"
+            className="w-full"
+            disabled={isSubmitting}
+          >
+            Skip for now
+          </ActionButton>
+        </div>
       )}
 
       {/* ======== STEP: PLAN ======== */}
@@ -1080,11 +1194,11 @@ export function VendorSection({
           </div>
 
           <h3 className="mt-8 text-2xl font-semibold text-white">
-            Your business is live!
+            Your submission is in review
           </h3>
           <p className="mt-4 text-sm leading-relaxed text-white/50">
-            Customers can now discover your business through Genie. Check your
-            vendor dashboard for performance insights.
+            We received your registration and will verify your business details
+            before going live. You can still open your dashboard and profile.
           </p>
 
           <div className="mt-8 w-full space-y-3">
