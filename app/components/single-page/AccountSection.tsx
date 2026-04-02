@@ -264,28 +264,26 @@ export function AccountSection({
         title={
           mode === "free"
             ? "Create your Free Account"
-            : "Create your V.I.Bee membership"
+            : "Create your V.I. Bee Membership"
         }
         subtitle="Takes just 30 seconds"
       >
         <form
           onSubmit={(event) => void submitSignup(event, membership)}
-          className="space-y-4"
+          className="space-y-3"
         >
-          <div className="grid grid-cols-2 gap-3">
-            <Field
-              label="First Name"
-              value={form.firstName}
-              placeholder="First"
-              onChange={(value) => setForm((current) => ({ ...current, firstName: value }))}
-            />
-            <Field
-              label="Last Name"
-              value={form.lastName}
-              placeholder="Last"
-              onChange={(value) => setForm((current) => ({ ...current, lastName: value }))}
-            />
-          </div>
+          <Field
+            label="First Name"
+            value={form.firstName}
+            placeholder="First Name"
+            onChange={(value) => setForm((current) => ({ ...current, firstName: value }))}
+          />
+          <Field
+            label="Last Name"
+            value={form.lastName}
+            placeholder="Last Name"
+            onChange={(value) => setForm((current) => ({ ...current, lastName: value }))}
+          />
           <Field
             label="Email"
             type="email"
@@ -299,6 +297,7 @@ export function AccountSection({
             placeholder="Phone (optional)"
             onChange={(value) => setForm((current) => ({ ...current, phone: value }))}
           />
+          <p className="text-xs text-white/46">For updates and confirmations</p>
           <Field
             label="Password"
             type="password"
@@ -306,28 +305,34 @@ export function AccountSection({
             placeholder="Password"
             onChange={(value) => setForm((current) => ({ ...current, password: value }))}
           />
-          <p className="text-xs text-white/46">For updates and confirmations</p>
-          <label className="flex items-center gap-3 text-sm text-white/72">
+          <label className="flex cursor-pointer items-center gap-3 text-sm text-white/72">
             <input
               type="checkbox"
               checked={form.consent}
               onChange={(event) =>
                 setForm((current) => ({ ...current, consent: event.target.checked }))
               }
+              className="h-4 w-4 rounded border-[#b74c4c] accent-[#e83434]"
             />
-            I agree to the Terms and Privacy Policy
+            I agree to the{" "}
+            <span className="text-[#ff8080] underline">Terms</span> and{" "}
+            <span className="text-[#ff8080] underline">Privacy Policy</span>
           </label>
           {mode === "vibee" ? (
             <div className="rounded-[18px] border border-white/10 bg-black/18 px-4 py-3 text-center text-sm text-white/72">
-              V.I.Bee Member - {config.vibeeMonthlyPrice}
+              V.I.Bee Member — {config.vibeeMonthlyPrice}
             </div>
           ) : null}
           <ActionButton type="submit" className="w-full" disabled={isSubmitting}>
-            {mode === "free" ? "Ask Genie" : "Continue to Secure Checkout"}
+            {isSubmitting
+              ? "Please wait..."
+              : mode === "free"
+              ? "Ask Genie"
+              : "Continue to Secure Checkout"}
           </ActionButton>
           <p className="text-center text-xs text-white/42">
             {mode === "vibee"
-              ? "Powered by Stripe - Cancel anytime. Renews monthly until canceled. Terms Privacy"
+              ? "Powered by Stripe — Cancel anytime. Renews monthly until cancelled. Terms Privacy"
               : "By signing up, you agree to our Terms and Privacy Policy."}
           </p>
         </form>
@@ -405,16 +410,27 @@ export function AccountSection({
           ? account.membership === "vibee"
             ? "Your V.I.Bee membership is active. Keep exploring and vendor onboarding is unlocked below."
             : "Your free account is active. Upgrade any time or keep asking, saving, and browsing."
-          : "Sign up so I can connect you to your vibe, favorite food, social spaces, and more."
+          : "Sign up so I can get you connected to your vibe, favorite food, social spaces, and more!"
       }
     >
       {!account ? (
         <div className="space-y-3">
+          {/* Free tier */}
           <div className="rounded-[24px] border border-[#8d3535] bg-black/18 p-4">
-            <p className="text-2xl font-semibold text-white">Get started for free</p>
+            <div className="flex items-center gap-2">
+              <span className="rounded-md bg-[#e83434] px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider text-white">
+                FREE
+              </span>
+              <p className="text-[17px] font-semibold text-white">
+                Get started for free
+              </p>
+            </div>
             <ul className="mt-3 space-y-2 text-sm text-white/74">
               {config.freeBenefits.map((benefit) => (
-                <li key={benefit}>- {benefit}</li>
+                <li key={benefit} className="flex items-center gap-2">
+                  <span className="text-[#e83434]">✓</span>
+                  {benefit}
+                </li>
               ))}
             </ul>
             <ActionButton onClick={openFreeSignup} className="mt-4 w-full">
@@ -422,12 +438,24 @@ export function AccountSection({
             </ActionButton>
           </div>
 
+          {/* V.I.Bee tier */}
           <div className="rounded-[24px] border border-[#8d3535] bg-black/18 p-4">
-            <p className="text-2xl font-semibold text-white">Become a V.I.Bee</p>
-            <p className="mt-1 text-lg text-[#ffcd8e]">{config.vibeeMonthlyPrice}</p>
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <p className="text-[17px] font-semibold text-white">
+                  Become a V.I.Bee
+                </p>
+                <p className="mt-0.5 text-[15px] font-semibold text-[#ffcd8e]">
+                  {config.vibeeMonthlyPrice}
+                </p>
+              </div>
+            </div>
             <ul className="mt-3 space-y-2 text-sm text-white/74">
               {config.vibeeBenefits.map((benefit) => (
-                <li key={benefit}>- {benefit}</li>
+                <li key={benefit} className="flex items-center gap-2">
+                  <span className="text-[#e83434]">✓</span>
+                  {benefit}
+                </li>
               ))}
             </ul>
             <ActionButton onClick={openVibeeSignup} className="mt-4 w-full">
@@ -435,8 +463,9 @@ export function AccountSection({
             </ActionButton>
           </div>
 
+          {/* Vendor CTA */}
           <div className="rounded-[24px] border border-white/10 bg-black/18 p-4">
-            <p className="text-sm uppercase tracking-[0.26em] text-white/34">
+            <p className="text-[13px] uppercase tracking-[0.2em] text-white/40">
               Are you a venue or event host?
             </p>
             <ActionButton
@@ -444,7 +473,7 @@ export function AccountSection({
                 trackEvent(analyticsEvents.vendorSignupCtaTapped);
                 onOpenVendor();
               }}
-              className="mt-4 w-full"
+              className="mt-3 w-full"
             >
               Sign Up as a Vendor &gt;
             </ActionButton>
@@ -460,7 +489,7 @@ export function AccountSection({
               onClick={openLogin}
               className="font-semibold text-white underline underline-offset-2"
             >
-              Log In
+              Login
             </button>
           </p>
         </div>

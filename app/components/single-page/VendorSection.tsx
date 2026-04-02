@@ -229,10 +229,11 @@ export function VendorSection({
     initialDraft.isManualEntry ? "manual" : "match"
   );
   const [selectedPlan, setSelectedPlan] = useState<
-    "founding_partner" | "boost_placement" | null
+    "basic" | "pro" | "boost" | null
   >(() =>
-    initialDraft.selectedPlanId === "founding_partner" ||
-    initialDraft.selectedPlanId === "boost_placement"
+    initialDraft.selectedPlanId === "basic" ||
+    initialDraft.selectedPlanId === "pro" ||
+    initialDraft.selectedPlanId === "boost"
       ? initialDraft.selectedPlanId
       : null
   );
@@ -396,22 +397,22 @@ export function VendorSection({
         ref={sectionRef}
         className="relative min-h-screen overflow-hidden px-5 pb-32 pt-14"
       >
-        <h2 className="text-center text-2xl font-semibold text-white">
-          Sign in to claim your business
+        <h2 className="text-center text-[1.65rem] font-semibold leading-tight text-white">
+          Claim your business on Genie
         </h2>
-        <p className="mt-3 text-center text-sm text-white/60">
-          Create an account first, then come back here to list your business.
+        <p className="mt-3 text-center text-[15px] leading-relaxed text-white/55">
+          Get discovered by people looking for spots like yours.
         </p>
         <div className="mt-8 space-y-3">
           <ActionButton onClick={onOpenAccount} className="w-full">
-            Open account screen
+            Create Account to Get Started
           </ActionButton>
           <ActionButton
             onClick={onContinueHome}
             variant="secondary"
             className="w-full"
           >
-            Back to home
+            Back to Home
           </ActionButton>
         </div>
       </section>
@@ -653,15 +654,18 @@ export function VendorSection({
   /* ---- Step title ---- */
 
   const stepTitle: Record<VendorStep, string> = {
-    claim: "Claim your business on Genie",
+    claim:
+      searchInput.trim().length >= 2
+        ? "Select your business"
+        : "Claim your business on Genie",
     finding: "Select your business",
     "not-found": "Select your business",
     match: "Select your business",
     contact: "Your contact info",
     manual: "Add your business",
-    location: "Share your location (optional)",
+    location: "Share your location",
     plan: "Choose your plan",
-    success: "Submission received",
+    success: "",
     dashboard: "Vendor Dashboard",
     profile: "Edit Profile",
   };
@@ -701,14 +705,16 @@ export function VendorSection({
       </div>
 
       {/* Step title */}
-      <h2 className="mb-1 text-center text-[1.65rem] font-semibold leading-tight text-white">
-        {stepTitle[step]}
-      </h2>
+      {stepTitle[step] ? (
+        <h2 className="mb-1 text-center text-[1.65rem] font-semibold leading-tight text-white">
+          {stepTitle[step]}
+        </h2>
+      ) : null}
 
-      {/* Subtitle only on claim screen */}
-      {step === "claim" && (
-        <p className="mb-6 text-center text-[15px] leading-relaxed text-white/55">
-          Get discovered by people looking{"\n"}for spots like yours.
+      {/* Subtitle only on claim screen when no input */}
+      {step === "claim" && searchInput.trim().length < 2 && (
+        <p className="mb-6 mt-2 text-center text-[15px] leading-relaxed text-white/55">
+          Get discovered by people looking for spots like yours.
         </p>
       )}
 
@@ -728,9 +734,9 @@ export function VendorSection({
 
       {/* ======== STEP: CLAIM (initial search) ======== */}
       {step === "claim" && (
-        <div className="mt-5 space-y-3">
+        <div className="mt-5 space-y-2">
           {/* Search box */}
-          <div className="flex items-center gap-3 rounded-2xl border border-[#7a3030] px-4 py-3">
+          <div className="flex items-center gap-3 rounded-2xl border border-[#7a3030] bg-black/20 px-4 py-3.5">
             <svg
               viewBox="0 0 24 24"
               className="h-5 w-5 flex-none text-white/40"
@@ -757,14 +763,15 @@ export function VendorSection({
                 }
               }}
               placeholder="Search your business name"
+              autoFocus
               className="min-w-0 flex-1 bg-transparent text-[15px] text-white placeholder:text-white/35 focus:outline-none"
             />
           </div>
 
-          {/* Live suggestions */}
+          {/* Live suggestions dropdown */}
           {suggestions.length > 0 && (
-            <div>
-              {suggestions.map((venue) => (
+            <div className="overflow-hidden rounded-2xl border border-[#7a3030] bg-black/20">
+              {suggestions.map((venue, idx) => (
                 <button
                   key={`sug-${venue.id}`}
                   type="button"
@@ -779,12 +786,16 @@ export function VendorSection({
                     );
                     void runSearch(venue.venue_name);
                   }}
-                  className="w-full border-b border-white/10 px-1 py-3 text-left last:border-b-0"
+                  className={`w-full px-4 py-3.5 text-left transition hover:bg-white/5 ${
+                    idx < suggestions.length - 1
+                      ? "border-b border-white/8"
+                      : ""
+                  }`}
                 >
                   <p className="text-[15px] font-medium text-white">
                     {venue.venue_name}
                   </p>
-                  <p className="text-[13px] text-white/45">
+                  <p className="mt-0.5 text-[13px] text-white/45">
                     {venue.area_neighborhood || "Midtown"} Business
                   </p>
                 </button>
@@ -792,22 +803,29 @@ export function VendorSection({
             </div>
           )}
 
-          {/* Helper text or searching state */}
-          {isSearching && searchInput.trim().length >= 2 ? (
-            <p className="text-center text-sm text-white/45">Searching...</p>
-          ) : suggestions.length === 0 ? (
-            <p className="text-sm text-white/45">
-              We&apos;ll match your business so you don&apos;t have to start
-              from scratch
+          {/* Searching indicator */}
+          {isSearching && searchInput.trim().length >= 2 && (
+            <p className="pt-1 text-center text-sm text-white/45">
+              Searching. . .
             </p>
-          ) : null}
+          )}
+
+          {/* Helper text — only when idle with no suggestions */}
+          {!isSearching &&
+            suggestions.length === 0 &&
+            searchInput.trim().length < 2 && (
+              <p className="mt-2 text-[13px] text-white/45">
+                We&apos;ll match your business so you don&apos;t have to start
+                from scratch
+              </p>
+            )}
         </div>
       )}
 
       {/* ======== STEP: FINDING (loading state) ======== */}
       {step === "finding" && (
-        <div className="mt-8 space-y-4">
-          <div className="flex items-center gap-3 rounded-2xl border border-[#7a3030] px-4 py-3">
+        <div className="mt-5 space-y-3">
+          <div className="flex items-center gap-3 rounded-2xl border border-[#7a3030] bg-black/20 px-4 py-3.5">
             <svg
               viewBox="0 0 24 24"
               className="h-5 w-5 flex-none text-white/40"
@@ -820,14 +838,16 @@ export function VendorSection({
             </svg>
             <span className="text-[15px] text-white">{searchInput}</span>
           </div>
-          <p className="text-center text-sm text-white/45">Searching. . .</p>
+          <p className="pt-1 text-center text-sm text-white/45">
+            Searching. . .
+          </p>
         </div>
       )}
 
       {/* ======== STEP: NOT-FOUND ======== */}
       {step === "not-found" && (
-        <div className="mt-8 space-y-4">
-          <div className="flex items-center gap-3 rounded-2xl border border-[#7a3030] px-4 py-3">
+        <div className="mt-5 space-y-4">
+          <div className="flex items-center gap-3 rounded-2xl border border-[#7a3030] bg-black/20 px-4 py-3.5">
             <svg
               viewBox="0 0 24 24"
               className="h-5 w-5 flex-none text-white/40"
@@ -843,7 +863,7 @@ export function VendorSection({
             </span>
           </div>
 
-          <div className="text-sm leading-relaxed text-white/55">
+          <div className="text-[13px] leading-relaxed text-white/55">
             <p>
               Sorry we didn&apos;t find &ldquo;{searchInput}&rdquo;
             </p>
@@ -869,13 +889,13 @@ export function VendorSection({
 
       {/* ======== STEP: MATCH ======== */}
       {step === "match" && candidate && (
-        <div className="mt-8 space-y-5">
+        <div className="mt-5 space-y-5">
           {/* Venue card */}
-          <div className="rounded-2xl border border-[#7a3030] px-5 py-4 text-center">
-            <p className="text-lg font-semibold text-white">
+          <div className="rounded-2xl border border-[#7a3030] bg-black/20 px-5 py-5 text-center">
+            <p className="text-[17px] font-semibold text-white">
               {candidate.venue_name}
             </p>
-            <p className="mt-1 text-sm text-white/50">
+            <p className="mt-1.5 text-[13px] text-white/50">
               {candidate.address ||
                 `${candidate.area_neighborhood || "Midtown"}, ${candidate.city || "Houston"}`}
             </p>
@@ -911,7 +931,7 @@ export function VendorSection({
                 matchedBusinessId: getVenueId(candidate),
               });
             }}
-            className="w-full py-2 text-center text-sm text-white/50"
+            className="w-full py-3 text-center text-[14px] text-white/50 transition hover:text-white/70"
           >
             My business isn&apos;t listed
           </button>
@@ -921,7 +941,7 @@ export function VendorSection({
       {/* ======== STEP: CONTACT ======== */}
       {step === "contact" && (
         <form
-          className="mt-8 space-y-4"
+          className="mt-6 space-y-3"
           onSubmit={(e: FormEvent<HTMLFormElement>) => {
             e.preventDefault();
             if (
@@ -983,12 +1003,11 @@ export function VendorSection({
       {/* ======== STEP: MANUAL ADD ======== */}
       {step === "manual" && (
         <form
-          className="mt-8 space-y-4"
+          className="mt-6 space-y-3"
           onSubmit={(e: FormEvent<HTMLFormElement>) => {
             e.preventDefault();
             if (
               !manual.businessName.trim() ||
-              !manual.address.trim() ||
               !manual.firstName.trim() ||
               !manual.lastName.trim() ||
               !isEmailValid(manual.email)
@@ -1020,20 +1039,6 @@ export function VendorSection({
             }
           />
           <VendorInput
-            value={manual.address}
-            placeholder="Business Address"
-            onChange={(v) =>
-              setManual((c) => ({ ...c, address: v }))
-            }
-          />
-          <VendorInput
-            value={manual.cityStateZip}
-            placeholder="City, State ZIP"
-            onChange={(v) =>
-              setManual((c) => ({ ...c, cityStateZip: v }))
-            }
-          />
-          <VendorInput
             value={manual.firstName}
             placeholder="First Name"
             onChange={(v) =>
@@ -1062,7 +1067,7 @@ export function VendorSection({
               setManual((c) => ({ ...c, phone: v }))
             }
           />
-          <p className="text-[13px] text-white/45">
+          <p className="pt-1 text-[13px] text-white/45">
             We&apos;ll only use this to contact you about your account.
           </p>
           <ActionButton type="submit" className="w-full">
@@ -1073,11 +1078,11 @@ export function VendorSection({
 
       {/* ======== STEP: LOCATION PROMPT ======== */}
       {step === "location" && (
-        <div className="mt-8 space-y-4">
-          <div className="rounded-2xl border border-[#7a3030] bg-black/10 p-4 text-sm leading-relaxed text-white/65">
+        <div className="mt-6 space-y-4">
+          <p className="mb-2 text-center text-[15px] leading-relaxed text-white/60">
             Enable location so Genie can better match nearby customers to your
             business. You can skip this and continue.
-          </div>
+          </p>
 
           <ActionButton
             onClick={handleEnableLocation}
@@ -1103,89 +1108,145 @@ export function VendorSection({
 
       {/* ======== STEP: PLAN ======== */}
       {step === "plan" && (
-        <div className="mt-8 space-y-4">
-          {/* Founding Partner */}
+        <div className="mt-5 space-y-3">
+          {/* Basic — Free */}
           <button
             type="button"
             onClick={() => {
-              setSelectedPlan("founding_partner");
-              writeVendorDraft({
-                ...readVendorDraft(),
-                selectedPlanId: "founding_partner",
-              });
-              trackEvent(analyticsEvents.vendorPlanSelected, {
-                planId: "founding_partner",
-              });
+              setSelectedPlan("basic");
+              writeVendorDraft({ ...readVendorDraft(), selectedPlanId: "basic" });
+              trackEvent(analyticsEvents.vendorPlanSelected, { planId: "basic" });
             }}
-            className={`w-full rounded-2xl border p-5 text-center transition ${
-              selectedPlan === "founding_partner"
-                ? "border-[#c03030] bg-[linear-gradient(180deg,rgba(120,15,15,0.7),rgba(60,5,5,0.85))] shadow-[0_0_30px_rgba(200,40,40,0.25)]"
+            className={`w-full rounded-2xl border p-5 text-left transition ${
+              selectedPlan === "basic"
+                ? "border-[#c03030] bg-[linear-gradient(180deg,rgba(120,15,15,0.55),rgba(55,5,5,0.80))] shadow-[0_0_24px_rgba(200,40,40,0.2)]"
                 : "border-[#7a3030] bg-black/10"
             }`}
           >
-            <p className="text-2xl font-bold text-white">Founding Partner</p>
-            <p className="mt-1 text-2xl font-bold text-white">
-              {config.vendorPlans.foundingPartnerMonthly}
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <p className="text-[16px] font-bold text-white">
+                  Basic — Claim Your Spot
+                </p>
+                <p className="mt-0.5 text-[14px] font-semibold text-white/60">
+                  Free
+                </p>
+              </div>
+            </div>
+            <p className="mt-2 text-[13px] leading-relaxed text-white/55">
+              Get discovered on Genie with your restaurant&apos;s basic listing
+              and customer actions.
             </p>
-            <ul className="mt-4 space-y-1.5 text-left text-sm text-white/70">
-              {config.vendorPlans.foundingPartnerBenefits.map((b) => (
+            <ul className="mt-3 space-y-1.5 text-[13px] text-white/70">
+              {config.vendorPlans.basicBenefits.map((b) => (
                 <li key={b} className="flex items-start gap-2">
-                  <span className="mt-0.5">•</span>
+                  <span className="mt-0.5 flex-none text-[#e83434]">•</span>
                   {b}
                 </li>
               ))}
             </ul>
           </button>
 
-          {/* Boost Placement */}
+          {/* Pro — Best Value */}
           <button
             type="button"
             onClick={() => {
-              setSelectedPlan("boost_placement");
-              writeVendorDraft({
-                ...readVendorDraft(),
-                selectedPlanId: "boost_placement",
-              });
-              trackEvent(analyticsEvents.vendorBoostSelected, {
-                planId: "boost_placement",
-              });
+              setSelectedPlan("pro");
+              writeVendorDraft({ ...readVendorDraft(), selectedPlanId: "pro" });
+              trackEvent(analyticsEvents.vendorPlanSelected, { planId: "pro" });
             }}
-            className={`w-full rounded-2xl border p-5 text-center transition ${
-              selectedPlan === "boost_placement"
-                ? "border-[#c03030] bg-[linear-gradient(180deg,rgba(120,15,15,0.7),rgba(60,5,5,0.85))] shadow-[0_0_30px_rgba(200,40,40,0.25)]"
+            className={`w-full rounded-2xl border p-5 text-left transition ${
+              selectedPlan === "pro"
+                ? "border-[#c03030] bg-[linear-gradient(180deg,rgba(120,15,15,0.55),rgba(55,5,5,0.80))] shadow-[0_0_24px_rgba(200,40,40,0.2)]"
                 : "border-[#7a3030] bg-black/10"
             }`}
           >
-            <p className="text-xl font-bold text-white">Boost Placement</p>
-            <p className="mt-1 text-xl font-bold text-white">
-              One time {config.vendorPlans.boostPlacementOneTime}
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <p className="text-[16px] font-bold text-white">
+                  Pro — Get More Visibility
+                </p>
+                <p className="mt-0.5 text-[14px] font-semibold text-[#e83434]">
+                  {config.vendorPlans.proMonthly}
+                </p>
+              </div>
+              <span className="flex-none rounded-full bg-[#22c55e] px-2.5 py-1 text-[11px] font-bold text-white">
+                Best Value
+              </span>
+            </div>
+            <p className="mt-2 text-[13px] leading-relaxed text-white/55">
+              {config.vendorPlans.proDescription}
             </p>
-            <p className="mt-2 text-sm text-white/55">
-              {config.vendorPlans.boostPlacementBenefits[0]}
-            </p>
+            <ul className="mt-3 space-y-1.5 text-[13px] text-white/70">
+              {config.vendorPlans.proBenefits.map((b) => (
+                <li key={b} className="flex items-start gap-2">
+                  <span className="mt-0.5 flex-none text-[#e83434]">•</span>
+                  {b}
+                </li>
+              ))}
+            </ul>
           </button>
 
-          <ActionButton
-            onClick={() => void completeRegistration()}
-            className="w-full"
-            disabled={isSubmitting || !selectedPlan}
+          {/* Boost */}
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedPlan("boost");
+              writeVendorDraft({ ...readVendorDraft(), selectedPlanId: "boost" });
+              trackEvent(analyticsEvents.vendorBoostSelected, { planId: "boost" });
+            }}
+            className={`w-full rounded-2xl border p-5 text-left transition ${
+              selectedPlan === "boost"
+                ? "border-[#c03030] bg-[linear-gradient(180deg,rgba(120,15,15,0.55),rgba(55,5,5,0.80))] shadow-[0_0_24px_rgba(200,40,40,0.2)]"
+                : "border-[#7a3030] bg-black/10"
+            }`}
           >
-            Continue
-          </ActionButton>
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <p className="text-[16px] font-bold text-white">
+                  Boost — Promote Your Restaurant
+                </p>
+                <p className="mt-0.5 text-[14px] font-semibold text-[#e83434]">
+                  {config.vendorPlans.boostMonthly}
+                </p>
+              </div>
+            </div>
+            <p className="mt-2 text-[13px] leading-relaxed text-white/55">
+              {config.vendorPlans.boostDescription}
+            </p>
+            <ul className="mt-3 space-y-1.5 text-[13px] text-white/70">
+              {config.vendorPlans.boostBenefits.map((b) => (
+                <li key={b} className="flex items-start gap-2">
+                  <span className="mt-0.5 flex-none text-[#e83434]">•</span>
+                  {b}
+                </li>
+              ))}
+            </ul>
+          </button>
+
+          <div className="pt-1">
+            <ActionButton
+              onClick={() => void completeRegistration()}
+              className="w-full"
+              disabled={isSubmitting || !selectedPlan}
+            >
+              {isSubmitting ? "Submitting..." : "Continue"}
+            </ActionButton>
+          </div>
         </div>
       )}
 
       {/* ======== STEP: SUCCESS ======== */}
       {step === "success" && (
-        <div className="mt-12 flex flex-col items-center text-center">
-          {/* Checkmark circle */}
-          <div className="flex h-40 w-40 items-center justify-center rounded-full border border-white/15 bg-white/5">
+        <div className="mt-10 flex flex-col items-center text-center">
+          {/* Checkmark circle — matches CreateAccount-7.png */}
+          <div className="flex h-36 w-36 items-center justify-center rounded-full border border-white/20 bg-white/5">
             <svg
               viewBox="0 0 24 24"
-              className="h-20 w-20 text-[#e83434]"
+              className="h-16 w-16 text-[#e83434]"
               fill="none"
               stroke="currentColor"
-              strokeWidth="2"
+              strokeWidth="2.2"
               strokeLinecap="round"
               strokeLinejoin="round"
             >
@@ -1193,15 +1254,15 @@ export function VendorSection({
             </svg>
           </div>
 
-          <h3 className="mt-8 text-2xl font-semibold text-white">
-            Your submission is in review
-          </h3>
-          <p className="mt-4 text-sm leading-relaxed text-white/50">
-            We received your registration and will verify your business details
-            before going live. You can still open your dashboard and profile.
+          <h2 className="mt-7 text-[1.65rem] font-semibold leading-tight text-white">
+            Your business is live!
+          </h2>
+          <p className="mt-4 text-[14px] leading-relaxed text-white/50">
+            Your listing is now active on Genie. Customers searching for spots
+            like yours can start discovering your business right away.
           </p>
 
-          <div className="mt-8 w-full space-y-3">
+          <div className="mt-8 w-full">
             <ActionButton
               onClick={() => {
                 trackEvent(analyticsEvents.vendorSuccessContinueTapped);
@@ -1209,17 +1270,7 @@ export function VendorSection({
               }}
               className="w-full"
             >
-              View Dashboard
-            </ActionButton>
-            <ActionButton
-              onClick={() => {
-                trackEvent(analyticsEvents.vendorSuccessContinueTapped);
-                onContinueHome();
-              }}
-              variant="secondary"
-              className="w-full"
-            >
-              Back to Home
+              Continue
             </ActionButton>
           </div>
         </div>

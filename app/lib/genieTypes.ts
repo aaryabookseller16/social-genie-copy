@@ -109,9 +109,12 @@ export type RuntimeConfig = {
   freeBenefits: string[];
   vibeeBenefits: string[];
   vendorPlans: {
-    foundingPartnerMonthly: string;
-    boostPlacementOneTime: string;
-    foundingPartnerBenefits: string[];
-    boostPlacementBenefits: string[];
+    basicBenefits: string[];
+    proMonthly: string;
+    proDescription: string;
+    proBenefits: string[];
+    boostMonthly: string;
+    boostDescription: string;
+    boostBenefits: string[];
   };
 };

@@ -27,11 +27,11 @@ export async function POST(request: NextRequest) {
   const locationEnabled =
     typeof body.location_enabled === "boolean" ? body.location_enabled : null;
 
-  if (!businessName || !fullName || !isEmailValid(email) || !address) {
+  if (!businessName || !fullName || !isEmailValid(email)) {
     return NextResponse.json(
       {
         error:
-          "business_name, full_name, email, and address are required",
+          "business_name, full_name, and a valid email are required",
       },
       { status: 400 }
     );
