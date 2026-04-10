@@ -1,103 +1,70 @@
 import { NextRequest, NextResponse } from "next/server";
-
-import {
-  findStoredUserByEmail,
-  nextStoreId,
-  sanitizeUser,
-  updateApiStore,
-} from "@/app/lib/server/apiStore";
-import { createAuthToken, hashPassword } from "@/app/lib/server/authToken";
+import { xanoAuthFetch, XanoError } from "@/app/lib/server/xanoProxy";
 
 function isEmailValid(email: string) {
   return /\S+@\S+\.\S+/.test(email);
 }
 
+/**
+ * POST /api/auth/signup
+ * Magic link signup — sends email with magic link.
+ * Uses Auth base URL (api:dRDS80y8) → auth/verify_email/signup
+ */
 export async function POST(request: NextRequest) {
-  const body = (await request.json().catch(() => ({}))) as Record<
-    string,
-    unknown
-  >;
+  try {
+    const body = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
 
-  const firstName = String(body.first_name ?? "").trim();
-  const lastName = String(body.last_name ?? "").trim();
-  const email = String(body.email ?? "").trim().toLowerCase();
-  const phone = String(body.phone ?? "").trim();
-  const password = String(body.password ?? "");
-  const sessionToken = String(body.session_token ?? "").trim();
+    const firstName = String(body.first_name ?? "").trim();
+    const lastName = String(body.last_name ?? "").trim();
+    const email = String(body.email ?? "").trim().toLowerCase();
 
-  if (!firstName || !lastName || !email || !password) {
-    return NextResponse.json(
-      { error: "first_name, last_name, email, and password are required" },
-      { status: 400 }
-    );
-  }
-
-  if (!isEmailValid(email)) {
-    return NextResponse.json({ error: "Invalid email address" }, { status: 400 });
-  }
-
-  if (password.length < 6) {
-    return NextResponse.json(
-      { error: "Password must be at least 6 characters" },
-      { status: 400 }
-    );
-  }
-
-  const result = await updateApiStore((store) => {
-    if (findStoredUserByEmail(store, email)) {
-      return { error: "An account already exists for that email." };
+    if (!email) {
+      return NextResponse.json(
+        { error: "email is required" },
+        { status: 400 }
+      );
     }
 
-    const user = {
-      id: nextStoreId(store, "user"),
-      first_name: firstName,
-      last_name: lastName,
-      email,
-      phone: phone || undefined,
-      password_hash: hashPassword(password),
-      membership: "free" as const,
-      subscription_status: "inactive" as const,
-      pending_checkout_session_id: null,
-      pending_checkout_started_at: null,
-      saved_venue_ids: [] as number[],
-      vendor_id: null,
-      created_at: Date.now(),
-    };
+    if (!isEmailValid(email)) {
+      return NextResponse.json(
+        { error: "Invalid email address" },
+        { status: 400 }
+      );
+    }
 
-    store.users.push(user);
-
-    // When a guest signs up, re-associate any pre-signup analytics events for
-    // the same session token to this newly created user.
-    if (sessionToken) {
-      for (const event of store.analytics) {
-        if (event.user_id) {
-          continue;
-        }
-
-        const eventSessionToken = event.metadata?.session_token;
-        const eventSessionId = event.metadata?.session_id;
-        const matchedToken =
-          (typeof eventSessionToken === "string" && eventSessionToken) ||
-          (typeof eventSessionId === "string" && eventSessionId) ||
-          "";
-
-        if (matchedToken === sessionToken) {
-          event.user_id = user.id;
-        }
+    const result = await xanoAuthFetch<{ success?: boolean; message?: string; Message?: string }>(
+      "auth/verify_email/signup",
+      {
+        method: "POST",
+        body: {
+          email,
+          first_name: firstName || undefined,
+          last_name: lastName || undefined,
+        },
       }
+    );
+
+    return NextResponse.json({
+      success: result.success ?? true,
+      message:
+        result.Message ||
+        result.message ||
+        "Check your email for a magic link to complete your account!",
+    });
+  } catch (error) {
+    if (error instanceof XanoError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status }
+      );
     }
-
-    const token = createAuthToken({ user_id: user.id });
-
-    return {
-      token,
-      user: sanitizeUser(user),
-    };
-  });
-
-  if ("error" in result) {
-    return NextResponse.json({ error: result.error }, { status: 409 });
+    console.error("POST /api/auth/signup failed:", error);
+    return NextResponse.json(
+      { error: "Could not create your account." },
+      { status: 500 }
+    );
   }
-
-  return NextResponse.json(result);
 }

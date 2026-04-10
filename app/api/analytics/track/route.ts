@@ -1,92 +1,95 @@
 import { NextRequest, NextResponse } from "next/server";
+import { xanoFetch } from "@/app/lib/server/xanoProxy";
 
-import {
-  findStoredVendorByVenueId,
-  nextStoreId,
-  updateApiStore,
-} from "@/app/lib/server/apiStore";
-import { requireAuthenticatedUser } from "@/app/lib/server/requestAuth";
-
-function bumpVendorMetrics(
-  event: string,
-  vendor: ReturnType<typeof findStoredVendorByVenueId>
-) {
-  if (!vendor) {
-    return;
-  }
-
-  // Dashboard "clicks" tracks CTA interactions only (call/reserve/share).
-  if (
-    event === "call_click" ||
-    event === "reserve_click" ||
-    event === "vendor_share_tap"
-  ) {
-    vendor.dashboard.clicks += 1;
-  }
-
-  if (
-    event === "vendor_detail_opened"
-  ) {
-    vendor.dashboard.views += 1;
-  }
-
-  if (
-    event === "result_impression" ||
-    event === "genie_result_impression" ||
-    event === "more_nearby_card_impression"
-  ) {
-    vendor.dashboard.genie_appearances += 1;
-  }
-
-  // "saves" is mutated by /user/save-venue after a successful save operation.
-  // Avoid incrementing from analytics events to prevent duplicate counts.
-}
-
+/**
+ * POST /api/analytics/track
+ * Fire-and-forget analytics + vendor interaction logging.
+ */
 export async function POST(request: NextRequest) {
-  const { auth, errorResponse } = await requireAuthenticatedUser(request);
-  if (!auth) {
-    return errorResponse;
+  try {
+    const body = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
+
+    const event = String(body.event ?? "").trim();
+    if (!event) {
+      return NextResponse.json(
+        { error: "event is required" },
+        { status: 400 }
+      );
+    }
+
+    const metadata =
+      typeof body.metadata === "object" && body.metadata
+        ? (body.metadata as Record<string, unknown>)
+        : {};
+
+    const venueId = Number(body.venue_id || metadata.venue_id || metadata.venueId);
+    const sessionId = Number(metadata.session_id || body.session_id || 0);
+    const userId = Number(body.user_id || 0);
+    const externalUserId = String(metadata.external_user_id || body.external_user_id || "");
+    const sessionToken = String(metadata.session_token || body.session_token || "");
+
+    // Map analytics events to vendor interaction types
+    const interactionMap: Record<string, string> = {
+      vendor_detail_opened: "profile_view",
+      call_click: "call_click",
+      vendor_call_tap: "call_click",
+      map_open: "map_click",
+      vendor_map_tap: "map_click",
+      reserve_click: "reservation_click",
+      vendor_reservation_tap: "reservation_click",
+      vendor_share_tap: "share",
+    };
+
+    const interactionType = interactionMap[event];
+
+    // If this event maps to a vendor interaction and we have a venue_id,
+    // also log it as a vendor interaction for dashboard metrics.
+    if (interactionType && Number.isFinite(venueId) && venueId > 0) {
+      xanoFetch("genie/vendor_log_interaction", {
+        method: "POST",
+        body: {
+          venue_id: venueId,
+          interaction_type: interactionType,
+          user_id: userId,
+          session_id: sessionId,
+        },
+      }).catch(() => {
+        // fire-and-forget — swallow errors
+      });
+    }
+
+    // Log to prompt system for signup prompt tracking
+    if (sessionId > 0) {
+      const promptTriggers = [
+        "venue_click",
+        "decision_card_tapped",
+        "save_click",
+        "genie_query_submitted",
+      ];
+      if (promptTriggers.includes(event) && externalUserId) {
+        const triggerMap: Record<string, string> = {
+          venue_click: "venue_tap",
+          decision_card_tapped: "venue_tap",
+          save_click: "save_attempt",
+          genie_query_submitted: "second_query",
+        };
+        xanoFetch("genie/prompt_log_event", {
+          method: "POST",
+          body: {
+            external_user_id: externalUserId,
+            session_token: sessionToken,
+            event_type: triggerMap[event] || event,
+            prompt_type: "signup_nudge",
+          },
+        }).catch(() => {});
+      }
+    }
+
+    return NextResponse.json({ success: true });
+  } catch {
+    return NextResponse.json({ success: true });
   }
-
-  const body = (await request.json().catch(() => ({}))) as Record<
-    string,
-    unknown
-  >;
-  const event = String(body.event ?? "").trim();
-  const venueId = Number(body.venue_id);
-  const metadata =
-    typeof body.metadata === "object" && body.metadata
-      ? (body.metadata as Record<string, unknown>)
-      : undefined;
-  const metadataVenueId = metadata
-    ? (metadata.venue_id ?? metadata.venueId)
-    : undefined;
-  const resolvedVenueId = Number(
-    Number.isFinite(venueId) ? venueId : metadataVenueId
-  );
-
-  if (!event) {
-    return NextResponse.json({ error: "event is required" }, { status: 400 });
-  }
-
-  await updateApiStore((store) => {
-    store.analytics.push({
-      id: nextStoreId(store, "analytics"),
-      event,
-      user_id: auth.user.id,
-      venue_id: Number.isFinite(resolvedVenueId) ? resolvedVenueId : undefined,
-      metadata,
-      timestamp: Date.now(),
-    });
-
-    const vendor = Number.isFinite(resolvedVenueId)
-      ? findStoredVendorByVenueId(store, resolvedVenueId)
-      : undefined;
-    bumpVendorMetrics(
-      event,
-      vendor
-    );
-  });
-
-  return NextResponse.json({ success: true });
 }

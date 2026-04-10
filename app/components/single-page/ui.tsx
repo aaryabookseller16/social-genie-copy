@@ -38,17 +38,17 @@ export function SectionShell({
   return (
     <section
       ref={sectionRef}
-      className={`relative overflow-hidden rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,rgba(21,0,0,0.92),rgba(56,5,7,0.88)_54%,rgba(18,0,0,0.96))] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.38)] backdrop-blur-xl ${className}`}
+      className={`relative overflow-hidden rounded-[28px] border border-gray-100 bg-white p-5 shadow-[0_4px_24px_rgba(0,0,0,0.06)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(21,0,0,0.92),rgba(56,5,7,0.88)_54%,rgba(18,0,0,0.96))] dark:shadow-[0_24px_80px_rgba(0,0,0,0.38)] dark:backdrop-blur-xl ${className}`}
     >
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,rgba(255,86,86,0.18),transparent_24%),radial-gradient(circle_at_80%_80%,rgba(170,18,18,0.12),transparent_22%)]" />
+      <div className="pointer-events-none absolute inset-0 hidden dark:block dark:bg-[radial-gradient(circle_at_50%_18%,rgba(255,86,86,0.18),transparent_24%),radial-gradient(circle_at_80%_80%,rgba(170,18,18,0.12),transparent_22%)]" />
       <div className="relative">
         {title ? (
-          <h2 className="font-[family:var(--font-display)] text-[2rem] leading-[0.95] text-white">
+          <h2 className="font-[family:var(--font-display)] text-[1.75rem] leading-[0.95] text-gray-900 dark:text-white">
             {title}
           </h2>
         ) : null}
         {subtitle ? (
-          <p className="mt-2 max-w-[28rem] text-sm leading-6 text-white/72">
+          <p className="mt-2 max-w-[28rem] text-sm leading-6 text-gray-500 dark:text-white/72">
             {subtitle}
           </p>
         ) : null}
@@ -73,13 +73,13 @@ export function Field({
 }) {
   return (
     <label className="block">
-      <span className="mb-2 block text-sm font-medium text-white/72">{label}</span>
+      <span className="mb-2 block text-sm font-medium text-gray-600 dark:text-white/72">{label}</span>
       <input
         type={type}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-[16px] border border-[#b74c4c]/55 bg-black/20 px-4 py-3 text-sm text-white placeholder:text-white/30 focus:border-[#ff6a6a] focus:outline-none"
+        className="w-full rounded-[16px] border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
       />
     </label>
   );
@@ -102,8 +102,8 @@ export function ActionButton({
 }) {
   const variantClasses =
     variant === "primary"
-      ? "border-[#d75050] bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))] text-white shadow-[0_0_0_1px_rgba(255,120,120,0.08),0_18px_36px_rgba(0,0,0,0.28)]"
-      : "border-white/12 bg-black/20 text-white/82";
+      ? "border-red-500 bg-red-600 text-white shadow-sm hover:bg-red-700 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))] dark:shadow-[0_0_0_1px_rgba(255,120,120,0.08),0_18px_36px_rgba(0,0,0,0.28)]"
+      : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-white/12 dark:bg-black/20 dark:text-white/82";
 
   return (
     <button
@@ -119,7 +119,7 @@ export function ActionButton({
 
 export function TagPill({ children }: { children: ReactNode }) {
   return (
-    <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-white/70">
+    <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-medium text-red-600 dark:border-white/10 dark:bg-black/20 dark:text-white/70">
       {children}
     </span>
   );
@@ -133,8 +133,8 @@ export function GenieBubble({
   compact?: boolean;
 }) {
   return (
-    <div className="flex items-start gap-3 rounded-[24px] border border-white/10 bg-black/16 p-3">
-      <div className="relative h-14 w-14 flex-none overflow-hidden rounded-[18px] border border-white/10 bg-[#230404]">
+    <div className="flex items-start gap-3 rounded-[24px] border border-red-100 bg-red-50/40 p-3 dark:border-white/10 dark:bg-black/16">
+      <div className="relative h-14 w-14 flex-none overflow-hidden rounded-[18px] border border-red-100 bg-white dark:border-white/10 dark:bg-[#230404]">
         <Image
           src="/genie-profile-pic.png"
           alt="Genie"
@@ -143,7 +143,7 @@ export function GenieBubble({
         />
       </div>
       <p
-        className={`leading-6 text-white/82 ${
+        className={`leading-6 text-gray-700 dark:text-white/82 ${
           compact ? "text-sm" : "text-base"
         }`}
       >
@@ -156,25 +156,44 @@ export function GenieBubble({
 export function BottomDock({
   items,
   activeId,
+  compact = false,
   onSelect,
 }: {
   items: BottomDockItem[];
   activeId?: FlowAnchor;
+  compact?: boolean;
   onSelect: (id: FlowAnchor) => void;
 }) {
+  if (compact) {
+    return (
+      <div className="pointer-events-auto fixed bottom-0 left-1/2 z-50 w-[min(100vw,28rem)] -translate-x-1/2">
+        <div className="border-t border-gray-100 bg-white/95 px-3 pb-[calc(env(safe-area-inset-bottom,0px)+14px)] pt-3 backdrop-blur-2xl dark:border-white/16 dark:bg-[rgba(11,0,0,0.88)]">
+          <button
+            type="button"
+            onClick={() => onSelect("home")}
+            className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-red-400 bg-[radial-gradient(circle,rgba(220,38,38,0.95),rgba(185,28,28,1)_70%)] shadow-[0_4px_16px_rgba(220,38,38,0.35)] dark:border-[#e65d5d]/75 dark:bg-[radial-gradient(circle,rgba(255,75,75,0.9),rgba(130,9,11,0.94)_70%)] dark:shadow-[0_0_24px_rgba(255,57,57,0.55)]"
+            aria-label="Go home"
+          >
+            <Image src="/genie-profile-pic.png" alt="" width={28} height={28} className="rounded-full" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="pointer-events-auto fixed bottom-5 left-1/2 z-50 w-[min(92vw,28rem)] -translate-x-1/2">
-      <div className="grid grid-cols-[1fr_1fr_5rem_1fr_1fr] items-center rounded-full border border-white/12 bg-[rgba(11,0,0,0.82)] px-3 py-2 shadow-[0_20px_50px_rgba(0,0,0,0.45)] backdrop-blur-2xl">
+    <div className="pointer-events-auto fixed bottom-0 left-1/2 z-50 w-[min(100vw,28rem)] -translate-x-1/2">
+      <div className="flex items-center justify-between border-t border-gray-100 bg-white/95 px-6 pb-[calc(env(safe-area-inset-bottom,0px)+8px)] pt-2 backdrop-blur-2xl dark:border-white/12 dark:bg-[rgba(11,0,0,0.82)]">
         {items.slice(0, 2).map((item) => (
           <button
             key={item.id}
             type="button"
             onClick={() => onSelect(item.id)}
-            className={`flex flex-col items-center gap-1 text-[0.68rem] uppercase tracking-[0.18em] ${
-              activeId === item.id ? 'text-white' : 'text-white/58'
+            className={`flex flex-col items-center gap-1 p-2 text-[0.65rem] uppercase tracking-[0.12em] ${
+              activeId === item.id ? "text-red-600 dark:text-white" : "text-gray-400 dark:text-white/58"
             }`}
           >
-            <span className={activeId === item.id ? 'text-[#ff7b7b]' : 'text-white/76'}>{item.icon}</span>
+            <span className={activeId === item.id ? "text-red-600 dark:text-[#ff7b7b]" : "text-gray-400 dark:text-white/76"}>{item.icon}</span>
             {item.label}
           </button>
         ))}
@@ -182,11 +201,9 @@ export function BottomDock({
         <button
           type="button"
           onClick={() => onSelect("home")}
-          className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-[#e65d5d]/75 bg-[radial-gradient(circle,rgba(255,75,75,0.9),rgba(130,9,11,0.94)_70%)] shadow-[0_0_24px_rgba(255,57,57,0.55)]"
+          className="relative -mt-6 mx-4 flex h-16 w-16 items-center justify-center rounded-full border-2 border-red-400 bg-[radial-gradient(circle,rgba(220,38,38,0.95),rgba(185,28,28,1)_70%)] shadow-[0_4px_20px_rgba(220,38,38,0.4)] dark:border-[#e65d5d]/75 dark:bg-[radial-gradient(circle,rgba(255,75,75,0.9),rgba(130,9,11,0.94)_70%)] dark:shadow-[0_0_24px_rgba(255,57,57,0.55)]"
         >
-          <span className="relative inline-flex h-5 w-5 items-center justify-center">
-            <span className="absolute inset-0 rounded-full bg-white/18 blur-sm" />
-          </span>
+          <Image src="/genie-profile-pic.png" alt="Genie" width={32} height={32} className="rounded-full" />
         </button>
 
         {items.slice(2).map((item) => (
@@ -194,11 +211,11 @@ export function BottomDock({
             key={item.id}
             type="button"
             onClick={() => onSelect(item.id)}
-            className={`flex flex-col items-center gap-1 text-[0.68rem] uppercase tracking-[0.18em] ${
-              activeId === item.id ? 'text-white' : 'text-white/58'
+            className={`flex flex-col items-center gap-1 p-2 text-[0.65rem] uppercase tracking-[0.12em] ${
+              activeId === item.id ? "text-red-600 dark:text-white" : "text-gray-400 dark:text-white/58"
             }`}
           >
-            <span className={activeId === item.id ? 'text-[#ff7b7b]' : 'text-white/76'}>{item.icon}</span>
+            <span className={activeId === item.id ? "text-red-600 dark:text-[#ff7b7b]" : "text-gray-400 dark:text-white/76"}>{item.icon}</span>
             {item.label}
           </button>
         ))}
@@ -266,53 +283,53 @@ export function ResultCard({
     <button
       type="button"
       onClick={onOpen}
-      className="w-full overflow-hidden rounded-[24px] border border-[#8c2b2b] bg-black/20 text-left shadow-[0_18px_40px_rgba(0,0,0,0.3)] transition hover:border-[#dc5d5d]"
+      className="w-full overflow-hidden rounded-[20px] border border-gray-100 bg-white text-left shadow-[0_2px_16px_rgba(0,0,0,0.06)] transition hover:shadow-[0_4px_24px_rgba(0,0,0,0.1)] dark:border-[#8c2b2b] dark:bg-black/20 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)] dark:hover:border-[#dc5d5d]"
     >
-      <div className="grid grid-cols-[42%,1fr]">
-        <div className="relative min-h-[9.5rem]">
-          <Image
-            src={venue.image || "/sample-venue-1.jpeg"}
-            alt={venue.venue_name || "Venue"}
-            fill
-            className="object-cover"
-          />
-        </div>
-        <div className="p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-xl font-semibold text-white">
-                {venue.venue_name}
-              </p>
-              <p className="mt-1 text-sm text-white/55">
-                {getVenueHeadline(venue)} - {getVenueDistance(venue, index)}
-              </p>
-            </div>
-            {onSave ? (
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onSave();
-                }}
-                className="rounded-full border border-white/12 bg-black/24 px-3 py-1 text-xs uppercase tracking-[0.2em] text-white/60"
-              >
-                Save
-              </button>
-            ) : null}
+      <div className="relative h-44 w-full">
+        <Image
+          src={venue.image || "/sample-venue-1.jpeg"}
+          alt={venue.venue_name || "Venue"}
+          fill
+          className="object-cover"
+        />
+      </div>
+      <div className="p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-lg font-bold text-gray-900 dark:text-white">
+              {venue.venue_name}
+            </p>
+            <p className="mt-0.5 text-sm text-gray-500 dark:text-white/55">
+              {getVenueHeadline(venue)} - {getVenueDistance(venue, index)}
+            </p>
           </div>
-          <p className="mt-3 text-base font-medium text-[#ffcf9f]">
-            {venue.energy_level || "Lively social spot"}
-          </p>
-          <p className="mt-1 text-sm leading-6 text-white/72">
-            {getVenueDescription(venue)}
-          </p>
-          <p className="mt-3 flex items-center gap-1.5 text-sm text-[#ffb45d]">
-            <span className={`inline-block h-2 w-2 rounded-full ${
-              venue.is_open_now ? 'bg-[#4ade80]' : 'bg-[#ff9f4f]'
-            }`} />
-            {getVenueStatus(venue, index)}
-          </p>
+          {onSave ? (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onSave();
+              }}
+              className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-500 hover:border-red-300 hover:text-red-600 dark:border-white/12 dark:bg-black/24 dark:text-white/60 dark:hover:border-white/30 dark:hover:text-white"
+            >
+              Save
+            </button>
+          ) : null}
         </div>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {buildVenueTags(venue).slice(0, 2).map((tag) => (
+            <TagPill key={tag}>{tag}</TagPill>
+          ))}
+        </div>
+        <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-white/72">
+          {getVenueDescription(venue)}
+        </p>
+        <p className="mt-2 flex items-center gap-1.5 text-sm text-gray-500 dark:text-[#ffb45d]">
+          <span className={`inline-block h-2 w-2 rounded-full ${
+            venue.is_open_now ? "bg-green-500 dark:bg-[#4ade80]" : "bg-orange-400 dark:bg-[#ff9f4f]"
+          }`} />
+          {getVenueStatus(venue, index)}
+        </p>
       </div>
     </button>
   );

@@ -2,9 +2,9 @@
 
 import Image from "next/image";
 
-import { BottomNav } from "@/app/components/shared/BottomNav";
 import { GenieOrb } from "@/app/components/shared/GenieOrb";
 import { QuickChips } from "@/app/components/shared/QuickChips";
+import { ThemeToggle } from "@/app/components/shared/ThemeToggle";
 import { type RuntimeConfig } from "@/app/lib/genieTypes";
 
 type HomeScreenProps = {
@@ -22,37 +22,42 @@ export function HomeScreen({
   config,
   inputValue,
   isSubmitting,
-  showBottomNav = true,
   onInputChange,
   onChipSelect,
   onOrbTap,
   onSubmit,
 }: HomeScreenProps) {
   return (
-    <section className="relative flex flex-1 flex-col overflow-hidden rounded-[32px] border border-white/8 bg-[linear-gradient(180deg,rgba(20,0,0,0.96),rgba(42,4,4,0.92)_52%,rgba(15,0,0,0.98))] px-5 pb-4 pt-6 shadow-[0_30px_80px_rgba(0,0,0,0.45)] sm:px-7 sm:pb-6 sm:pt-10">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_22%,rgba(186,24,27,0.45),transparent_34%),radial-gradient(circle_at_50%_58%,rgba(160,18,18,0.22),transparent_44%),linear-gradient(180deg,rgba(255,255,255,0.03),transparent_26%)]" />
-      <div className="pointer-events-none absolute inset-0 opacity-40 mix-blend-screen [background-image:radial-gradient(rgba(255,255,255,0.06)_0.8px,transparent_0.8px)] [background-position:0_0] [background-size:18px_18px]" />
+    <section className="relative flex flex-1 flex-col overflow-hidden bg-white px-5 pb-4 pt-6 dark:bg-[linear-gradient(180deg,rgba(20,0,0,0.96),rgba(42,4,4,0.92)_52%,rgba(15,0,0,0.98))] sm:px-7 sm:pb-6 sm:pt-10">
+      <div className="pointer-events-none absolute inset-0 hidden dark:block dark-glow-top" />
+      <div className="pointer-events-none absolute inset-0 hidden dark:block dark-noise" />
 
       <div className="relative mx-auto flex max-w-sm flex-1 flex-col items-center text-center">
-        <p className="mb-1 text-[0.68rem] uppercase tracking-[0.48em] text-white/38">
-          Social Genie
-        </p>
-        <h1 className="max-w-[12ch] font-[family:var(--font-display)] text-3xl font-semibold leading-[0.95] text-white sm:text-4xl">
+        <div className="flex w-full items-center justify-between">
+          <ThemeToggle />
+          <button type="button" className="flex flex-col gap-[5px] p-2" aria-label="Menu">
+            <span className="block h-[2.5px] w-6 rounded-full bg-red-600 dark:bg-white/80" />
+            <span className="block h-[2.5px] w-6 rounded-full bg-red-600 dark:bg-white/80" />
+            <span className="block h-[2.5px] w-6 rounded-full bg-red-600 dark:bg-white/80" />
+          </button>
+        </div>
+
+        <h1 className="mt-4 max-w-[14ch] font-[family:var(--font-display)] text-[1.75rem] font-semibold leading-[1.1] text-black dark:text-white sm:text-[2rem]">
           What&apos;s your vibe today?
         </h1>
-        <p className="mt-2 max-w-[18ch] text-sm leading-5 text-white/74 sm:text-base sm:leading-6">
+        <p className="mt-3 max-w-[22ch] text-[0.95rem] leading-6 text-gray-500 dark:text-white/70">
           Ask me anything, food, drinks or something to do.
         </p>
 
-        <div className="relative mt-3 min-h-0 w-full max-w-[23rem] flex-1 sm:mt-5">
-          <div className="pointer-events-none absolute inset-x-[12%] top-[18%] h-[62%] rounded-full bg-[radial-gradient(circle,rgba(233,62,62,0.34),transparent_72%)] blur-3xl" />
+        <div className="relative mt-2 min-h-0 w-full max-w-[20rem] flex-1 sm:mt-4">
+          <div className="pointer-events-none absolute inset-x-[8%] top-[20%] h-[60%] rounded-full bg-[radial-gradient(circle,rgba(220,38,38,0.32),transparent_68%)] blur-3xl dark:bg-[radial-gradient(circle,rgba(233,62,62,0.34),transparent_72%)]" />
           <Image
             src="/genie-pic2.png"
             alt="Genie"
             width={420}
             height={680}
             priority
-            className="relative z-10 mx-auto h-full w-auto max-w-[85%] object-contain drop-shadow-[0_28px_44px_rgba(0,0,0,0.45)]"
+            className="relative z-10 mx-auto h-full w-auto max-w-[85%] object-contain drop-shadow-[0_20px_40px_rgba(0,0,0,0.15)] dark:drop-shadow-[0_28px_44px_rgba(0,0,0,0.45)]"
           />
         </div>
 
@@ -68,7 +73,7 @@ export function HomeScreen({
             mode={isSubmitting ? "thinking" : "idle"}
             onClick={onOrbTap}
             disabled={isSubmitting}
-            size={88}
+            size={78}
           />
         </div>
 
@@ -83,8 +88,8 @@ export function HomeScreen({
             Ask Genie
           </label>
           <div className="group relative">
-            <span className="pointer-events-none absolute inset-0 rounded-full border border-[#d75555]/55 bg-[linear-gradient(180deg,rgba(55,8,8,0.62),rgba(32,5,5,0.9))] shadow-[0_0_0_1px_rgba(255,130,130,0.06),0_18px_48px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.08)] transition group-focus-within:border-[#ff7b7b]/80 group-focus-within:shadow-[0_0_0_1px_rgba(255,130,130,0.08),0_0_0_4px_rgba(198,34,34,0.18),0_18px_48px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.08)]" />
-            <span className="pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2 text-white/46">
+            <span className="pointer-events-none absolute inset-0 rounded-full border border-red-300 bg-white shadow-[0_2px_12px_rgba(220,38,38,0.08)] transition group-focus-within:border-red-500 group-focus-within:shadow-[0_0_0_3px_rgba(220,38,38,0.1)] dark:border-[#d75555]/55 dark:bg-[linear-gradient(180deg,rgba(55,8,8,0.62),rgba(32,5,5,0.9))] dark:shadow-[0_0_0_1px_rgba(255,130,130,0.06),0_18px_48px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.08)] dark:group-focus-within:border-[#ff7b7b]/80" />
+            <span className="pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2 text-red-400 dark:text-white/46">
               <svg
                 aria-hidden="true"
                 viewBox="0 0 24 24"
@@ -102,18 +107,12 @@ export function HomeScreen({
               id="ask-genie"
               value={inputValue}
               onChange={(event) => onInputChange(event.target.value)}
-              placeholder="Ask Genie..."
+              placeholder="Ask Genie"
               autoComplete="off"
-              className="relative z-10 w-full rounded-full bg-transparent py-4 pl-12 pr-5 text-lg text-white placeholder:text-white/42 focus:outline-none"
+              className="relative z-10 w-full rounded-full bg-transparent py-3.5 pl-12 pr-5 text-base text-gray-900 placeholder:text-red-300 focus:outline-none dark:text-white dark:placeholder:text-white/42"
             />
           </div>
         </form>
-
-        {showBottomNav ? (
-          <div className="mt-7 opacity-70">
-            <BottomNav items={["Home", "Genie", "Search"]} />
-          </div>
-        ) : null}
       </div>
     </section>
   );

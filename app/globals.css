@@ -1,14 +1,15 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  --background: #0d0102;
+  --background: #ffffff;
+  --foreground: #1a1a1a;
+}
+
+.dark {
+  --background: #0a0000;
   --foreground: #f6e9e7;
-  --genie-shell: linear-gradient(
-    180deg,
-    rgba(15, 0, 0, 0.98) 0%,
-    rgba(48, 4, 5, 0.96) 48%,
-    rgba(11, 0, 0, 0.99) 100%
-  );
 }
 
 @theme inline {
@@ -19,19 +20,12 @@
   --font-display: var(--font-display-serif);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0d0102;
-    --foreground: #f6e9e7;
-  }
-}
-
 * {
   box-sizing: border-box;
 }
 
 html {
-  background: #070000;
+  background: var(--background);
 }
 
 body {
@@ -46,13 +40,7 @@ a {
   color: inherit;
 }
 
-.genie-shell {
-  position: relative;
-  background: var(--genie-shell);
-}
-
-.genie-shell::before {
-  content: "";
+.dark .dark-glow-top {
   position: absolute;
   inset: 0;
   pointer-events: none;
@@ -62,8 +50,7 @@ a {
     linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 18%);
 }
 
-.genie-shell::after {
-  content: "";
+.dark .dark-noise {
   position: absolute;
   inset: 0;
   pointer-events: none;

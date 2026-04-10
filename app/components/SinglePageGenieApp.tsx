@@ -20,6 +20,7 @@ import {
 } from "@/app/components/single-page/ui";
 import { HomeScreen } from "@/app/components/discovery/HomeScreen";
 import { GenieOrb } from "@/app/components/shared/GenieOrb";
+import { requestPushPermission } from "@/app/components/shared/NotificationsBoot";
 import {
   trackEvent,
   trackHomeScreenViewed,
@@ -43,10 +44,17 @@ import {
 } from "@/app/lib/localState";
 import {
   clearStoredSession,
+  convertGuestSession,
   fetchCurrentUser,
   fetchSavedVenues,
   fetchSubscriptionStatus,
   fetchSubscriptionStatusForSession,
+  initGuestSession,
+  loginWithMagicToken,
+  logVendorInteraction,
+  markNotificationOpened,
+  persistAuthSession,
+  registerPushToken,
   saveVenueForUser,
   syncSavedVenueIds,
   toConsumerAccount,
@@ -59,6 +67,7 @@ import {
   writeSignupPromptState,
   type SignupPromptTriggerReason,
 } from "@/app/lib/signupPrompt";
+import { readExternalUserId, writeExternalUserId } from "@/app/lib/sessionToken";
 
 type SpeechRecognitionResultShape = {
   results: ArrayLike<ArrayLike<{ transcript: string }>>;
@@ -128,8 +137,8 @@ function buildNativeMapsUrl(venue: GenieVenue) {
     return venue.google_maps_url.trim();
   }
 
-  const latitude = venue.latitude?.trim();
-  const longitude = venue.longitude?.trim();
+  const latitude = venue.latitude != null ? String(venue.latitude).trim() : undefined;
+  const longitude = venue.longitude != null ? String(venue.longitude).trim() : undefined;
   if (latitude && longitude) {
     return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${latitude},${longitude}`)}`;
   }
@@ -148,8 +157,8 @@ function buildStaticMapUrl(venue: GenieVenue) {
     return null;
   }
 
-  const latitude = venue.latitude?.trim();
-  const longitude = venue.longitude?.trim();
+  const latitude = venue.latitude != null ? String(venue.latitude).trim() : undefined;
+  const longitude = venue.longitude != null ? String(venue.longitude).trim() : undefined;
   const location =
     latitude && longitude
       ? `${latitude},${longitude}`
@@ -216,6 +225,7 @@ export function SinglePageGenieApp({
   const [installPrompt, setInstallPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
   const [isStandalone, setIsStandalone] = useState(false);
+  const hasPromptedForPushRef = useRef(false);
   const resultVenues = useMemo(
     () => (response ? [...response.decisive, ...response.more_nearby] : []),
     [response]
@@ -507,6 +517,7 @@ export function SinglePageGenieApp({
       city: venue.city ?? "",
       queryText: response?.normalized_intent ?? lastQuery,
     });
+    logVendorInteraction("profile_view", Number(venue.id));
     navigateTo("detail");
     if (!account) {
       window.setTimeout(() => maybeTriggerSignup("venue_tap"), 260);
@@ -659,7 +670,51 @@ export function SinglePageGenieApp({
   useEffect(() => {
     trackHomeScreenViewed();
     setAccount(readConsumerAccount());
-    void hydrateAuthenticatedSession();
+    void (async () => {
+      const url = new URL(window.location.href);
+      const magicToken = url.searchParams.get("token");
+
+      if (magicToken) {
+        try {
+          const previousExternalUserId = readExternalUserId();
+          const {
+            token: authToken,
+            user,
+            external_user_id,
+          } = await loginWithMagicToken(magicToken);
+
+          persistAuthSession(authToken, user);
+          if (external_user_id) {
+            writeExternalUserId(external_user_id);
+          }
+
+          // Preserve the latest documented behavior: remove the token from the URL
+          // immediately after a successful exchange.
+          url.searchParams.delete("token");
+          window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+
+          if (
+            previousExternalUserId &&
+            external_user_id &&
+            previousExternalUserId !== external_user_id
+          ) {
+            await convertGuestSession(external_user_id).catch(() => {});
+          }
+        } catch (error) {
+          console.error("Failed to exchange magic token", error);
+          setStatusMessage(
+            error instanceof Error
+              ? error.message
+              : "This sign-in link could not be verified."
+          );
+          url.searchParams.delete("token");
+          window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+        }
+      }
+
+      await hydrateAuthenticatedSession();
+      void initGuestSession().catch(() => {});
+    })();
   }, [hydrateAuthenticatedSession]);
 
   useEffect(() => {
@@ -770,6 +825,22 @@ export function SinglePageGenieApp({
   }, [hydrateAuthenticatedSession]);
 
   useEffect(() => {
+    const url = new URL(window.location.href);
+    const notificationId = url.searchParams.get("notification_id");
+    if (!notificationId) {
+      return;
+    }
+
+    const parsed = Number(notificationId);
+    if (Number.isFinite(parsed)) {
+      void markNotificationOpened(parsed).catch(() => {});
+    }
+
+    url.searchParams.delete("notification_id");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  }, []);
+
+  useEffect(() => {
     if (queryCount >= 2) {
       maybeTriggerSignup("second_query");
     }
@@ -805,6 +876,20 @@ export function SinglePageGenieApp({
         queryText: response.normalized_intent,
       });
     });
+
+    if (!hasPromptedForPushRef.current) {
+      hasPromptedForPushRef.current = true;
+      void (async () => {
+        const playerId = await requestPushPermission();
+        if (!playerId) {
+          return;
+        }
+
+        await registerPushToken(playerId).catch((error) => {
+          console.error("Failed to register push token", error);
+        });
+      })();
+    }
   }, [response]);
 
   useEffect(() => {
@@ -869,6 +954,7 @@ export function SinglePageGenieApp({
                   trackEvent(analyticsEvents.vendorCallTap, {
                     venueId: getVenueId(selectedVenue),
                   });
+                  logVendorInteraction("call_click", Number(selectedVenue.id));
                   window.open(
                     `tel:${selectedVenue.phone}`,
                     "_self"
@@ -891,6 +977,7 @@ export function SinglePageGenieApp({
                   trackEvent(analyticsEvents.vendorReservationTap, {
                     venueId: getVenueId(selectedVenue),
                   });
+                  logVendorInteraction("reservation_click", Number(selectedVenue.id));
                   window.open(
                     selectedVenue.reservation_url!,
                     "_blank",
@@ -908,6 +995,7 @@ export function SinglePageGenieApp({
             trackEvent(analyticsEvents.vendorShareTap, {
               venueId: getVenueId(selectedVenue),
             });
+            logVendorInteraction("share", Number(selectedVenue.id));
             void handleShareVenue(selectedVenue);
           },
         },
@@ -970,7 +1058,7 @@ export function SinglePageGenieApp({
   ]);
 
   return (
-    <main className="genie-shell flex h-dvh flex-col overflow-x-hidden overflow-y-auto px-4 pb-24 pt-3 sm:px-6 sm:pt-5">
+    <main className="flex h-dvh flex-col overflow-x-hidden overflow-y-auto bg-white px-4 pb-24 pt-3 dark:bg-[#0a0000] sm:px-6 sm:pt-5">
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col gap-3">
         {installPrompt && !isStandalone ? (
           <button
@@ -980,17 +1068,19 @@ export function SinglePageGenieApp({
               await installPrompt.userChoice;
               setInstallPrompt(null);
             }}
-            className="self-end rounded-full border border-white/12 bg-black/24 px-4 py-2 text-xs uppercase tracking-[0.26em] text-white/72"
+            className="self-end rounded-full border border-gray-200 bg-white px-4 py-2 text-xs uppercase tracking-[0.26em] text-gray-600 shadow-sm dark:border-white/12 dark:bg-black/24 dark:text-white/72"
           >
             Install Genie
           </button>
         ) : null}
 
-        {activeScreen !== "home" && activeScreen !== "vendor" ? (
+        {activeScreen !== "home" &&
+        activeScreen !== "vendor" &&
+        activeScreen !== "account" ? (
           <button
             type="button"
             onClick={handleTopBack}
-            className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/12 bg-black/24 text-white/82 shadow-[0_20px_50px_rgba(0,0,0,0.36)]"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 shadow-sm dark:border-white/12 dark:bg-black/24 dark:text-white/82 dark:shadow-[0_20px_50px_rgba(0,0,0,0.36)]"
             aria-label="Go back"
           >
             <svg
@@ -1054,8 +1144,8 @@ export function SinglePageGenieApp({
               <div className="mt-2">
                 <GenieOrb mode="listening" size={122} />
               </div>
-              <p className="mt-5 text-2xl text-white/84">I&apos;m listening...</p>
-              <p className="mt-2 text-sm text-white/48">
+              <p className="mt-5 text-2xl text-gray-800 dark:text-white">I&apos;m listening...</p>
+              <p className="mt-2 text-sm text-gray-400 dark:text-white/55">
                 Speak naturally. Genie will take it from here.
               </p>
             </div>
@@ -1079,7 +1169,7 @@ export function SinglePageGenieApp({
                 height={440}
                 className="w-full max-w-[15rem] object-contain"
               />
-              <p className="mt-2 text-3xl font-medium text-white">
+              <p className="mt-2 text-3xl font-medium text-red-600 dark:text-[#ff6b6b]">
                 {isThinking ? "Say less... I got you!" : response?.reply || statusMessage}
               </p>
               <div className="mt-5">
@@ -1087,7 +1177,7 @@ export function SinglePageGenieApp({
               </div>
               {nonStructuredResponse ? (
                 <div className="mt-5 w-full space-y-4">
-                  <div className="rounded-[22px] border border-white/10 bg-black/16 px-4 py-3 text-sm leading-6 text-white/74">
+                  <div className="rounded-[22px] border border-gray-100 bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
                     {nonStructuredResponse.response_mode === "supported_no_results"
                       ? "Genie did not find a clean match yet. Tighten the ask and try again."
                       : nonStructuredResponse.response_mode === "city_unsupported"
@@ -1097,13 +1187,13 @@ export function SinglePageGenieApp({
                   <button
                     type="button"
                     onClick={goHome}
-                    className="w-full rounded-[18px] border border-[#d75050] bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))] px-4 py-3 text-sm font-semibold text-white"
+                    className="w-full rounded-[18px] border border-red-500 bg-red-600 px-4 py-3 text-sm font-semibold text-white shadow-sm dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))] dark:shadow-[0_18px_36px_rgba(0,0,0,0.28)]"
                   >
                     Ask Genie again
                   </button>
                 </div>
               ) : statusMessage && currentResponseMode !== "structured_results" ? (
-                <div className="mt-5 rounded-[22px] border border-white/10 bg-black/16 px-4 py-3 text-sm leading-6 text-white/74">
+                <div className="mt-5 rounded-[22px] border border-gray-100 bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
                   {statusMessage}
                 </div>
               ) : null}
@@ -1139,7 +1229,7 @@ export function SinglePageGenieApp({
                   });
                   navigateTo("more");
                 }}
-                className="w-full rounded-[18px] border border-[#d75050] bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))] px-4 py-3 text-sm font-semibold text-white"
+                className="w-full rounded-[18px] border border-red-500 bg-red-600 px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-red-700 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))] dark:shadow-[0_18px_36px_rgba(0,0,0,0.28)]"
               >
                 See More Nearby
               </button>
@@ -1161,7 +1251,7 @@ export function SinglePageGenieApp({
                     key={venue.id}
                     type="button"
                     onClick={() => selectVenue(venue, index, "more")}
-                    className="overflow-hidden rounded-[22px] border border-[#8c2b2b] bg-black/20 text-left"
+                    className="overflow-hidden rounded-[20px] border border-gray-100 bg-white text-left shadow-[0_2px_16px_rgba(0,0,0,0.06)] dark:border-[#8c2b2b] dark:bg-black/20 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
                   >
                     <div className="relative h-36 w-full">
                       <Image
@@ -1172,11 +1262,11 @@ export function SinglePageGenieApp({
                       />
                     </div>
                     <div className="p-3">
-                      <p className="text-lg font-semibold text-white">{venue.venue_name}</p>
-                      <p className="mt-1 text-xs text-white/55">
+                      <p className="text-base font-bold text-gray-900 dark:text-white">{venue.venue_name}</p>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-white/55">
                         {getVenueHeadline(venue)} - {getVenueDistance(venue, index + 3)}
                       </p>
-                      <div className="mt-3 flex flex-wrap gap-2">
+                      <div className="mt-2 flex flex-wrap gap-1.5">
                         {buildVenueTags(venue)
                           .slice(0, 2)
                           .map((tag) => (
@@ -1189,14 +1279,14 @@ export function SinglePageGenieApp({
               </div>
               {response.more_nearby.length > 4 ? (
                 <>
-                  <p className="mt-5 font-[family:var(--font-display)] text-xl text-white/82">More spots you might like</p>
+                  <p className="mt-5 font-[family:var(--font-display)] text-xl text-gray-800 dark:text-white">More spots you might like</p>
                   <div className="mt-3 grid grid-cols-2 gap-3">
                 {response.more_nearby.slice(4).map((venue, index) => (
                   <button
                     key={venue.id}
                     type="button"
                     onClick={() => selectVenue(venue, index, "more")}
-                    className="overflow-hidden rounded-[22px] border border-[#8c2b2b] bg-black/20 text-left"
+                    className="overflow-hidden rounded-[20px] border border-gray-100 bg-white text-left shadow-[0_2px_16px_rgba(0,0,0,0.06)] dark:border-[#8c2b2b] dark:bg-black/20 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
                   >
                     <div className="relative h-36 w-full">
                       <Image
@@ -1207,11 +1297,11 @@ export function SinglePageGenieApp({
                       />
                     </div>
                     <div className="p-3">
-                      <p className="text-lg font-semibold text-white">{venue.venue_name}</p>
-                      <p className="mt-1 text-xs text-white/55">
+                      <p className="text-base font-bold text-gray-900 dark:text-white">{venue.venue_name}</p>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-white/55">
                         {getVenueHeadline(venue)} - {getVenueDistance(venue, index + 3)}
                       </p>
-                      <div className="mt-3 flex flex-wrap gap-2">
+                      <div className="mt-2 flex flex-wrap gap-1.5">
                         {buildVenueTags(venue)
                           .slice(0, 2)
                           .map((tag) => (
@@ -1238,24 +1328,24 @@ export function SinglePageGenieApp({
                   fill
                   className="object-cover"
                 />
-                <div className="absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,transparent,rgba(11,0,0,0.9))] px-5 pb-5 pt-12">
+                <div className="absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,transparent,rgba(0,0,0,0.7))] px-5 pb-5 pt-12">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <h2 className="text-4xl font-semibold text-white">
+                      <h2 className="text-3xl font-bold text-white">
                         {selectedVenue.venue_name}
                       </h2>
-                      <div className="mt-3 flex flex-wrap gap-2">
+                      <div className="mt-2 flex flex-wrap gap-1.5">
                         {[selectedVenue.energy_level || "Trending", selectedVenue.price_band || "Luxury", selectedVenue.music || "DJ set"].map((tag) => (
-                          <TagPill key={tag}>{tag}</TagPill>
+                          <span key={tag} className="rounded-full border border-white/30 bg-white/15 px-3 py-1 text-xs font-medium text-white">{tag}</span>
                         ))}
                       </div>
-                      <p className="mt-3 text-sm text-white/70">
+                      <p className="mt-2 text-sm text-white/80">
                         {selectedVenue.google_rating
                           ? `${"★".repeat(Math.round(selectedVenue.google_rating))} ${selectedVenue.google_rating.toFixed(1)}${selectedVenue.google_user_ratings_total ? ` (${selectedVenue.google_user_ratings_total} reviews)` : ""}`
                           : "Loved by the Genie crowd"}{" "}
                         · {getVenueDistance(selectedVenue, 1)} · {selectedVenue.area_neighborhood || selectedVenue.city || "Downtown"}
                       </p>
-                      <p className="mt-1 text-sm text-[#ffcf9f]">
+                      <p className="mt-1 text-sm text-orange-300">
                         {getVenueStatus(selectedVenue, 0)}
                         {selectedVenue.is_official_vendor ? " - Official Vendor" : ""}
                       </p>
@@ -1263,7 +1353,7 @@ export function SinglePageGenieApp({
                     <button
                       type="button"
                       onClick={() => handleSaveVenue(selectedVenue)}
-                      className="rounded-full border border-white/12 bg-black/32 p-3"
+                      className="rounded-full border border-white/20 bg-black/30 p-3"
                     >
                       <svg viewBox="0 0 24 24" className="h-6 w-6" fill={savedVenueIds.includes(getVenueId(selectedVenue)) ? "#ff4f4f" : "none"} stroke={savedVenueIds.includes(getVenueId(selectedVenue)) ? "#ff4f4f" : "currentColor"} strokeWidth="1.8">
                         <path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.5-7 10-7 10Z" />
@@ -1287,8 +1377,8 @@ export function SinglePageGenieApp({
                       onClick={action.onClick}
                       className={`rounded-[18px] border px-4 py-3 text-sm font-semibold ${
                         action.variant === "primary"
-                          ? "border-[#d75050] bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))] text-white"
-                          : "border-white/12 bg-black/20 text-white/82"
+                          ? "border-red-500 bg-red-600 text-white shadow-sm dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                          : "border-gray-200 bg-white text-gray-700 dark:border-white/12 dark:bg-black/20 dark:text-white/82"
                       }`}
                     >
                       {action.label}
@@ -1297,19 +1387,19 @@ export function SinglePageGenieApp({
                 </div>
 
                 <div>
-                  <h3 className="text-xl font-semibold text-white">About</h3>
-                  <p className="mt-2 text-sm leading-6 text-white/74">
+                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white">About</h3>
+                  <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-white/72">
                     {getVenueDescription(selectedVenue)}
                   </p>
                 </div>
 
-                <div className="overflow-hidden rounded-[24px] border border-white/10 bg-black/18">
-                  <div className="flex items-center justify-between border-b border-white/8 px-4 py-3">
+                <div className="overflow-hidden rounded-[24px] border border-gray-100 bg-gray-50 dark:border-white/10 dark:bg-black/20">
+                  <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 dark:border-white/10">
                     <div>
-                      <p className="text-sm uppercase tracking-[0.22em] text-white/38">
+                      <p className="text-sm uppercase tracking-[0.22em] text-gray-400 dark:text-white/42">
                         Location
                       </p>
-                      <p className="mt-1 text-base text-white">
+                      <p className="mt-1 text-base text-gray-900 dark:text-white">
                         {selectedVenue.address || "Houston, Texas"}
                       </p>
                     </div>
@@ -1323,13 +1413,14 @@ export function SinglePageGenieApp({
                           trackEvent(analyticsEvents.vendorMapTap, {
                             venueId: getVenueId(selectedVenue),
                           });
+                          logVendorInteraction("map_click", Number(selectedVenue.id));
                           window.open(
                             nativeMapsUrl,
                             "_blank",
                             "noopener,noreferrer"
                           );
                         }}
-                        className="rounded-[18px] border border-white/12 bg-black/20 px-4 py-3 text-sm font-semibold text-white/82"
+                        className="rounded-[18px] border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-700 dark:border-white/12 dark:bg-black/20 dark:text-white/82"
                       >
                         Open Map
                       </button>
@@ -1346,6 +1437,7 @@ export function SinglePageGenieApp({
                           trackEvent(analyticsEvents.vendorMapTap, {
                             venueId: getVenueId(selectedVenue),
                           });
+                          logVendorInteraction("map_click", Number(selectedVenue.id));
                           window.open(
                             nativeMapsUrl,
                             "_blank",
@@ -1353,7 +1445,7 @@ export function SinglePageGenieApp({
                           );
                         }
                       }}
-                      className="relative block h-48 w-full overflow-hidden border-b border-white/8 text-left"
+                      className="relative block h-48 w-full overflow-hidden border-b border-gray-100 text-left dark:border-white/10"
                     >
                       <img
                         src={mapPreviewUrl}
@@ -1370,9 +1462,9 @@ export function SinglePageGenieApp({
                   </div>
                 </div>
 
-                <div className="rounded-[24px] border border-white/10 bg-black/18 p-4">
+                <div className="rounded-[24px] border border-red-100 bg-red-50/50 p-4 dark:border-white/10 dark:bg-black/16">
                   <div className="flex items-center gap-3">
-                    <div className="relative h-16 w-16 flex-none overflow-hidden rounded-[18px] border border-white/10 bg-[#230404]">
+                    <div className="relative h-16 w-16 flex-none overflow-hidden rounded-[18px] border border-red-100 bg-white dark:border-white/10 dark:bg-[#230404]">
                       <Image
                         src="/genie-profile-pic.png"
                         alt="Genie"
@@ -1381,10 +1473,10 @@ export function SinglePageGenieApp({
                       />
                     </div>
                     <div>
-                      <p className="text-xs uppercase tracking-[0.28em] text-white/34">
+                      <p className="text-xs uppercase tracking-[0.28em] text-gray-400 dark:text-white/42">
                         Genie note
                       </p>
-                      <p className="mt-2 text-sm leading-6 text-white/74">
+                      <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-white/72">
                         Save this spot or sign up so Genie can remember your favorites, unlock your vibe history, and keep your next asks feeling smarter.
                       </p>
                     </div>
@@ -1402,7 +1494,7 @@ export function SinglePageGenieApp({
             subtitle="Anything you save lives here so you can jump back into your favorites."
           >
             {!account ? (
-              <div className="rounded-[24px] border border-white/10 bg-black/18 px-4 py-5 text-sm leading-6 text-white/72">
+              <div className="rounded-[24px] border border-gray-100 bg-gray-50 px-4 py-5 text-sm leading-6 text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
                 Sign up or log in to save venues and keep them here.
               </div>
             ) : savedVenues.length ? (
@@ -1418,7 +1510,7 @@ export function SinglePageGenieApp({
                 ))}
               </div>
             ) : (
-              <div className="rounded-[24px] border border-white/10 bg-black/18 px-4 py-5 text-sm leading-6 text-white/72">
+              <div className="rounded-[24px] border border-gray-100 bg-gray-50 px-4 py-5 text-sm leading-6 text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
                 You have not saved any spots yet. Save one from a Genie result and it will appear here.
               </div>
             )}
@@ -1455,6 +1547,7 @@ export function SinglePageGenieApp({
       <BottomDock
         items={bottomDockItems}
         activeId={activeScreen}
+        compact={activeScreen === "account" && !account}
         onSelect={(anchor) => {
           if (anchor === "home") {
             goHome();

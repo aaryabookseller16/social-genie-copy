@@ -17,7 +17,7 @@ function MicGlyph() {
   return (
     <svg
       aria-hidden="true"
-      className="h-8 w-8 text-white drop-shadow-[0_0_16px_rgba(255,255,255,0.35)]"
+      className="h-7 w-7 text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.4)]"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -65,8 +65,7 @@ export function GenieOrb({
       className={`relative inline-flex items-center justify-center ${className}`}
       style={{ width: size, height: size }}
     >
-      <span className="absolute inset-[-18%] rounded-full bg-[radial-gradient(circle,rgba(255,74,59,0.42)_0%,rgba(255,74,59,0.16)_48%,transparent_72%)] blur-xl animate-orbGlow" />
-      <span className="absolute inset-[8%] rounded-full border border-white/15 bg-black/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]" />
+      <span className="absolute inset-[-18%] rounded-full bg-[radial-gradient(circle,rgba(220,38,38,0.35)_0%,rgba(220,38,38,0.12)_48%,transparent_72%)] blur-xl animate-orbGlow" />
       <Image
         src="/orb.png"
         alt=""

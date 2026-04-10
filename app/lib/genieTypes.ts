@@ -62,9 +62,12 @@ export type GenieVenue = RawGenieVenue & {
 
 export type RawHandleMessageResponse = {
   reply?: string;
+  session_id?: number;
   session_token?: string;
   use_xano?: boolean;
   needs_location?: boolean;
+  reply_mode?: string;
+  mode?: string;
   top_venues?: RawGenieVenue[];
   more_venues?: RawGenieVenue[];
   decisive?: RawGenieVenue[];
@@ -87,6 +90,7 @@ export type GenieResponseEnvelope = {
   decisive: GenieVenue[];
   more_nearby: GenieVenue[];
   needs_location: boolean;
+  session_id?: number;
   session_token?: string;
   filters: GenieNormalizedFilters;
   debug?: Record<string, unknown>;

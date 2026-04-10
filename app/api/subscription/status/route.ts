@@ -1,45 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  xanoAuthFetch,
+  extractBearerToken,
+  XanoError,
+} from "@/app/lib/server/xanoProxy";
 
-import { updateApiStore } from "@/app/lib/server/apiStore";
-import { requireAuthenticatedUser } from "@/app/lib/server/requestAuth";
-
+/**
+ * GET /api/subscription/status
+ * Returns membership status via auth/me (Auth base URL).
+ */
 export async function GET(request: NextRequest) {
-  const { auth, errorResponse } = await requireAuthenticatedUser(request);
-  if (!auth) {
-    return errorResponse;
-  }
-
-  const sessionId = request.nextUrl.searchParams.get("session_id")?.trim();
-  if (!sessionId) {
-    return NextResponse.json({
-      status: auth.user.subscription_status,
-    });
-  }
-
-  const status = await updateApiStore((store) => {
-    const user = store.users.find((entry) => entry.id === auth.user.id);
-    if (!user) {
-      return null;
+  try {
+    const authToken = extractBearerToken(request);
+    if (!authToken) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    if (
-      user.pending_checkout_session_id &&
-      user.pending_checkout_session_id === sessionId
-    ) {
-      user.membership = "vibee";
-      user.subscription_status = "active";
-      user.pending_checkout_session_id = null;
-      user.pending_checkout_started_at = null;
+    const user = await xanoAuthFetch<{
+      membership_active?: boolean;
+      membership_plan?: string;
+    }>("auth/me", { authToken });
+
+    const status = user.membership_active ? "active" : "inactive";
+    return NextResponse.json({ status });
+  } catch (error) {
+    if (error instanceof XanoError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status }
+      );
     }
-
-    return user.subscription_status;
-  });
-
-  if (!status) {
-    return NextResponse.json({ error: "User not found" }, { status: 404 });
+    console.error("GET /api/subscription/status failed:", error);
+    return NextResponse.json(
+      { error: "Could not check subscription status." },
+      { status: 500 }
+    );
   }
-
-  return NextResponse.json({
-    status,
-  });
 }

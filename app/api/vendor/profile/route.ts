@@ -1,53 +1,46 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  xanoFetch,
+  extractBearerToken,
+  XanoError,
+} from "@/app/lib/server/xanoProxy";
 
-import { updateApiStore } from "@/app/lib/server/apiStore";
-import { requireAuthenticatedUser } from "@/app/lib/server/requestAuth";
-
+/**
+ * PUT /api/vendor/profile
+ * Update vendor profile fields.
+ */
 export async function PUT(request: NextRequest) {
-  const { auth, errorResponse } = await requireAuthenticatedUser(request);
-  if (!auth) {
-    return errorResponse;
-  }
-
-  const body = (await request.json().catch(() => ({}))) as Record<
-    string,
-    unknown
-  >;
-
-  const success = await updateApiStore((store) => {
-    const vendor = store.vendors.find((entry) => entry.id === auth.user.vendor_id);
-    if (!vendor) {
-      return false;
+  try {
+    const authToken = extractBearerToken(request);
+    if (!authToken) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    if (typeof body.description === "string") {
-      vendor.profile.description = body.description.trim();
-    }
-    if (typeof body.phone === "string") {
-      vendor.profile.phone = body.phone.trim();
-    }
-    if (typeof body.website_url === "string") {
-      vendor.profile.website_url = body.website_url.trim();
-    }
-    if (typeof body.reservation_url === "string") {
-      vendor.profile.reservation_url = body.reservation_url.trim();
-    }
-    if (typeof body.hours === "string") {
-      vendor.profile.hours = body.hours.trim();
-    }
-    if (typeof body.image_primary_url === "string") {
-      vendor.profile.image_primary_url = body.image_primary_url.trim();
-    }
+    const body = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
 
-    return true;
-  });
+    // For now, forward the payload directly.
+    // The Xano endpoint handles field validation.
+    const result = await xanoFetch("genie/vendor_profile", {
+      method: "PUT",
+      authToken,
+      body,
+    });
 
-  if (!success) {
+    return NextResponse.json(result ?? { success: true });
+  } catch (error) {
+    if (error instanceof XanoError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status }
+      );
+    }
+    console.error("PUT /api/vendor/profile failed:", error);
     return NextResponse.json(
-      { error: "Vendor profile not found" },
-      { status: 404 }
+      { error: "Could not update profile." },
+      { status: 500 }
     );
   }
-
-  return NextResponse.json({ success: true });
 }

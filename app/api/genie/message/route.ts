@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
             ? body.lng
             : undefined,
       radius_meters:
-        typeof body.radius_meters === "number" ? body.radius_meters : 8047,
+        typeof body.radius_meters === "number" ? body.radius_meters : 2500,
       location_label:
         typeof body.location_label === "string" ? body.location_label : undefined,
     };
@@ -135,12 +135,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const decisive = Array.isArray(upstreamJson.top_venues)
+    const topVenues = Array.isArray(upstreamJson.top_venues)
       ? upstreamJson.top_venues.map((venue) =>
           mapPublicVenue(venue as RawGenieVenue)
         )
       : [];
-    const moreNearby = Array.isArray(upstreamJson.more_venues)
+    const moreVenues = Array.isArray(upstreamJson.more_venues)
       ? upstreamJson.more_venues.map((venue) =>
           mapPublicVenue(venue as RawGenieVenue)
         )
@@ -151,14 +151,28 @@ export async function POST(request: NextRequest) {
         typeof upstreamJson.reply === "string"
           ? upstreamJson.reply
           : "Here are a few spots with a strong vibe near you.",
-      decisive: decisive.slice(0, 3),
-      more_nearby: moreNearby.slice(0, 12),
+      top_venues: topVenues.slice(0, 3),
+      more_venues: moreVenues.slice(0, 12),
+      session_id:
+        typeof upstreamJson.session_id === "number"
+          ? upstreamJson.session_id
+          : undefined,
       session_token:
         typeof upstreamJson.session_token === "string"
           ? upstreamJson.session_token
           : "",
       use_xano: Boolean(upstreamJson.use_xano),
       needs_location: Boolean(upstreamJson.needs_location),
+      reply_mode:
+        typeof upstreamJson.reply_mode === "string"
+          ? upstreamJson.reply_mode
+          : typeof upstreamJson.mode === "string"
+            ? upstreamJson.mode
+            : undefined,
+      filters:
+        typeof upstreamJson.filters === "object" && upstreamJson.filters
+          ? upstreamJson.filters
+          : {},
       debug:
         typeof upstreamJson.debug === "object" && upstreamJson.debug
           ? upstreamJson.debug

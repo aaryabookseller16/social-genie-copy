@@ -1,39 +1,72 @@
-import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { xanoFetch, XanoError } from "@/app/lib/server/xanoProxy";
 
-import { updateApiStore } from "@/app/lib/server/apiStore";
-import { requireAuthenticatedUser } from "@/app/lib/server/requestAuth";
-
+/**
+ * POST /api/subscription/create
+ * Creates Stripe checkout sessions via Xano.
+ *
+ * Vendor plan: genie/checkout_vendor_plan
+ * V.I.Bee consumer: genie/checkout_vibee
+ */
 export async function POST(request: NextRequest) {
-  const { auth, errorResponse } = await requireAuthenticatedUser(request);
-  if (!auth) {
-    return errorResponse;
-  }
+  try {
+    const body = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
 
-  const checkoutSessionId = await updateApiStore((store) => {
-    const user = store.users.find((entry) => entry.id === auth.user.id);
-    if (!user) {
-      return null;
+    const appUrl =
+      process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin;
+
+    if (body.vendor_id) {
+      const result = await xanoFetch<{
+        checkout_url: string;
+        session_id: string;
+      }>("genie/checkout_vendor_plan", {
+        method: "POST",
+        body: {
+          vendor_id: body.vendor_id,
+          plan_type: body.plan_type ?? "founding_partner",
+          boost_tier: body.boost_tier ?? undefined,
+          email: body.email,
+          success_url:
+            body.success_url ??
+            `${appUrl}/?vendor_checkout=success`,
+          cancel_url:
+            body.cancel_url ??
+            `${appUrl}/?vendor_checkout=cancelled`,
+        },
+      });
+
+      return NextResponse.json({ checkout_url: result.checkout_url });
     }
 
-    const mockSessionId = `cs_test_${randomUUID().replace(/-/g, "")}`;
-    user.pending_checkout_session_id = mockSessionId;
-    user.pending_checkout_started_at = Date.now();
-    return mockSessionId;
-  });
+    const result = await xanoFetch<{
+      checkout_url: string;
+      session_id: string;
+    }>("genie/checkout_vibee", {
+      method: "POST",
+      body: {
+        external_user_id: body.external_user_id ?? "",
+        success_url:
+          body.success_url ?? "https://www.socialbevy.com/vibee/success",
+        cancel_url:
+          body.cancel_url ?? "https://www.socialbevy.com/account",
+      },
+    });
 
-  if (!checkoutSessionId) {
+    return NextResponse.json({ checkout_url: result.checkout_url });
+  } catch (error) {
+    if (error instanceof XanoError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status }
+      );
+    }
+    console.error("POST /api/subscription/create failed:", error);
     return NextResponse.json(
-      { error: "User not found" },
-      { status: 404 }
+      { error: "Could not start checkout." },
+      { status: 500 }
     );
   }
-
-  const checkoutUrl = new URL("/", request.nextUrl.origin);
-  checkoutUrl.searchParams.set("checkout", "success");
-  checkoutUrl.searchParams.set("session_id", checkoutSessionId);
-
-  return NextResponse.json({
-    checkout_url: checkoutUrl.toString(),
-  });
 }

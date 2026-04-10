@@ -7,7 +7,12 @@ import {
 } from "./genieTypes";
 import { readAuthToken, readConsumerAccount } from "./localState";
 import { getRuntimeConfig } from "./runtimeConfig";
-import { readSessionToken, writeSessionToken } from "./sessionToken";
+import {
+  readSessionToken,
+  readExternalUserId,
+  writeSessionToken,
+  writeSessionId,
+} from "./sessionToken";
 
 export type { GenieFilters, GenieResponseEnvelope, GenieVenue };
 
@@ -18,7 +23,7 @@ export async function callGenie(message: string): Promise<GenieResponseEnvelope>
   const body = {
     message,
     channel: "web",
-    external_user_id: account?.id ? String(account.id) : "web_guest",
+    external_user_id: readExternalUserId() || (account?.id ? String(account.id) : "web_guest"),
     user_name: account?.firstName || undefined,
     session_token: readSessionToken(),
     city_context: config.citySlug,
@@ -85,7 +90,9 @@ export async function callGenie(message: string): Promise<GenieResponseEnvelope>
   const normalized = normalizeHandleMessageResponse(data, message);
 
   writeSessionToken(normalized.session_token);
+  if (typeof normalized.session_id === "number" && Number.isFinite(normalized.session_id)) {
+    writeSessionId(normalized.session_id);
+  }
 
   return normalized;
 }
-

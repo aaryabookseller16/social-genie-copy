@@ -37,6 +37,23 @@ function inferResponseMode(
   rawResponse: RawHandleMessageResponse,
   totalVenueCount: number
 ): GenieResponseMode {
+  const xanoMode =
+    rawResponse.reply_mode ??
+    rawResponse.mode ??
+    rawResponse.debug?.reply_mode;
+  if (typeof xanoMode === "string") {
+    switch (xanoMode) {
+      case "has_results":
+        return "structured_results";
+      case "supported_no_results":
+        return "supported_no_results";
+      case "city_missing":
+        return "supported_no_results"; // treat as no results with location prompt
+      case "city_unsupported":
+        return "city_unsupported";
+    }
+  }
+
   const debug = rawResponse.debug ?? {};
   const citySupported = debug.city_supported;
 
@@ -82,6 +99,7 @@ export function normalizeHandleMessageResponse(
     decisive,
     more_nearby: moreNearby,
     needs_location: Boolean(response.needs_location),
+    session_id: response.session_id,
     session_token: response.session_token,
     filters: {
       city: response.filters?.city ?? cityContext,
