@@ -15,30 +15,33 @@ export async function POST(request: NextRequest) {
       unknown
     >;
 
-    const appUrl =
-      process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin;
-
     if (body.vendor_id) {
       const result = await xanoFetch<{
         checkout_url: string;
         session_id: string;
+        plan_type?: string;
+        mode?: string;
       }>("genie/checkout_vendor_plan", {
         method: "POST",
         body: {
           vendor_id: body.vendor_id,
           plan_type: body.plan_type ?? "founding_partner",
           boost_tier: body.boost_tier ?? undefined,
-          email: body.email,
           success_url:
             body.success_url ??
-            `${appUrl}/?vendor_checkout=success`,
+            "https://genie.socialbevy.com/vendor/success",
           cancel_url:
             body.cancel_url ??
-            `${appUrl}/?vendor_checkout=cancelled`,
+            "https://genie.socialbevy.com/vendor",
         },
       });
 
-      return NextResponse.json({ checkout_url: result.checkout_url });
+      return NextResponse.json({
+        checkout_url: result.checkout_url,
+        session_id: result.session_id,
+        plan_type: result.plan_type,
+        mode: result.mode,
+      });
     }
 
     const result = await xanoFetch<{
@@ -49,9 +52,9 @@ export async function POST(request: NextRequest) {
       body: {
         external_user_id: body.external_user_id ?? "",
         success_url:
-          body.success_url ?? "https://www.socialbevy.com/vibee/success",
+          body.success_url ?? "https://genie.socialbevy.com/vibee/success",
         cancel_url:
-          body.cancel_url ?? "https://www.socialbevy.com/account",
+          body.cancel_url ?? "https://genie.socialbevy.com/account",
       },
     });
 

@@ -6,8 +6,9 @@ import {
 } from "@/app/lib/server/xanoProxy";
 
 /**
- * GET /api/vendor/dashboard?vendor_id=X
- * Proxies to genie/vendor_dashboard_v1.
+ * GET /api/vendor/profile-completeness?vendor_id=X
+ * Profile score and missing fields — available on both Basic and Pro dashboards.
+ * Proxies to genie/vendor_profile_completeness (Genie base URL api:pgMKWi2e)
  */
 export async function GET(request: NextRequest) {
   try {
@@ -21,7 +22,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const result = await xanoFetch("genie/vendor_dashboard_v1", {
+    const result = await xanoFetch("genie/vendor_profile_completeness", {
       authToken,
       params: { vendor_id: vendorId },
     });
@@ -34,9 +35,9 @@ export async function GET(request: NextRequest) {
         { status: error.status }
       );
     }
-    console.error("GET /api/vendor/dashboard failed:", error);
+    console.error("GET /api/vendor/profile-completeness failed:", error);
     return NextResponse.json(
-      { error: "Could not load dashboard data." },
+      { error: "Could not load profile completeness." },
       { status: 500 }
     );
   }

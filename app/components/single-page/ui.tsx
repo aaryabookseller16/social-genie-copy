@@ -16,12 +16,6 @@ export type FlowAnchor =
   | "account"
   | "vendor";
 
-export type BottomDockItem = {
-  id: FlowAnchor;
-  label: string;
-  icon: ReactNode;
-};
-
 export function SectionShell({
   sectionRef,
   title,
@@ -133,7 +127,7 @@ export function GenieBubble({
   compact?: boolean;
 }) {
   return (
-    <div className="flex items-start gap-3 rounded-[24px] border border-red-100 bg-red-50/40 p-3 dark:border-white/10 dark:bg-black/16">
+    <div className="flex items-start gap-3 rounded-[22px] border border-red-200 bg-[rgba(255,250,250,0.92)] p-3 dark:border-white/10 dark:bg-black/16">
       <div className="relative h-14 w-14 flex-none overflow-hidden rounded-[18px] border border-red-100 bg-white dark:border-white/10 dark:bg-[#230404]">
         <Image
           src="/genie-profile-pic.png"
@@ -143,8 +137,8 @@ export function GenieBubble({
         />
       </div>
       <p
-        className={`leading-6 text-gray-700 dark:text-white/82 ${
-          compact ? "text-sm" : "text-base"
+        className={`leading-6 text-gray-800 dark:text-white/82 ${
+          compact ? "text-[0.98rem]" : "text-base"
         }`}
       >
         {copy}
@@ -154,71 +148,67 @@ export function GenieBubble({
 }
 
 export function BottomDock({
-  items,
   activeId,
-  compact = false,
-  onSelect,
+  onHome,
+  onSearch,
+  onCenter,
 }: {
-  items: BottomDockItem[];
   activeId?: FlowAnchor;
-  compact?: boolean;
-  onSelect: (id: FlowAnchor) => void;
+  onHome: () => void;
+  onSearch: () => void;
+  onCenter: () => void;
 }) {
-  if (compact) {
-    return (
-      <div className="pointer-events-auto fixed bottom-0 left-1/2 z-50 w-[min(100vw,28rem)] -translate-x-1/2">
-        <div className="border-t border-gray-100 bg-white/95 px-3 pb-[calc(env(safe-area-inset-bottom,0px)+14px)] pt-3 backdrop-blur-2xl dark:border-white/16 dark:bg-[rgba(11,0,0,0.88)]">
-          <button
-            type="button"
-            onClick={() => onSelect("home")}
-            className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-red-400 bg-[radial-gradient(circle,rgba(220,38,38,0.95),rgba(185,28,28,1)_70%)] shadow-[0_4px_16px_rgba(220,38,38,0.35)] dark:border-[#e65d5d]/75 dark:bg-[radial-gradient(circle,rgba(255,75,75,0.9),rgba(130,9,11,0.94)_70%)] dark:shadow-[0_0_24px_rgba(255,57,57,0.55)]"
-            aria-label="Go home"
-          >
-            <Image src="/genie-profile-pic.png" alt="" width={28} height={28} className="rounded-full" />
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="pointer-events-auto fixed bottom-0 left-1/2 z-50 w-[min(100vw,28rem)] -translate-x-1/2">
-      <div className="flex items-center justify-between border-t border-gray-100 bg-white/95 px-6 pb-[calc(env(safe-area-inset-bottom,0px)+8px)] pt-2 backdrop-blur-2xl dark:border-white/12 dark:bg-[rgba(11,0,0,0.82)]">
-        {items.slice(0, 2).map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => onSelect(item.id)}
-            className={`flex flex-col items-center gap-1 p-2 text-[0.65rem] uppercase tracking-[0.12em] ${
-              activeId === item.id ? "text-red-600 dark:text-white" : "text-gray-400 dark:text-white/58"
-            }`}
-          >
-            <span className={activeId === item.id ? "text-red-600 dark:text-[#ff7b7b]" : "text-gray-400 dark:text-white/76"}>{item.icon}</span>
-            {item.label}
-          </button>
-        ))}
+      <div className="relative flex items-end justify-between border-t border-red-300 bg-white/95 px-10 pb-[calc(env(safe-area-inset-bottom,0px)+12px)] pt-3 backdrop-blur-2xl dark:border-[#8a2020] dark:bg-[rgba(11,0,0,0.9)]">
+        <button
+          type="button"
+          onClick={onHome}
+          className={`flex h-10 w-10 items-center justify-center ${
+            activeId === "saved" || activeId === "detail"
+              ? "text-gray-400 dark:text-white/58"
+              : "text-red-600 dark:text-[#ff7b7b]"
+          }`}
+          aria-label="Go home"
+        >
+          <Image
+            src="/home_svgrepo.com.png"
+            alt=""
+            width={20}
+            height={20}
+            className="h-5 w-5 object-contain"
+          />
+        </button>
 
         <button
           type="button"
-          onClick={() => onSelect("home")}
-          className="relative -mt-6 mx-4 flex h-16 w-16 items-center justify-center rounded-full border-2 border-red-400 bg-[radial-gradient(circle,rgba(220,38,38,0.95),rgba(185,28,28,1)_70%)] shadow-[0_4px_20px_rgba(220,38,38,0.4)] dark:border-[#e65d5d]/75 dark:bg-[radial-gradient(circle,rgba(255,75,75,0.9),rgba(130,9,11,0.94)_70%)] dark:shadow-[0_0_24px_rgba(255,57,57,0.55)]"
+          onClick={onCenter}
+          className="relative -mt-7 flex h-[72px] w-[72px] items-center justify-center"
+          aria-label="Start voice search"
         >
-          <Image src="/genie-profile-pic.png" alt="Genie" width={32} height={32} className="rounded-full" />
+          <Image
+            src="/Ellipse 120.png"
+            alt=""
+            fill
+            sizes="72px"
+            className="object-contain"
+          />
         </button>
 
-        {items.slice(2).map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => onSelect(item.id)}
-            className={`flex flex-col items-center gap-1 p-2 text-[0.65rem] uppercase tracking-[0.12em] ${
-              activeId === item.id ? "text-red-600 dark:text-white" : "text-gray-400 dark:text-white/58"
-            }`}
-          >
-            <span className={activeId === item.id ? "text-red-600 dark:text-[#ff7b7b]" : "text-gray-400 dark:text-white/76"}>{item.icon}</span>
-            {item.label}
-          </button>
-        ))}
+        <button
+          type="button"
+          onClick={onSearch}
+          className="flex h-10 w-10 items-center justify-center text-gray-400 dark:text-white/58"
+          aria-label="Search"
+        >
+          <Image
+            src="/search_icon.png"
+            alt=""
+            width={20}
+            height={20}
+            className="h-5 w-5 object-contain"
+          />
+        </button>
       </div>
     </div>
   );
@@ -283,53 +273,57 @@ export function ResultCard({
     <button
       type="button"
       onClick={onOpen}
-      className="w-full overflow-hidden rounded-[20px] border border-gray-100 bg-white text-left shadow-[0_2px_16px_rgba(0,0,0,0.06)] transition hover:shadow-[0_4px_24px_rgba(0,0,0,0.1)] dark:border-[#8c2b2b] dark:bg-black/20 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)] dark:hover:border-[#dc5d5d]"
+      className="w-full overflow-hidden rounded-[18px] border border-red-200 bg-[rgba(255,251,251,0.96)] text-left shadow-[0_8px_24px_rgba(0,0,0,0.06)] transition hover:shadow-[0_10px_26px_rgba(0,0,0,0.1)] dark:border-[#8c2b2b] dark:bg-black/20 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)] dark:hover:border-[#dc5d5d]"
     >
-      <div className="relative h-44 w-full">
-        <Image
-          src={venue.image || "/sample-venue-1.jpeg"}
-          alt={venue.venue_name || "Venue"}
-          fill
-          className="object-cover"
-        />
-      </div>
-      <div className="p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-lg font-bold text-gray-900 dark:text-white">
-              {venue.venue_name}
-            </p>
-            <p className="mt-0.5 text-sm text-gray-500 dark:text-white/55">
-              {getVenueHeadline(venue)} - {getVenueDistance(venue, index)}
-            </p>
+      <div className="flex gap-3 p-3">
+        <div className="relative h-[7.25rem] w-[7.25rem] flex-none overflow-hidden rounded-[14px]">
+          <Image
+            src={venue.image || "/sample-venue-1.jpeg"}
+            alt={venue.venue_name || "Venue"}
+            fill
+            className="object-cover"
+          />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="truncate text-[1.1rem] font-semibold leading-6 text-gray-900 dark:text-white">
+                {venue.venue_name}
+              </p>
+              <p className="mt-0.5 truncate text-[0.75rem] text-gray-500 dark:text-white/55">
+                {getVenueHeadline(venue)} - {getVenueDistance(venue, index)}
+              </p>
+            </div>
+            {onSave ? (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onSave();
+                }}
+                className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-500 hover:border-red-300 hover:text-red-600 dark:border-white/12 dark:bg-black/24 dark:text-white/60 dark:hover:border-white/30 dark:hover:text-white"
+              >
+                Save
+              </button>
+            ) : null}
           </div>
-          {onSave ? (
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onSave();
-              }}
-              className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-500 hover:border-red-300 hover:text-red-600 dark:border-white/12 dark:bg-black/24 dark:text-white/60 dark:hover:border-white/30 dark:hover:text-white"
-            >
-              Save
-            </button>
-          ) : null}
+
+          <p className="mt-1 text-[0.76rem] leading-4 text-red-500 dark:text-[#ff9d7d]">
+            {buildVenueTags(venue)[0] || "Lively sports bar"}
+          </p>
+
+          <p className="mt-1 line-clamp-2 text-[0.82rem] leading-4 text-gray-600 dark:text-white/72">
+            {getVenueDescription(venue)}
+          </p>
+
+          <p className="mt-2 flex items-center gap-1.5 text-[0.78rem] text-[#ff9b45] dark:text-[#ffb45d]">
+            <span className={`inline-block h-2 w-2 rounded-full ${
+              venue.is_open_now ? "bg-[#f7c948]" : "bg-orange-400 dark:bg-[#ff9f4f]"
+            }`} />
+            {getVenueStatus(venue, index)}
+          </p>
         </div>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {buildVenueTags(venue).slice(0, 2).map((tag) => (
-            <TagPill key={tag}>{tag}</TagPill>
-          ))}
-        </div>
-        <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-white/72">
-          {getVenueDescription(venue)}
-        </p>
-        <p className="mt-2 flex items-center gap-1.5 text-sm text-gray-500 dark:text-[#ffb45d]">
-          <span className={`inline-block h-2 w-2 rounded-full ${
-            venue.is_open_now ? "bg-green-500 dark:bg-[#4ade80]" : "bg-orange-400 dark:bg-[#ff9f4f]"
-          }`} />
-          {getVenueStatus(venue, index)}
-        </p>
       </div>
     </button>
   );

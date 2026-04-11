@@ -2,10 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { type RawGenieVenue } from "@/app/lib/genieTypes";
 import { getAuthenticatedUser } from "@/app/lib/server/requestAuth";
-
-const XANO_BASE_URL = process.env.XANO_BASE_URL || "";
-const XANO_HANDLE_MESSAGE_PATH =
-  process.env.XANO_GENIE_HANDLE_MESSAGE_PATH || "";
+import { xanoFetch, XanoError } from "@/app/lib/server/xanoProxy";
 
 function mapPublicVenue(rawVenue: RawGenieVenue) {
   return {
@@ -19,6 +16,11 @@ function mapPublicVenue(rawVenue: RawGenieVenue) {
   };
 }
 
+/**
+ * POST /api/genie/message
+ * Main Genie message handler — proxies to genie/ep_handle_message_dev
+ * Uses Genie base URL (api:pgMKWi2e)
+ */
 export async function POST(request: NextRequest) {
   try {
     // Optional auth: enrich with user context when JWT is present
@@ -107,33 +109,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!XANO_BASE_URL || !XANO_HANDLE_MESSAGE_PATH) {
-      return NextResponse.json(
-        { error: "Xano configuration is missing" },
-        { status: 500 }
-      );
-    }
-
-    const upstreamUrl = new URL(XANO_HANDLE_MESSAGE_PATH, XANO_BASE_URL);
-    const upstreamResponse = await fetch(upstreamUrl.toString(), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(upstreamBody),
-      cache: "no-store",
-    });
-
-    const upstreamJson = (await upstreamResponse.json().catch(() => null)) as
-      | Record<string, unknown>
-      | null;
-
-    if (!upstreamResponse.ok || !upstreamJson) {
-      return NextResponse.json(
-        { error: "Failed to process Genie message" },
-        { status: upstreamResponse.status || 500 }
-      );
-    }
+    const upstreamJson = await xanoFetch<Record<string, unknown>>(
+      "genie/ep_handle_message_dev",
+      {
+        method: "POST",
+        body: upstreamBody,
+      }
+    );
 
     const topVenues = Array.isArray(upstreamJson.top_venues)
       ? upstreamJson.top_venues.map((venue) =>
@@ -179,6 +161,12 @@ export async function POST(request: NextRequest) {
           : undefined,
     });
   } catch (error) {
+    if (error instanceof XanoError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status }
+      );
+    }
     console.error("POST /api/genie/message failed:", error);
     return NextResponse.json(
       { error: "Unexpected server error" },

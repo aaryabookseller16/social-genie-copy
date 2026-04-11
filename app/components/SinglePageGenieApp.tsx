@@ -7,6 +7,7 @@ import {
   AccountSection,
   type AccountScreenMode,
 } from "@/app/components/single-page/AccountSection";
+import { DrawerMenu } from "@/app/components/single-page/DrawerMenu";
 import { VendorSection } from "@/app/components/single-page/VendorSection";
 import {
   BottomDock,
@@ -14,7 +15,6 @@ import {
   ResultCard,
   SectionShell,
   TagPill,
-  type BottomDockItem,
   type FlowAnchor,
   buildVenueTags,
 } from "@/app/components/single-page/ui";
@@ -219,6 +219,7 @@ export function SinglePageGenieApp({
   const [mapPreviewFailed, setMapPreviewFailed] = useState(false);
   const [accountScreenMode, setAccountScreenMode] =
     useState<AccountScreenMode>(null);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [queryCount, setQueryCount] = useState(0);
   const [browseCount, setBrowseCount] = useState(0);
   const [hasOpenedMoreNearby, setHasOpenedMoreNearby] = useState(false);
@@ -259,11 +260,13 @@ export function SinglePageGenieApp({
   const goHome = useCallback(() => {
     screenHistoryRef.current = [];
     stopListeningSession();
+    setIsDrawerOpen(false);
     setActiveScreen("home");
   }, [stopListeningSession]);
 
   const navigateTo = useCallback(
     (screen: FlowAnchor, pushCurrent = true) => {
+      setIsDrawerOpen(false);
       setActiveScreen((previous) => {
         if (previous === screen) {
           return previous;
@@ -282,6 +285,7 @@ export function SinglePageGenieApp({
   const goBack = useCallback(
     (fallback: FlowAnchor = "home") => {
       stopListeningSession();
+      setIsDrawerOpen(false);
       const previous = screenHistoryRef.current.pop() ?? fallback;
       setActiveScreen(previous);
     },
@@ -624,48 +628,6 @@ export function SinglePageGenieApp({
 
     trackShare(getVenueId(venue));
   };
-
-  const bottomDockItems: BottomDockItem[] = [
-    {
-      id: "home",
-      label: "Home",
-      icon: (
-        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
-          <path d="M4 11.5 12 5l8 6.5" />
-          <path d="M6.5 10.5V19h11v-8.5" />
-        </svg>
-      ),
-    },
-    {
-      id: "saved",
-      label: "Saved",
-      icon: (
-        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
-          <path d="M7 5h10a2 2 0 0 1 2 2v12l-7-3-7 3V7a2 2 0 0 1 2-2Z" />
-        </svg>
-      ),
-    },
-    {
-      id: "account",
-      label: "Account",
-      icon: (
-        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
-          <circle cx="12" cy="8" r="3.5" />
-          <path d="M5 19c1.8-3.1 4.1-4.7 7-4.7S17.2 15.9 19 19" />
-        </svg>
-      ),
-    },
-    {
-      id: "vendor",
-      label: "Vendor",
-      icon: (
-        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
-          <path d="M4 7h16v10H4z" />
-          <path d="M8 7V5h8v2" />
-        </svg>
-      ),
-    },
-  ];
 
   useEffect(() => {
     trackHomeScreenViewed();
@@ -1018,6 +980,57 @@ export function SinglePageGenieApp({
     goBack("home");
   }, [account, goBack]);
 
+  const handleDrawerNavigate = useCallback(
+    (
+      target:
+        | "home"
+        | "account"
+        | "saved"
+        | "membership"
+        | "vendor"
+        | "how-it-works"
+        | "contact"
+        | "terms"
+    ) => {
+      switch (target) {
+        case "home":
+          goHome();
+          break;
+        case "account":
+        case "membership":
+          navigateTo("account");
+          break;
+        case "saved":
+          navigateTo("saved");
+          break;
+        case "vendor":
+          navigateTo("vendor");
+          break;
+        case "how-it-works":
+          setIsDrawerOpen(false);
+          window.open(
+            "https://www.socialbevy.com/how-genie-works",
+            "_blank",
+            "noopener,noreferrer"
+          );
+          break;
+        case "contact":
+          setIsDrawerOpen(false);
+          window.open(
+            "https://www.socialbevy.com/vendors",
+            "_blank",
+            "noopener,noreferrer"
+          );
+          break;
+        case "terms":
+          setIsDrawerOpen(false);
+          window.open("https://www.socialbevy.com/", "_blank", "noopener,noreferrer");
+          break;
+      }
+    },
+    [goHome, navigateTo]
+  );
+
   const handleTopBack = useCallback(() => {
     switch (activeScreen) {
       case "listening":
@@ -1057,8 +1070,29 @@ export function SinglePageGenieApp({
     goHome,
   ]);
 
+  const shouldShowTopBar =
+    activeScreen !== "home" &&
+    activeScreen !== "vendor" &&
+    activeScreen !== "account";
+
+  const shouldShowFooter =
+    activeScreen === "decision" ||
+    activeScreen === "more" ||
+    activeScreen === "detail" ||
+    activeScreen === "saved";
+
+  const footerActiveId: FlowAnchor =
+    activeScreen === "saved" ? "saved" : activeScreen === "home" ? "home" : "decision";
+
   return (
     <main className="flex h-dvh flex-col overflow-x-hidden overflow-y-auto bg-white px-4 pb-24 pt-3 dark:bg-[#0a0000] sm:px-6 sm:pt-5">
+      <DrawerMenu
+        visible={isDrawerOpen}
+        activeScreen={activeScreen}
+        onClose={() => setIsDrawerOpen(false)}
+        onNavigate={handleDrawerNavigate}
+      />
+
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col gap-3">
         {installPrompt && !isStandalone ? (
           <button
@@ -1074,25 +1108,38 @@ export function SinglePageGenieApp({
           </button>
         ) : null}
 
-        {activeScreen !== "home" &&
-        activeScreen !== "vendor" &&
-        activeScreen !== "account" ? (
-          <button
-            type="button"
-            onClick={handleTopBack}
-            className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 shadow-sm dark:border-white/12 dark:bg-black/24 dark:text-white/82 dark:shadow-[0_20px_50px_rgba(0,0,0,0.36)]"
-            aria-label="Go back"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              className="h-5 w-5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
+        {shouldShowTopBar ? (
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={handleTopBack}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 shadow-sm dark:border-white/12 dark:bg-black/24 dark:text-white/82 dark:shadow-[0_20px_50px_rgba(0,0,0,0.36)]"
+              aria-label="Go back"
             >
-              <path d="m15 18-6-6 6-6" />
-            </svg>
-          </button>
+              <svg
+                viewBox="0 0 24 24"
+                className="h-5 w-5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+              >
+                <path d="m15 18-6-6 6-6" />
+              </svg>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsDrawerOpen(true)}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-gray-200 bg-white text-red-600 shadow-sm dark:border-white/12 dark:bg-black/24 dark:text-white/82 dark:shadow-[0_20px_50px_rgba(0,0,0,0.36)]"
+              aria-label="Open navigation menu"
+            >
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                <path d="M5 7.5h14" />
+                <path d="M5 12h14" />
+                <path d="M5 16.5h14" />
+              </svg>
+            </button>
+          </div>
         ) : null}
 
         {activeScreen === "home" ? (
@@ -1102,6 +1149,7 @@ export function SinglePageGenieApp({
             inputValue={inputValue}
             isSubmitting={isThinking}
             showBottomNav={false}
+            onMenuOpen={() => setIsDrawerOpen(true)}
             onInputChange={(value) => {
               if (!hasTrackedTypingRef.current && value.trim().length > 0) {
                 hasTrackedTypingRef.current = true;
@@ -1229,9 +1277,10 @@ export function SinglePageGenieApp({
                   });
                   navigateTo("more");
                 }}
-                className="w-full rounded-[18px] border border-red-500 bg-red-600 px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-red-700 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))] dark:shadow-[0_18px_36px_rgba(0,0,0,0.28)]"
+                className="flex w-full items-center justify-center gap-2 rounded-[18px] border border-red-200 bg-white px-4 py-3 text-[1.05rem] font-medium text-gray-800 shadow-sm hover:bg-red-50 dark:border-white/12 dark:bg-black/20 dark:text-white"
               >
-                See More Nearby
+                <span>See More Nearby</span>
+                <span aria-hidden="true">→</span>
               </button>
             </div>
           </SectionShell>
@@ -1246,12 +1295,12 @@ export function SinglePageGenieApp({
             <div className="space-y-4">
               <GenieBubble copy="Here are a couple more spots you might like." compact />
               <div className="grid grid-cols-2 gap-3">
-                {response.more_nearby.slice(0, 4).map((venue, index) => (
+                {response.more_nearby.slice(0, 2).map((venue, index) => (
                   <button
                     key={venue.id}
                     type="button"
                     onClick={() => selectVenue(venue, index, "more")}
-                    className="overflow-hidden rounded-[20px] border border-gray-100 bg-white text-left shadow-[0_2px_16px_rgba(0,0,0,0.06)] dark:border-[#8c2b2b] dark:bg-black/20 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
+                    className="overflow-hidden rounded-[16px] border border-red-200 bg-white text-left shadow-[0_8px_24px_rgba(0,0,0,0.06)] dark:border-[#8c2b2b] dark:bg-black/20 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
                   >
                     <div className="relative h-36 w-full">
                       <Image
@@ -1261,9 +1310,9 @@ export function SinglePageGenieApp({
                         className="object-cover"
                       />
                     </div>
-                    <div className="p-3">
-                      <p className="text-base font-bold text-gray-900 dark:text-white">{venue.venue_name}</p>
-                      <p className="mt-1 text-xs text-gray-500 dark:text-white/55">
+                    <div className="p-2.5">
+                      <p className="line-clamp-1 text-[1rem] font-semibold text-gray-900 dark:text-white">{venue.venue_name}</p>
+                      <p className="mt-1 text-[0.72rem] text-gray-500 dark:text-white/55">
                         {getVenueHeadline(venue)} - {getVenueDistance(venue, index + 3)}
                       </p>
                       <div className="mt-2 flex flex-wrap gap-1.5">
@@ -1277,18 +1326,18 @@ export function SinglePageGenieApp({
                   </button>
                 ))}
               </div>
-              {response.more_nearby.length > 4 ? (
+              {response.more_nearby.length > 2 ? (
                 <>
                   <p className="mt-5 font-[family:var(--font-display)] text-xl text-gray-800 dark:text-white">More spots you might like</p>
-                  <div className="mt-3 grid grid-cols-2 gap-3">
-                {response.more_nearby.slice(4).map((venue, index) => (
+                  <div className="grid grid-cols-3 gap-3">
+                {response.more_nearby.slice(2, 5).map((venue, index) => (
                   <button
                     key={venue.id}
                     type="button"
-                    onClick={() => selectVenue(venue, index, "more")}
-                    className="overflow-hidden rounded-[20px] border border-gray-100 bg-white text-left shadow-[0_2px_16px_rgba(0,0,0,0.06)] dark:border-[#8c2b2b] dark:bg-black/20 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
+                    onClick={() => selectVenue(venue, index + 2, "more")}
+                    className="overflow-hidden rounded-[16px] border border-red-200 bg-white text-left shadow-[0_8px_20px_rgba(0,0,0,0.05)] dark:border-[#8c2b2b] dark:bg-black/20 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
                   >
-                    <div className="relative h-36 w-full">
+                    <div className="relative h-24 w-full">
                       <Image
                         src={venue.image || "/sample-venue-2.jpeg"}
                         alt={venue.venue_name || "Venue"}
@@ -1296,14 +1345,14 @@ export function SinglePageGenieApp({
                         className="object-cover"
                       />
                     </div>
-                    <div className="p-3">
-                      <p className="text-base font-bold text-gray-900 dark:text-white">{venue.venue_name}</p>
-                      <p className="mt-1 text-xs text-gray-500 dark:text-white/55">
-                        {getVenueHeadline(venue)} - {getVenueDistance(venue, index + 3)}
+                    <div className="p-2">
+                      <p className="line-clamp-2 text-[0.9rem] font-medium leading-5 text-gray-900 dark:text-white">{venue.venue_name}</p>
+                      <p className="mt-1 text-[0.66rem] leading-4 text-gray-500 dark:text-white/55">
+                        {getVenueHeadline(venue)} - {getVenueDistance(venue, index + 5)}
                       </p>
-                      <div className="mt-2 flex flex-wrap gap-1.5">
+                      <div className="mt-1.5 flex flex-wrap gap-1">
                         {buildVenueTags(venue)
-                          .slice(0, 2)
+                          .slice(0, 1)
                           .map((tag) => (
                             <TagPill key={`${venue.id}-${tag}`}>{tag}</TagPill>
                           ))}
@@ -1544,19 +1593,14 @@ export function SinglePageGenieApp({
         />
       </div>
 
-      <BottomDock
-        items={bottomDockItems}
-        activeId={activeScreen}
-        compact={activeScreen === "account" && !account}
-        onSelect={(anchor) => {
-          if (anchor === "home") {
-            goHome();
-            return;
-          }
-
-          navigateTo(anchor);
-        }}
-      />
+      {shouldShowFooter ? (
+        <BottomDock
+          activeId={footerActiveId}
+          onHome={goHome}
+          onSearch={() => navigateTo("home", false)}
+          onCenter={startListening}
+        />
+      ) : null}
     </main>
   );
 }

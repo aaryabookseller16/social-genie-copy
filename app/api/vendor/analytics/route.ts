@@ -6,13 +6,15 @@ import {
 } from "@/app/lib/server/xanoProxy";
 
 /**
- * GET /api/vendor/dashboard?vendor_id=X
- * Proxies to genie/vendor_dashboard_v1.
+ * GET /api/vendor/analytics?vendor_id=X&period=30_days
+ * Period-based analytics — Pro tier only.
+ * Proxies to genie/vendor_analytics_summary (Genie base URL api:pgMKWi2e)
  */
 export async function GET(request: NextRequest) {
   try {
     const authToken = extractBearerToken(request);
     const vendorId = request.nextUrl.searchParams.get("vendor_id") ?? "";
+    const period = request.nextUrl.searchParams.get("period") ?? "30_days";
 
     if (!vendorId) {
       return NextResponse.json(
@@ -21,9 +23,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const result = await xanoFetch("genie/vendor_dashboard_v1", {
+    const result = await xanoFetch("genie/vendor_analytics_summary", {
       authToken,
-      params: { vendor_id: vendorId },
+      params: { vendor_id: vendorId, period },
     });
 
     return NextResponse.json(result);
@@ -34,9 +36,9 @@ export async function GET(request: NextRequest) {
         { status: error.status }
       );
     }
-    console.error("GET /api/vendor/dashboard failed:", error);
+    console.error("GET /api/vendor/analytics failed:", error);
     return NextResponse.json(
-      { error: "Could not load dashboard data." },
+      { error: "Could not load analytics data." },
       { status: 500 }
     );
   }

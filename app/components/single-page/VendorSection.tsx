@@ -13,13 +13,11 @@ import { trackEvent } from "@/app/lib/analytics";
 import { analyticsEvents } from "@/app/lib/analyticsEvents";
 import { type RuntimeConfig } from "@/app/lib/genieTypes";
 import { type GenieVenue } from "@/app/lib/genieClient";
-import { type ConsumerAccount } from "@/app/lib/localState";
+import { type ConsumerAccount, readConsumerAccount, writeConsumerAccount } from "@/app/lib/localState";
 import {
   createSubscriptionCheckout,
   createVendorBusiness,
   fetchVendorDashboard,
-  fetchVendorAnalyticsSummary,
-  fetchVendorProfileCompleteness,
   searchVendorBusinesses,
   updateVendorProfile,
   vendorOnboardingSearch,
@@ -29,6 +27,7 @@ import {
 import {
   readVendorDraft,
   writeVendorDraft,
+  clearVendorDraft,
 } from "@/app/lib/vendorOnboarding";
 
 import { ActionButton } from "./ui";
@@ -96,44 +95,24 @@ type ManualContactInfo = {
 };
 
 type FullDashboardData = {
-  vendor: {
+  vendor_id: number;
+  business_name: string;
+  email: string;
+  plan_selected: string;
+  is_live: boolean;
+  plan_selected_at: number;
+  onboarding_completed: boolean;
+  is_pro: boolean;
+  offers: Array<{
     id: number;
-    business_name: string;
-    plan_selected: string;
-    plan_tier: string;
-    is_live: boolean;
-    is_claimed: boolean;
-  };
-  venue: {
-    venue_name: string;
-    address: string;
-    phone: string;
-    website_url: string | null;
-    reservation_url: string | null;
-    reservation_platform: string | null;
-    cuisine_tags: string[];
-    google_maps_url: string;
-    google_rating: number;
-    area_neighborhood: string;
-    image_primary_url?: string | null;
-  };
-  metrics: {
-    genie_appearances: number;
-    profile_views: number;
-    call_clicks: number;
-    map_clicks: number;
-    reservation_clicks: number;
-    saves: number;
-    total_actions: number;
-    engagement_rate: number;
-  };
-  trends: Array<Record<string, number | string>>;
-  profile_completeness: {
-    score: number;
-    missing_fields: string[];
-  };
-  first_appearance_at: number;
-  last_appearance_at: number;
+    title: string;
+    offer_type: string;
+    member_only?: boolean;
+    active?: boolean;
+    redeem_instructions?: string | null;
+    schedule_json?: Record<string, unknown> | null;
+  }>;
+  offer_count: number;
 };
 
 /* ------------------------------------------------------------------ */
@@ -286,65 +265,6 @@ function SelectInput({
   );
 }
 
-function ProfileCompletenessCard({
-  score,
-  missingFields,
-}: {
-  score: number;
-  missingFields: string[];
-}) {
-  const statusColor =
-    score >= 80
-      ? "text-green-400"
-      : score >= 50
-      ? "text-yellow-400"
-      : "text-red-400";
-  const statusLabel =
-    score >= 80
-      ? "Profile looks great"
-      : score >= 50
-      ? "A few things to add"
-      : "Profile needs attention";
-
-  const fieldLabels: Record<string, string> = {
-    venue_name: "Business Name",
-    address: "Address",
-    city: "City",
-    phone: "Phone Number",
-    website_url: "Website",
-    image_primary_url: "Main Photo",
-    hours_json: "Business Hours",
-    price_band: "Price Range",
-    cuisine_tags: "Cuisine / Category",
-    reservation_url: "Reservation Link",
-  };
-
-  return (
-    <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 dark:border-white/10 dark:bg-black/20">
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-gray-600 dark:text-white/72">Profile Completeness</p>
-        <span className={`text-sm font-bold ${statusColor}`}>{score}%</span>
-      </div>
-      <div className="mt-2 h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-white/12">
-        <div
-          className="h-full rounded-full bg-gradient-to-r from-red-500 to-red-600"
-          style={{ width: `${Math.min(score, 100)}%` }}
-        />
-      </div>
-      <p className={`mt-1.5 text-[12px] ${statusColor}`}>{statusLabel}</p>
-      {missingFields.length > 0 && (
-        <div className="mt-3 space-y-1.5">
-          {missingFields.slice(0, 3).map((field) => (
-            <p key={field} className="text-[12px] text-gray-400 dark:text-white/40">
-              + Add {fieldLabels[field] ?? field}
-            </p>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 /* ------------------------------------------------------------------ */
 /*  Main component                                                     */
 /* ------------------------------------------------------------------ */
@@ -366,8 +286,19 @@ export function VendorSection({
   onOpenAccount: () => void;
   onRefreshSession?: () => void;
 }) {
-  const [step, setStep] = useState<VendorStep>("claim");
   const [initialDraft] = useState(() => readVendorDraft());
+  const [step, setStep] = useState<VendorStep>(() => {
+    // If account already has a vendorId, go straight to dashboard
+    if (account?.vendorId) return "dashboard";
+    // Resume from saved step if vendor_id exists (in-progress onboarding)
+    if (initialDraft.vendorId && initialDraft.currentStep) {
+      const saved = initialDraft.currentStep as VendorStep;
+      if (["contact", "plan", "success", "dashboard", "manual-info", "manual-location", "manual-profile", "manual-contact"].includes(saved)) {
+        return saved;
+      }
+    }
+    return "claim";
+  });
   const [searchInput, setSearchInput] = useState(
     () => initialDraft.searchText ?? ""
   );
@@ -397,8 +328,12 @@ export function VendorSection({
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [vendorId, setVendorId] = useState<number | null>(null);
-  const [onboardingId, setOnboardingId] = useState<number | null>(null);
+  const [vendorId, setVendorId] = useState<number | null>(
+    () => initialDraft.vendorId ?? null
+  );
+  const [onboardingId, setOnboardingId] = useState<number | null>(
+    () => initialDraft.onboardingId ?? null
+  );
 
   const [manualInfo, setManualInfo] = useState<ManualBusinessInfo>({
     businessName: initialDraft.searchText ?? "",
@@ -435,7 +370,6 @@ export function VendorSection({
   const [dashboardData, setDashboardData] =
     useState<FullDashboardData | null>(null);
   const [isDashboardLoading, setIsDashboardLoading] = useState(false);
-  const [analyticsPeriod, setAnalyticsPeriod] = useState("7_days");
   const [profileForm, setProfileForm] = useState({
     description: "",
     phone: "",
@@ -490,11 +424,14 @@ export function VendorSection({
   }, [account, step, visible]);
 
   useEffect(() => {
-    if (!visible || !account?.vendorId) return;
+    if (!visible) return;
+    const vid = account?.vendorId || initialDraft.vendorId;
+    if (!vid) return;
     if (step === "claim") {
+      setVendorId(vid);
       setStep("dashboard");
     }
-  }, [visible, account, step]);
+  }, [visible, account, step, initialDraft.vendorId]);
 
   const loadDashboard = useCallback(async () => {
     const vid = vendorId ?? account?.vendorId;
@@ -519,6 +456,16 @@ export function VendorSection({
     if (!visible || step !== "dashboard") return;
     void loadDashboard();
   }, [visible, step, loadDashboard]);
+
+  /** Persist vendor_id into ConsumerAccount localStorage so dashboard survives refresh */
+  const persistVendorIdToAccount = (vid: number) => {
+    const current = readConsumerAccount();
+    if (current) {
+      writeConsumerAccount({ ...current, vendorId: vid });
+    }
+    // Also keep it in the draft as a fallback for non-authenticated users
+    writeVendorDraft({ vendorId: vid, currentStep: "dashboard" });
+  };
 
   useEffect(() => {
     if (
@@ -708,6 +655,12 @@ export function VendorSection({
       });
       setVendorId(result.vendor_id);
       setOnboardingId(result.onboarding_id);
+      writeVendorDraft({
+        ...readVendorDraft(),
+        vendorId: result.vendor_id,
+        onboardingId: result.onboarding_id,
+        currentStep: "contact",
+      });
       setStep("contact");
       trackEvent(analyticsEvents.vendorBusinessConfirmed, {
         matchedBusinessId: getVenueId(candidate),
@@ -739,6 +692,12 @@ export function VendorSection({
         vendor_id: vendorId,
         onboarding_id: onboardingId,
         confirmed: true,
+      });
+      writeVendorDraft({
+        ...readVendorDraft(),
+        vendorId,
+        onboardingId,
+        currentStep: "plan",
       });
       setStep("plan");
       trackEvent(analyticsEvents.vendorContactInfoCompleted);
@@ -792,6 +751,12 @@ export function VendorSection({
           setOnboardingId(createResult.onboarding_id);
         }
         finalVendorId = createResult.vendor_id;
+        writeVendorDraft({
+          ...readVendorDraft(),
+          vendorId: createResult.vendor_id,
+          onboardingId: createResult.onboarding_id,
+          currentStep: "plan",
+        });
 
         trackEvent(analyticsEvents.vendorManualAddCompleted, {
           businessName: manualInfo.businessName.trim(),
@@ -799,6 +764,8 @@ export function VendorSection({
       }
 
       if (selectedPlan === "pro" && finalVendorId) {
+        // Persist vendor ID before redirecting to Stripe
+        persistVendorIdToAccount(finalVendorId);
         const { checkout_url } = await createSubscriptionCheckout({
           vendor_id: finalVendorId,
           plan_type: "founding_partner",
@@ -807,6 +774,11 @@ export function VendorSection({
         return;
       }
 
+      if (finalVendorId) {
+        persistVendorIdToAccount(finalVendorId);
+      }
+      // Keep vendorId in draft so dashboard loads on refresh
+      writeVendorDraft({ vendorId: finalVendorId ?? undefined, currentStep: "dashboard" });
       setStep("success");
       trackEvent(analyticsEvents.vendorRegistrationCompleted, {
         planId: selectedPlan,
@@ -895,7 +867,7 @@ export function VendorSection({
     profile: "Edit Profile",
   };
 
-  const isPro = dashboardData?.vendor?.plan_tier === "pro";
+  const isPro = Boolean(dashboardData?.is_pro);
 
   return (
     <section
@@ -1051,6 +1023,11 @@ export function VendorSection({
             onClick={() => {
               setEntryMode("manual");
               setManualInfo((c) => ({ ...c, businessName: searchInput }));
+              writeVendorDraft({
+                ...readVendorDraft(),
+                isManualEntry: true,
+                currentStep: "manual-info",
+              });
               setStep("manual-info");
               trackEvent(analyticsEvents.vendorManualAddStarted);
             }}
@@ -1342,103 +1319,56 @@ export function VendorSection({
                   Welcome to Your Dashboard
                 </h2>
                 <p className="mt-1 text-[14px] text-gray-500 dark:text-white/60">
-                  {dashboardData.vendor.business_name}{" "}
+                  {dashboardData.business_name}{" "}
                   <span
                     className={`ml-1 inline-block rounded-md px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider text-white ${
                       isPro ? "bg-red-600" : "bg-gray-300"
                     }`}
                   >
-                    {tierLabel(dashboardData.vendor.plan_tier)}
+                    {tierLabel(isPro ? "pro" : "basic")}
                   </span>
                 </p>
-                {dashboardData.venue.google_rating > 0 && (
-                  <p className="mt-1 text-[13px] text-yellow-400">
-                    {renderStars(dashboardData.venue.google_rating)}{" "}
-                    <span className="text-gray-500">
-                      {dashboardData.venue.google_rating}
-                    </span>
-                  </p>
-                )}
               </div>
 
               <div className="grid grid-cols-3 gap-2">
                 <StatCard
-                  label="Genie Appearances"
-                  value={dashboardData.metrics.genie_appearances}
+                  label="Offers"
+                  value={dashboardData.offer_count}
                   icon={
                     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12Z" />
-                      <circle cx="12" cy="12" r="3" />
+                      <path d="M20 12V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v5" />
+                      <path d="M2 12h20" />
+                      <path d="M7 16h.01M12 16h.01M17 16h.01" />
+                      <path d="M6 19h12" />
                     </svg>
                   }
                 />
                 <StatCard
-                  label="Profile Views"
-                  value={dashboardData.metrics.profile_views}
+                  label="Live Status"
+                  value={dashboardData.is_live ? 1 : 0}
                   icon={
                     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-                      <circle cx="9" cy="7" r="4" />
+                      <path d="M12 2v20" />
+                      <path d="M2 12h20" />
                     </svg>
                   }
                 />
                 <StatCard
-                  label="Total Actions"
-                  value={dashboardData.metrics.total_actions}
+                  label="Pro Features"
+                  value={isPro ? 1 : 0}
                   icon={
                     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5" />
+                      <path d="m12 2 3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14l-5-4.87 6.91-1.01z" />
                     </svg>
                   }
                 />
               </div>
 
-              {isPro && (
-                <div className="grid grid-cols-4 gap-2">
-                  <StatCard label="Calls" value={dashboardData.metrics.call_clicks} icon={<span className="text-sm">📞</span>} />
-                  <StatCard label="Maps" value={dashboardData.metrics.map_clicks} icon={<span className="text-sm">📍</span>} />
-                  <StatCard label="Reservations" value={dashboardData.metrics.reservation_clicks} icon={<span className="text-sm">🔖</span>} />
-                  <StatCard label="Saves" value={dashboardData.metrics.saves} icon={<span className="text-sm">❤️</span>} />
-                </div>
-              )}
-
-              {isPro && (
-                <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 text-center dark:border-white/10 dark:bg-black/20">
-                  <p className="text-[13px] text-gray-500 dark:text-white/55">Engagement Rate</p>
-                  <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">
-                    {(dashboardData.metrics.engagement_rate * 100).toFixed(1)}%
-                  </p>
-                </div>
-              )}
-
-              {isPro && (
-                <div className="flex items-center justify-end gap-2">
-                  {(["7_days", "30_days", "all_time"] as const).map((period) => (
-                    <button
-                      key={period}
-                      type="button"
-                      onClick={() => setAnalyticsPeriod(period)}
-                      className={`rounded-lg px-3 py-1 text-[12px] ${
-                        analyticsPeriod === period
-                          ? "bg-red-600 text-white"
-                          : "text-gray-400 dark:text-white/42"
-                      }`}
-                    >
-                      {period === "7_days"
-                        ? "7 DAYS"
-                        : period === "30_days"
-                        ? "30 DAYS"
-                        : "ALL TIME"}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {isPro && dashboardData.last_appearance_at > 0 && (
+              {dashboardData.plan_selected_at > 0 && (
                 <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 dark:border-white/10 dark:bg-black/20">
-                  <p className="text-[13px] text-gray-500 dark:text-white/55">Last Appeared in Genie</p>
+                  <p className="text-[13px] text-gray-500 dark:text-white/55">Plan Selected</p>
                   <p className="mt-1 text-sm font-medium text-gray-900 dark:text-white">
-                    {new Date(dashboardData.last_appearance_at).toLocaleDateString("en-US", {
+                    {new Date(dashboardData.plan_selected_at).toLocaleDateString("en-US", {
                       month: "short",
                       day: "numeric",
                       year: "numeric",
@@ -1449,66 +1379,81 @@ export function VendorSection({
                 </div>
               )}
 
-              <ProfileCompletenessCard
-                score={dashboardData.profile_completeness.score}
-                missingFields={dashboardData.profile_completeness.missing_fields}
-              />
-
               <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 dark:border-white/10 dark:bg-black/20">
                 <p className="text-sm font-medium text-gray-600 dark:text-white/72">
-                  Your Business Profile
+                  Vendor Overview
                 </p>
-                <div className="mt-3 flex gap-3">
-                  <div className="flex-1 space-y-2 text-[13px]">
-                    <div className="flex items-start gap-2">
-                      <span className="mt-0.5 text-gray-300">📍</span>
-                      <div>
-                        <p className="font-medium text-gray-900 dark:text-white">
-                          {dashboardData.venue.venue_name}{" "}
-                          {dashboardData.vendor.is_claimed && (
-                            <span className="text-green-400">● Claimed</span>
-                          )}
-                        </p>
-                      </div>
-                    </div>
-                    {dashboardData.venue.address && (
-                      <div className="flex items-start gap-2">
-                        <span className="mt-0.5 text-gray-300">📌</span>
-                        <p className="text-gray-500">{dashboardData.venue.address}</p>
-                      </div>
-                    )}
-                    {dashboardData.venue.website_url && (
-                      <div className="flex items-start gap-2">
-                        <span className="mt-0.5 text-gray-300">🌐</span>
-                        <p className="text-gray-500">{dashboardData.venue.website_url}</p>
-                      </div>
-                    )}
-                    {dashboardData.venue.reservation_url && (
-                      <div className="flex items-start gap-2">
-                        <span className="mt-0.5 text-gray-300">🔗</span>
-                        <p className="text-gray-500">{dashboardData.venue.reservation_url}</p>
-                      </div>
-                    )}
-                    {Array.isArray(dashboardData.venue.cuisine_tags) &&
-                      dashboardData.venue.cuisine_tags.length > 0 && (
-                        <div className="flex items-start gap-2">
-                          <span className="mt-0.5 text-gray-300">🍽</span>
-                          <p className="text-gray-500">
-                            {dashboardData.venue.cuisine_tags.join(", ")}
-                          </p>
-                        </div>
-                      )}
+                <div className="mt-3 space-y-2 text-[13px]">
+                  <div className="flex items-start gap-2">
+                    <span className="mt-0.5 text-gray-300">🏢</span>
+                    <p className="font-medium text-gray-900 dark:text-white">
+                      {dashboardData.business_name}
+                    </p>
                   </div>
-                  {dashboardData.venue.image_primary_url && (
-                    <div className="h-24 w-24 flex-none overflow-hidden rounded-xl">
-                      <img
-                        src={dashboardData.venue.image_primary_url}
-                        alt={dashboardData.venue.venue_name}
-                        className="h-full w-full object-cover"
-                      />
-                    </div>
-                  )}
+                  <div className="flex items-start gap-2">
+                    <span className="mt-0.5 text-gray-300">✉️</span>
+                    <p className="text-gray-500">{dashboardData.email}</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="mt-0.5 text-gray-300">📦</span>
+                    <p className="text-gray-500">
+                      {dashboardData.plan_selected || "basic"}
+                    </p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="mt-0.5 text-gray-300">✅</span>
+                    <p className="text-gray-500">
+                      {dashboardData.is_live ? "Live on Genie" : "Not live yet"}
+                    </p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="mt-0.5 text-gray-300">🧭</span>
+                    <p className="text-gray-500">
+                      {dashboardData.onboarding_completed
+                        ? "Onboarding complete"
+                        : "Onboarding still in progress"}
+                    </p>
+                  </div>
                 </div>
+              </div>
+
+              <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 dark:border-white/10 dark:bg-black/20">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-medium text-gray-600 dark:text-white/72">
+                    Active Offers
+                  </p>
+                  <span className="rounded-full bg-red-600 px-2.5 py-1 text-[11px] font-bold text-white">
+                    {dashboardData.offer_count}
+                  </span>
+                </div>
+                {dashboardData.offers.length > 0 ? (
+                  <div className="mt-3 space-y-3">
+                    {dashboardData.offers.map((offer) => (
+                      <div
+                        key={offer.id}
+                        className="rounded-xl border border-gray-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-black/20"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                            {offer.title}
+                          </p>
+                          <span className="text-[11px] uppercase tracking-wide text-gray-400 dark:text-white/42">
+                            {offer.offer_type}
+                          </span>
+                        </div>
+                        {offer.redeem_instructions ? (
+                          <p className="mt-1.5 text-[12px] text-gray-500 dark:text-white/55">
+                            {offer.redeem_instructions}
+                          </p>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-[13px] text-gray-500 dark:text-white/55">
+                    No active offers yet.
+                  </p>
+                )}
               </div>
 
               {!isPro && (
@@ -1525,9 +1470,8 @@ export function VendorSection({
                       void (async () => {
                         try {
                           const { checkout_url } = await createSubscriptionCheckout({
-                            vendor_id: dashboardData.vendor.id,
+                            vendor_id: dashboardData.vendor_id,
                             plan_type: "founding_partner",
-                            email: contact.email || account.email,
                           });
                           window.location.href = checkout_url;
                         } catch {

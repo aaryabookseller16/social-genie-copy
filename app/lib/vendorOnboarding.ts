@@ -6,6 +6,9 @@ export type VendorOnboardingDraft = {
   selectedPlanId?: string;
   locationEnabled?: boolean;
   isManualEntry?: boolean;
+  vendorId?: number;
+  onboardingId?: number;
+  currentStep?: string;
 };
 
 export function readVendorDraft(): VendorOnboardingDraft {
@@ -27,4 +30,12 @@ export function writeVendorDraft(draft: VendorOnboardingDraft) {
   }
 
   window.localStorage.setItem(VENDOR_DRAFT_STORAGE_KEY, JSON.stringify(draft));
+}
+
+export function clearVendorDraft() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.removeItem(VENDOR_DRAFT_STORAGE_KEY);
 }

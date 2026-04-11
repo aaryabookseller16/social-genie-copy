@@ -1,6 +1,6 @@
 # Social Bevy / Genie — API Reference (Latest)
 
-> **Complete endpoint reference with cURL examples — April 2026 — All endpoints tested and confirmed working**
+> **Complete endpoint reference with cURL examples — April 10, 2026 — All endpoints tested and confirmed working**
 
 ---
 
@@ -27,6 +27,8 @@
 | `POST` | `api:pgMKWi2e/genie/checkout_vibee` | V.I.Bee Stripe checkout → redirect URL |
 | `POST` | `api:pgMKWi2e/genie/checkout_vendor_plan` | Vendor plan Stripe checkout → redirect URL |
 | `POST` | `api:pgMKWi2e/genie/vendor_onboarding_start` | Multi-step vendor onboarding |
+| `GET`  | `api:pgMKWi2e/genie/vendor_dashboard_v1` | **NEW** — Vendor profile, plan status, and offers |
+| `POST` | `api:pgMKWi2e/genie/vendor_create_offer` | **NEW** — Create offer (Pro vendors only) |
 | `POST` | `api:pgMKWi2e/genie/register_push_token` | Register OneSignal push token |
 | `POST` | `api:pgMKWi2e/genie/send_notification` | Send push notification (internal/testing only) |
 | `POST` | `api:pgMKWi2e/genie/notification_opened` | Mark notification as opened |
@@ -91,7 +93,7 @@ curl -X POST \
 
 ### 1.2 Magic Login (Verify Token)
 
-Exchange the magic token from the `?token=` email link for an `authToken` and full user details. Call this on Home Screen load when a token is detected in the URL — no separate `/verified` page needed.
+Exchange the magic token from the `?token=` email link for an `authToken` and full user details. Call on Home Screen load when a token is detected in the URL — no separate `/verified` page needed.
 
 **`POST`** `https://xwpg-kuah-brlj.n7d.xano.io/api:dRDS80y8/auth/verify_email/magic_login`
 
@@ -183,7 +185,7 @@ Main Genie endpoint. Returns venue recommendations. Add `lat`/`lng` for near-me 
 | `message` | string | **Yes** | User query e.g. `"brunch in Houston"` |
 | `channel` | string | **Yes** | `"web"` or `"mobile"` |
 | `external_user_id` | string | **Yes** | From `guest_session` or `magic_login` response |
-| `session_token` | string | **Yes** | From `guest_session` response — always send the latest |
+| `session_token` | string | **Yes** | From `guest_session` — always send the latest returned value |
 | `city_context` | string | No | e.g. `"Houston"` |
 | `lat` | decimal | No | User latitude — required for near-me queries |
 | `lng` | decimal | No | User longitude — required for near-me queries |
@@ -331,9 +333,9 @@ curl -X POST \
 
 ---
 
-### 3.2 Vendor Plan Checkout
+### 3.2 Vendor Plan Checkout ✏️ Updated Apr 10
 
-Creates a Stripe checkout session for vendor plans. `plan_type: founding_partner` = subscription ($37/month). `plan_type: boost` = one-time purchase.
+> ⚠️ **Fix applied April 10:** `email` field removed from payload. `success_url` and `cancel_url` updated to `genie.socialbevy.com`.
 
 **`POST`** `https://xwpg-kuah-brlj.n7d.xano.io/api:pgMKWi2e/genie/checkout_vendor_plan`
 
@@ -351,7 +353,8 @@ Creates a Stripe checkout session for vendor plans. `plan_type: founding_partner
 
 ```json
 {
-  "checkout_url": "https://checkout.stripe.com/...",
+  "checkout_url": "https://checkout.stripe.com/c/pay/cs_live_...",
+  "session_id": "cs_live_...",
   "plan_type": "founding_partner",
   "mode": "subscription"
 }
@@ -457,21 +460,151 @@ curl -X POST \
 
 ---
 
-## 5. Push Notification Endpoints
+## 5. Vendor Dashboard Endpoints 🆕 New Apr 10
+
+> **Base URL:** `https://xwpg-kuah-brlj.n7d.xano.io/api:pgMKWi2e`
+
+---
+
+### 5.1 Vendor Dashboard `NEW`
+
+Returns full vendor profile, plan status, and all active offers. `vendor_id` is a **query parameter** — not in the request body.
+
+**`GET`** `https://xwpg-kuah-brlj.n7d.xano.io/api:pgMKWi2e/genie/vendor_dashboard_v1`
+
+**Query Parameters**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `vendor_id` | integer | **Yes** | Vendor ID |
+
+**Response**
+
+```json
+{
+  "vendor_id": 1,
+  "business_name": "Your Business Name",
+  "email": "owner@yourbusiness.com",
+  "plan_selected": "founding_partner",
+  "is_live": true,
+  "plan_selected_at": 1775769661716,
+  "onboarding_completed": false,
+  "is_pro": true,
+  "offers": [
+    {
+      "id": 3,
+      "title": "Happy Hour Special — 20% Off All Drinks",
+      "offer_type": "happy_hour",
+      "member_only": true,
+      "active": true,
+      "redeem_instructions": "Show your Genie V.I.Bee membership",
+      "schedule_json": { "discount_value": "20% off" }
+    }
+  ],
+  "offer_count": 1
+}
+```
+
+> 📌 Use `is_pro` to show/hide Pro features in the vendor dashboard UI. Use `offer_count` to show offer badge counts.
+
+**cURL**
+
+```bash
+curl "https://xwpg-kuah-brlj.n7d.xano.io/api:pgMKWi2e/genie/vendor_dashboard_v1?vendor_id=1"
+```
+
+---
+
+### 5.2 Vendor Create Offer `NEW`
+
+Creates a new offer for a Pro Genie vendor. Only vendors with `plan_selected = founding_partner` and `is_live = true` can create offers. Returns `401` if the vendor is not Pro.
+
+**`POST`** `https://xwpg-kuah-brlj.n7d.xano.io/api:pgMKWi2e/genie/vendor_create_offer`
+
+**Request Body**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `vendor_id` | integer | **Yes** | Vendor ID |
+| `title` | string | **Yes** | Offer title |
+| `description` | string | **Yes** | Offer description |
+| `offer_type` | string | **Yes** | See valid values below |
+| `discount_value` | string | No | e.g. `"20% off"` |
+| `redeem_instructions` | string | No | How to redeem at the venue |
+| `link_url` | string | No | Deep link URL |
+| `redemption_limit` | integer | No | Max number of redemptions |
+| `vibee_only` | boolean | No | `true` to restrict to V.I.Bee members only |
+
+**Valid `offer_type` values**
+
+| Value | Description |
+|-------|-------------|
+| `happy_hour` | Happy hour deals |
+| `brunch` | Brunch specials |
+| `perk` | General member perks |
+| `weekly_special` | Weekly recurring deals |
+| `drink_special` | Drink-specific offers |
+| `food_special` | Food-specific offers |
+| `event_access` | Event entry or access |
+| `vip_only` | VIP exclusive offers |
+| `limited_time` | Time-limited deals |
+| `experience` | Experience-based offers |
+| `group_offer` | Group deals |
+| `late_night` | Late night specials |
+| `other` | Other offer types |
+
+**Response — success**
+
+```json
+{
+  "success": true,
+  "offer_id": 9
+}
+```
+
+**Response — not a Pro vendor (401)**
+
+```json
+{
+  "code": "ERROR_CODE_UNAUTHORIZED",
+  "message": "Vendor must be a Pro Genie Vendor to create offers."
+}
+```
+
+**cURL**
+
+```bash
+curl -X POST \
+  https://xwpg-kuah-brlj.n7d.xano.io/api:pgMKWi2e/genie/vendor_create_offer \
+  -H "Content-Type: application/json" \
+  -d '{
+    "vendor_id": 1,
+    "title": "Happy Hour Special — 20% Off All Drinks",
+    "description": "V.I.Bee members get 20% off all drinks every Friday 4-7pm",
+    "offer_type": "happy_hour",
+    "discount_value": "20% off",
+    "redeem_instructions": "Show your Genie V.I.Bee membership at the bar",
+    "link_url": "https://genie.socialbevy.com",
+    "redemption_limit": 100,
+    "vibee_only": true
+  }'
+```
+
+---
+
+## 6. Push Notification Endpoints
 
 > **Base URL:** `https://xwpg-kuah-brlj.n7d.xano.io/api:pgMKWi2e`
 >
 > **OneSignal App ID:** `2b0988a9-9a1e-4039-9131-e4859ea641e2`
 
-Genie uses OneSignal for web push notifications. The backend is fully built — three endpoints are live and two scheduled tasks are configured in Xano.
-
 ---
 
-### 5.1 Register Push Token
+### 6.1 Register Push Token
 
 Register a OneSignal player ID after the user grants push permission. `onesignal_player_id` comes from `OneSignal.getSubscriptionId()`.
 
-> 📌 **When to call:** After the user grants push permission — trigger the permission prompt **after** the Decision screen renders with results, not on app load.
+> 📌 Trigger the permission prompt **after** the Decision screen renders with results — not on app load.
 
 **`POST`** `https://xwpg-kuah-brlj.n7d.xano.io/api:pgMKWi2e/genie/register_push_token`
 
@@ -507,39 +640,11 @@ curl -X POST \
   }'
 ```
 
-**Frontend implementation**
-
-```javascript
-const registerPushToken = async (playerId) => {
-  const externalUserId = localStorage.getItem('external_user_id');
-  if (!externalUserId) return;
-
-  try {
-    const res = await fetch(
-      'https://xwpg-kuah-brlj.n7d.xano.io/api:pgMKWi2e/genie/register_push_token',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          external_user_id: externalUserId,
-          onesignal_player_id: playerId,
-          channel: 'web'
-        })
-      }
-    );
-    const data = await res.json();
-    console.log('Push token registered:', data);
-  } catch (err) {
-    console.error('Token registration error:', err);
-  }
-};
-```
-
 ---
 
-### 5.2 Send Notification (Internal / Testing Only)
+### 6.2 Send Notification (Internal / Testing Only)
 
-Send a push notification manually. Uses internal `user_id` (not `external_user_id`). For internal testing only — scheduled notifications fire automatically from Xano.
+Send a push notification manually. Uses internal `user_id` — not `external_user_id`. Scheduled notifications fire automatically from Xano.
 
 **`POST`** `https://xwpg-kuah-brlj.n7d.xano.io/api:pgMKWi2e/genie/send_notification`
 
@@ -580,9 +685,9 @@ curl -X POST \
 
 ---
 
-### 5.3 Notification Opened
+### 6.3 Notification Opened
 
-Mark a notification as opened when the user taps it. Call on Home Screen mount when `notification_id` is present in the URL query string.
+Mark a notification as opened when the user taps it. Call on Home Screen mount when `notification_id` is present in the URL.
 
 **`POST`** `https://xwpg-kuah-brlj.n7d.xano.io/api:pgMKWi2e/genie/notification_opened`
 
@@ -612,34 +717,11 @@ curl -X POST \
   }'
 ```
 
-**Frontend implementation — add to Home Screen on mount**
-
-```javascript
-useEffect(() => {
-  const params = new URLSearchParams(window.location.search);
-  const notificationId = params.get('notification_id');
-
-  if (notificationId) {
-    // Mark notification as opened (fire and forget)
-    fetch(
-      'https://xwpg-kuah-brlj.n7d.xano.io/api:pgMKWi2e/genie/notification_opened',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notification_id: parseInt(notificationId) })
-      }
-    );
-    // Clean up URL
-    window.history.replaceState({}, document.title, '/');
-  }
-}, []);
-```
-
 ---
 
-## 6. Stripe Webhooks
+## 7. Stripe Webhooks
 
-> ⛔ **These are called by Stripe automatically — do NOT call from the frontend.** Register these URLs in the Stripe Dashboard → Developers → Webhooks.
+> ⛔ **Called by Stripe automatically — do NOT call from the frontend.** Register in Stripe Dashboard → Developers → Webhooks.
 
 | Webhook URL | Event | Effect |
 |-------------|-------|--------|
@@ -648,89 +730,42 @@ useEffect(() => {
 
 ---
 
-## 7. Push Notification Setup (OneSignal)
+## 8. Postman Environment Variables
 
-### Installation
-
-```bash
-npm install react-onesignal
-```
-
-### Initialize on app load
-
-Add to root `_app.js` or root layout. Set `notifyButton` to `false` — permission is prompted manually at the right moment.
-
-```javascript
-import OneSignal from 'react-onesignal';
-import { useEffect } from 'react';
-
-export default function App({ Component, pageProps }) {
-  useEffect(() => {
-    OneSignal.init({
-      appId: '2b0988a9-9a1e-4039-9131-e4859ea641e2',
-      notifyButton: { enable: false },
-      allowLocalhostAsSecureOrigin: true // dev only — remove in production
-    });
-  }, []);
-
-  return <Component {...pageProps} />;
-}
-```
-
-### Request permission (trigger after first result)
-
-```javascript
-const requestPushPermission = async () => {
-  try {
-    await OneSignal.showNativePrompt();
-    const playerId = await OneSignal.getSubscriptionId();
-    if (playerId) {
-      await registerPushToken(playerId);
-    }
-  } catch (err) {
-    console.error('Push permission error:', err);
-  }
-};
-```
-
-> 📌 **Trigger `requestPushPermission()` after the Decision screen renders with results** — not before. Users who just got value from Genie are far more likely to grant permission.
-
-### iOS home screen prompt
-
-iOS requires the user to add Genie to their home screen before web push works. Show this prompt once after login on iOS Safari.
-
-```javascript
-const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-const isInStandaloneMode = () => window.matchMedia('(display-mode: standalone)').matches;
-
-if (isIOS() && !isInStandaloneMode()) {
-  // Show UI: "Add Genie to your home screen to enable notifications."
-  // "Tap the Share button then tap Add to Home Screen."
-}
-```
-
-### Notification schedule (auto-fired by Xano — no frontend action needed)
-
-| Notification | Schedule | Message |
-|-------------|----------|---------|
-| **Vibe Check** | Every Friday at 3:00 PM CST | *"It's that time. What's the move tonight?"* |
-| **What's Hot** | Every Wednesday at 6:00 PM CST | *"Spots are buzzing right now. Tap Genie to see what is hot."* |
+| Variable | Value |
+|----------|-------|
+| `genieBaseUrl` | `https://xwpg-kuah-brlj.n7d.xano.io/api:pgMKWi2e` |
+| `authBaseUrl` | `https://xwpg-kuah-brlj.n7d.xano.io/api:dRDS80y8` |
+| `vendorId` | `1` |
+| `externalUserId` | `85ee5e8a-9a7f-4aaa-9328-67ee4fbe6b8c` |
 
 ---
 
-## 8. Key Integration Rules
+## 9. Key Integration Rules
 
 | Rule | Detail |
 |------|--------|
 | **Wrong base URL** | Auth = `api:dRDS80y8`, everything else = `api:pgMKWi2e`. Wrong URL → 404 |
 | **Always refresh session_token** | Use the `session_token` from the latest response — not a cached one |
-| **external_user_id source** | Comes from `guest_session` (guests) or `magic_login` (authenticated users). Store in `localStorage` |
+| **external_user_id source** | From `guest_session` (guests) or `magic_login` (authenticated). Store in `localStorage` |
 | **Never hardcode vendor_id** | Always use `vendor_id` returned from onboarding step response |
-| **Strip tokens from URL** | After `magic_login` exchange and after `notification_id` tracking, call `window.history.replaceState({}, document.title, '/')` |
+| **Strip tokens from URL** | After `magic_login` and after `notification_id` tracking, call `window.history.replaceState({}, document.title, '/')` |
 | **Push permission timing** | Prompt after first successful result — not on app launch |
-| **send_notification** | Uses internal `user_id`, not `external_user_id`. For testing only — scheduled sends fire from Xano |
+| **send_notification** | Uses internal `user_id`, not `external_user_id`. For testing only |
 | **Stripe webhooks** | Registered in Stripe Dashboard — never called from frontend |
+| **vendor_create_offer** | Pro vendors only — `plan_selected = founding_partner` and `is_live = true`. Returns 401 otherwise |
+| **vendor_dashboard_v1** | `vendor_id` is a query param, not a body field |
 
 ---
 
-*Social Bevy / Genie — API Reference — April 2026 — All endpoints tested and confirmed working*
+## 10. Changelog
+
+| Date | Endpoint | Change |
+|------|----------|--------|
+| Apr 10, 2026 | `checkout_vendor_plan` | ✏️ Removed `email` field; updated `success_url` and `cancel_url` to `genie.socialbevy.com` |
+| Apr 10, 2026 | `vendor_dashboard_v1` | 🆕 New endpoint — vendor profile, plan status, and offers |
+| Apr 10, 2026 | `vendor_create_offer` | 🆕 New endpoint — create offer (Pro vendors only) |
+
+---
+
+*Social Bevy / Genie — API Reference — April 10, 2026 — All endpoints tested and confirmed working*

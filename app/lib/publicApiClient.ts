@@ -218,15 +218,20 @@ export async function createSubscriptionCheckout(payload: {
   cancel_url?: string;
 }) {
   if (payload.vendor_id) {
-    return apiJson<{ checkout_url: string }>("/api/subscription/create", {
+    return apiJson<{
+      checkout_url: string;
+      session_id?: string;
+      plan_type?: string;
+      mode?: string;
+    }>("/api/subscription/create", {
       method: "POST",
       body: JSON.stringify({
         vendor_id: payload.vendor_id,
         plan_type: payload.plan_type,
         boost_tier: payload.boost_tier,
-        email: payload.email,
-        success_url: payload.success_url,
-        cancel_url: payload.cancel_url,
+        success_url:
+          payload.success_url ?? "https://genie.socialbevy.com/vendor/success",
+        cancel_url: payload.cancel_url ?? "https://genie.socialbevy.com/vendor",
       }),
     });
   }
@@ -236,8 +241,8 @@ export async function createSubscriptionCheckout(payload: {
     method: "POST",
     body: JSON.stringify({
       external_user_id: payload.external_user_id || externalUserId || undefined,
-      success_url: payload.success_url ?? "https://www.socialbevy.com/vibee/success",
-      cancel_url: payload.cancel_url ?? "https://www.socialbevy.com/account",
+      success_url: payload.success_url ?? "https://genie.socialbevy.com/vibee/success",
+      cancel_url: payload.cancel_url ?? "https://genie.socialbevy.com/account",
     }),
   });
 }
@@ -471,88 +476,55 @@ export async function createVendorBusiness(payload: {
 
 export async function fetchVendorDashboard(vendorId: number) {
   return apiJson<{
-    vendor: {
+    vendor_id: number;
+    business_name: string;
+    email: string;
+    plan_selected: string;
+    is_live: boolean;
+    plan_selected_at: number;
+    onboarding_completed: boolean;
+    is_pro: boolean;
+    offers: Array<{
       id: number;
-      business_name: string;
-      plan_selected: string;
-      plan_tier: string;
-      is_live: boolean;
-      is_claimed: boolean;
-    };
-    venue: {
-      venue_name: string;
-      address: string;
-      phone: string;
-      website_url: string | null;
-      reservation_url: string | null;
-      reservation_platform: string | null;
-      cuisine_tags: string[];
-      google_maps_url: string;
-      google_rating: number;
-      area_neighborhood: string;
-      image_primary_url?: string | null;
-    };
-    metrics: {
-      genie_appearances: number;
-      profile_views: number;
-      call_clicks: number;
-      map_clicks: number;
-      reservation_clicks: number;
-      saves: number;
-      total_actions: number;
-      engagement_rate: number;
-    };
-    trends: Array<{
-      date: string;
-      genie_appearances: number;
-      profile_views: number;
-      call_clicks: number;
-      map_clicks: number;
-      reservation_clicks: number;
-      saves: number;
-      total_actions: number;
+      title: string;
+      offer_type: string;
+      member_only?: boolean;
+      active?: boolean;
+      redeem_instructions?: string | null;
+      schedule_json?: Record<string, unknown> | null;
     }>;
-    profile_completeness: {
-      score: number;
-      missing_fields: string[];
-    };
-    first_appearance_at: number;
-    last_appearance_at: number;
+    offer_count: number;
   }>(`/api/vendor/dashboard?vendor_id=${vendorId}`);
 }
 
-export async function fetchVendorAnalyticsSummary(
-  vendorId: number,
-  period = "30_days"
-) {
-  return apiJson<{
-    period: string;
-    totals: {
-      genie_appearances: number;
-      profile_views: number;
-      call_clicks: number;
-      map_clicks: number;
-      reservation_clicks: number;
-      saves: number;
-      total_actions: number;
-      engagement_rate: number;
-    };
-    daily_records: Array<Record<string, number | string>>;
-  }>(
-    `/api/vendor/dashboard?vendor_id=${vendorId}&view=analytics&period=${period}`
-  );
-}
-
-export async function fetchVendorProfileCompleteness(vendorId: number) {
-  return apiJson<{
-    score: number;
-    status: string;
-    required_missing: string[];
-    recommended_missing: string[];
-    completed_fields: string[];
-    total_fields_checked: number;
-    fields_complete: number;
-  }>(`/api/vendor/dashboard?vendor_id=${vendorId}&view=completeness`);
+export async function createVendorOffer(payload: {
+  vendor_id: number;
+  title: string;
+  description: string;
+  offer_type:
+    | "happy_hour"
+    | "brunch"
+    | "perk"
+    | "weekly_special"
+    | "drink_special"
+    | "food_special"
+    | "event_access"
+    | "vip_only"
+    | "limited_time"
+    | "experience"
+    | "group_offer"
+    | "late_night"
+    | "other";
+  discount_value?: string;
+  redeem_instructions?: string;
+  link_url?: string;
+  redemption_limit?: number;
+  vibee_only?: boolean;
+}) {
+  return apiJson<{ success: boolean; offer_id: number }>("/api/vendor/offer", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function updateVendorProfile(payload: Record<string, string>) {
@@ -713,4 +685,66 @@ export function persistSessionState(payload: {
   }
 
   return account;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Vendor Analytics & Profile Completeness                            */
+/* ------------------------------------------------------------------ */
+
+export async function fetchVendorAnalytics(
+  vendorId: number,
+  period: "7_days" | "30_days" | "all_time" = "30_days"
+) {
+  const params = new URLSearchParams({
+    vendor_id: String(vendorId),
+    period,
+  });
+  return apiJson<{
+    period: string;
+    totals: Record<string, number>;
+    daily_records: Array<Record<string, unknown>>;
+  }>(`/api/vendor/analytics?${params.toString()}`);
+}
+
+export async function fetchVendorProfileCompleteness(vendorId: number) {
+  const params = new URLSearchParams({ vendor_id: String(vendorId) });
+  return apiJson<{
+    score: number;
+    status: "strong" | "good" | "needs_work";
+    required_missing: string[];
+    recommended_missing: string[];
+    completed_fields: string[];
+  }>(`/api/vendor/profile-completeness?${params.toString()}`);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Stripe Products & Sessions                                         */
+/* ------------------------------------------------------------------ */
+
+export async function fetchStripeProducts() {
+  return apiJson<unknown>("/api/stripe/products");
+}
+
+export async function createStripeSession(
+  payload: Record<string, unknown>
+) {
+  return apiJson<{ checkout_url?: string; session_id?: string }>(
+    "/api/stripe/sessions",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function fetchStripeSession(sessionId: string) {
+  return apiJson<Record<string, unknown>>(
+    `/api/stripe/sessions/${encodeURIComponent(sessionId)}`
+  );
+}
+
+export async function fetchStripeSessionLineItems(sessionId: string) {
+  return apiJson<Record<string, unknown>>(
+    `/api/stripe/sessions/${encodeURIComponent(sessionId)}/line_items`
+  );
 }

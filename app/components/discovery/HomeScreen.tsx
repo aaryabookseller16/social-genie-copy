@@ -12,6 +12,7 @@ type HomeScreenProps = {
   inputValue: string;
   isSubmitting: boolean;
   showBottomNav?: boolean;
+  onMenuOpen: () => void;
   onInputChange: (value: string) => void;
   onChipSelect: (prompt: string) => void;
   onOrbTap: () => void;
@@ -22,6 +23,7 @@ export function HomeScreen({
   config,
   inputValue,
   isSubmitting,
+  onMenuOpen,
   onInputChange,
   onChipSelect,
   onOrbTap,
@@ -35,7 +37,12 @@ export function HomeScreen({
       <div className="relative mx-auto flex max-w-sm flex-1 flex-col items-center text-center">
         <div className="flex w-full items-center justify-between">
           <ThemeToggle />
-          <button type="button" className="flex flex-col gap-[5px] p-2" aria-label="Menu">
+          <button
+            type="button"
+            onClick={onMenuOpen}
+            className="flex flex-col gap-[5px] p-2"
+            aria-label="Menu"
+          >
             <span className="block h-[2.5px] w-6 rounded-full bg-red-600 dark:bg-white/80" />
             <span className="block h-[2.5px] w-6 rounded-full bg-red-600 dark:bg-white/80" />
             <span className="block h-[2.5px] w-6 rounded-full bg-red-600 dark:bg-white/80" />
