@@ -1,89 +1,103 @@
-// app/lib/analytics.ts
-// Centralized Genie analytics for Phase 1
-// In Phase 1, all analytics are logged locally.
-// In Phase 2, we'll wire sendToBackend() to Xano.
+import {
+  analyticsEvents,
+  type AnalyticsEventName,
+} from "./analyticsEvents";
+import { trackAnalyticsEvent } from "./publicApiClient";
+import { readSessionToken } from "./sessionToken";
 
-export type EventPayload = {
-  type: string;
+export type AnalyticsPayload = {
+  event: AnalyticsEventName;
   timestamp: string;
-  userId?: string;           // optional (added in Phase 2)
-  sessionId?: string;        // optional (Phase 2)
-  city?: string;             // optional (Phase 2)
-  country?: string;          // optional (Phase 2)
-  data?: Record<string, any>;
+  sessionId?: string;
+  city?: string;
+  data?: Record<string, unknown>;
 };
 
-// -------------------------------------------------------------
-// Phase 1 backend function — just logs to console.
-// Later this becomes an API POST → Xano.
-// -------------------------------------------------------------
-async function sendToBackend(payload: EventPayload) {
-  console.log("[Genie Analytics]", payload);
+function getSessionId() {
+  return readSessionToken() || undefined;
 }
 
-// -------------------------------------------------------------
-// 1) When the user submits a search query
-// -------------------------------------------------------------
+function getVenueIdFromData(data?: Record<string, unknown>) {
+  if (!data) {
+    return undefined;
+  }
+
+  const candidate = data.venue_id ?? data.venueId;
+  const parsed = Number(candidate);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+async function sendToBackend(payload: AnalyticsPayload) {
+  const venueId = getVenueIdFromData(payload.data);
+
+  void trackAnalyticsEvent({
+    event: payload.event,
+    venue_id: venueId,
+    metadata: {
+      timestamp: payload.timestamp,
+      session_id: payload.sessionId,
+      city: payload.city,
+      ...(payload.data ?? {}),
+    },
+  }).catch(() => {});
+}
+
+export function trackEvent(
+  event: AnalyticsEventName,
+  data?: Record<string, unknown>
+) {
+  return sendToBackend({
+    event,
+    timestamp: new Date().toISOString(),
+    sessionId: getSessionId(),
+    data,
+  });
+}
+
 export function trackQuery(query: string) {
-  return sendToBackend({
-    type: "query",
-    timestamp: new Date().toISOString(),
-    data: { query },
-  });
+  return trackEvent(analyticsEvents.typedQuerySubmitted, { query });
 }
 
-// -------------------------------------------------------------
-// 2) When the user taps a venue card from the results
-// -------------------------------------------------------------
-export function trackVenueClick(venueId: string, query: string) {
-  return sendToBackend({
-    type: "venue_click",
-    timestamp: new Date().toISOString(),
-    data: { venueId, query },
-  });
+export function trackTypedQueryStarted() {
+  return trackEvent(analyticsEvents.typedQueryStarted);
 }
 
-// -------------------------------------------------------------
-// 3) When the user views a venue detail screen
-// -------------------------------------------------------------
+export function trackHomeScreenViewed() {
+  return trackEvent(analyticsEvents.homeScreenViewed);
+}
+
+export function trackQuickChipTapped(label: string, prompt: string) {
+  return trackEvent(analyticsEvents.quickChipTapped, { label, prompt });
+}
+
+export function trackVoiceOrbTapped() {
+  return trackEvent(analyticsEvents.voiceOrbTapped);
+}
+
+export function trackVenueClick(
+  venueIdOrPayload: string | Record<string, unknown>,
+  query?: string
+) {
+  const data =
+    typeof venueIdOrPayload === "string"
+      ? { venueId: venueIdOrPayload, query }
+      : venueIdOrPayload;
+
+  return trackEvent(analyticsEvents.decisionCardTapped, data);
+}
+
 export function trackVenueView(venueId: string) {
-  return sendToBackend({
-    type: "venue_view",
-    timestamp: new Date().toISOString(),
-    data: { venueId },
-  });
+  return trackEvent(analyticsEvents.genieResultImpression, { venueId });
 }
 
-// -------------------------------------------------------------
-// 4) When the user shares a venue
-// -------------------------------------------------------------
 export function trackShare(venueId: string) {
-  return sendToBackend({
-    type: "share",
-    timestamp: new Date().toISOString(),
-    data: { venueId },
-  });
+  return trackEvent(analyticsEvents.venueShared, { venueId });
 }
 
-// -------------------------------------------------------------
-// 5) When the user saves a venue
-// -------------------------------------------------------------
 export function trackSave(venueId: string) {
-  return sendToBackend({
-    type: "save",
-    timestamp: new Date().toISOString(),
-    data: { venueId },
-  });
+  return trackEvent(analyticsEvents.venueSaved, { venueId });
 }
 
-// -------------------------------------------------------------
-// 6) When the user joins the Weekly Picks list
-// -------------------------------------------------------------
 export function trackWeeklySignup(contact: string) {
-  return sendToBackend({
-    type: "weekly_signup",
-    timestamp: new Date().toISOString(),
-    data: { contact }, // email or phone
-  });
+  return trackEvent(analyticsEvents.weeklySignup, { contact });
 }
-

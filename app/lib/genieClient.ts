@@ -1,140 +1,98 @@
-// lib/genieClient.ts
+import { normalizeHandleMessageResponse } from "./genieMappers";
+import {
+  type GenieFilters,
+  type GenieResponseEnvelope,
+  type GenieVenue,
+  type RawHandleMessageResponse,
+} from "./genieTypes";
+import { readAuthToken, readConsumerAccount } from "./localState";
+import { getRuntimeConfig } from "./runtimeConfig";
+import {
+  readSessionToken,
+  readExternalUserId,
+  writeSessionToken,
+  writeSessionId,
+} from "./sessionToken";
 
-export type GenieVenue = {
-  id: number | string;
-  venue_name: string;
-  area_neighborhood?: string | null;
-  city?: string | null;
-  address?: string | null;
-  vibe_notes?: string | null;
-  image?: string | null;
-  image_url?: string | null;
+export type { GenieFilters, GenieResponseEnvelope, GenieVenue };
 
-  // Genie-specific vibe fields
-  energy_level?: string | null;
-  music?: string | null;
-  crowd?: string | null;
-};
-
-export interface GenieChatResponse {
-  reply: string;
-  session_token?: string;
-  // keep everything else flexible for now
-  [key: string]: any;
-}
-
-export async function callGenie(message: string): Promise<GenieChatResponse> {
-  const apiUrl = process.env.NEXT_PUBLIC_GENIE_API_URL;
-
-  if (!apiUrl) {
-    throw new Error("Genie API URL is not set (NEXT_PUBLIC_GENIE_API_URL).");
-  }
-
-  // Optional: basic session handling using localStorage
-  let sessionToken: string | null = null;
-  if (typeof window !== "undefined") {
-    sessionToken = window.localStorage.getItem("genie_session_token");
-  }
-
+export async function callGenie(message: string): Promise<GenieResponseEnvelope> {
+  const config = getRuntimeConfig();
+  const token = readAuthToken();
+  const account = readConsumerAccount();
   const body = {
     message,
     channel: "web",
-    external_user_id: "web_guest", // later: use real user id
-    session_token: sessionToken || "",
-    city_context: "houston",       // can be dynamic later
-    user_data: {},
-    meta: {},
+    external_user_id: readExternalUserId() || (account?.id ? String(account.id) : "web_guest"),
+    user_name: account?.firstName || undefined,
+    session_token: readSessionToken(),
+    city_context: config.citySlug,
+    user: account?.id
+      ? {
+          first_name: account.firstName,
+          user_id: String(account.id),
+        }
+      : undefined,
+    user_data: account
+      ? {
+          first_name: account.firstName,
+          membership: account.membership,
+        }
+      : {},
+    meta: {
+      source: "home",
+    },
     debug: false,
   };
 
-  const res = await fetch(apiUrl, {
+  const res = await fetch("/api/genie/message", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify(body),
   });
 
   if (!res.ok) {
-  let errorBody: any = null;
-  let text = "";
+    let errorText = "";
 
-  try {
-    errorBody = await res.json();
-    text = JSON.stringify(errorBody);
-  } catch {
-    text = await res.text();
+    try {
+      errorText = JSON.stringify(await res.json());
+    } catch {
+      errorText = await res.text();
+    }
+
+    console.error("Genie API error", res.status, errorText);
+
+    return {
+      response_mode: "ai_fallback",
+      reply:
+        "I hit a glitch in my brain talking to the server. Try that request again in a bit.",
+      normalized_intent: message.trim(),
+      city_context: config.cityLabel,
+      use_xano: false,
+      decisive: [],
+      more_nearby: [],
+      needs_location: false,
+      filters: {
+        city: config.cityLabel,
+        energy: "",
+        music: "",
+        crowd: "",
+        vibe_keywords: [],
+      },
+      raw: { error: errorText },
+    };
   }
 
-  console.error("Genie API error", res.status, errorBody || text);
+  const data = (await res.json()) as RawHandleMessageResponse;
+  const normalized = normalizeHandleMessageResponse(data, message);
 
-  // Return a soft failure instead of throwing
-  return {
-    reply:
-      "I hit a glitch in my brain talking to the server. Try that request again in a bit.",
-    error: errorBody || text,
-  };
-}
-
-const data = await res.json();
-
-  console.log("Genie Xano raw response:", data); // 👈 super useful while we’re testing
-
-  // Try a few common shapes: {reply}, {result:{reply}}, etc.
-  const reply =
-    data.reply ??
-    data.result?.reply ??
-    "I reached Xano but didn’t find a clear reply field.";
-
-  const newSessionToken = data.session_token ?? data.result?.session_token;
-
-  if (newSessionToken && typeof window !== "undefined") {
-    window.localStorage.setItem("genie_session_token", newSessionToken);
+  writeSessionToken(normalized.session_token);
+  if (typeof normalized.session_id === "number" && Number.isFinite(normalized.session_id)) {
+    writeSessionId(normalized.session_id);
   }
 
-  return {
-    reply,
-    session_token: newSessionToken,
-    ...data,
-  };
-}
-
-export type GenieFilters = {
-  limit?: number;
-  city_filter?: string;
-  energy_level_filter?: string;
-  music_filter?: string;
-  crowd_filter?: string;
-  vibe_filter?: string;
-};
-
-
-const GENIE_BASE_URL =
-  "https://xwpg-kuah-brlj.n7d.xano.io/api:mY7zYhwk/genie_v1";
-
-export async function fetchGenieVenues(
-  filters: GenieFilters
-): Promise<GenieVenue[]> {
-  const params = new URLSearchParams();
-
-  params.set("limit", String(filters.limit ?? 10));
-
-  if (filters.city_filter !== undefined) {
-    params.set("city_filter", filters.city_filter ?? "");
-  }
-
-  params.set("energy_level_filter", filters.energy_level_filter ?? "");
-  params.set("music_filter", filters.music_filter ?? "");
-  params.set("crowd_filter", filters.crowd_filter ?? "");
-
-  if (filters.vibe_filter !== undefined) {
-    params.set("vibe_filter", filters.vibe_filter ?? "");
-  }
-
-  const url = `${GENIE_BASE_URL}?${params.toString()}`;
-
-  const res = await fetch(url, {
-    method: "GET",
-  });
-
-  const data = await res.json();
-  return data.results ?? [];
+  return normalized;
 }
