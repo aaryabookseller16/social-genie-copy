@@ -43,21 +43,32 @@ import {
   type ConsumerAccount,
 } from "@/app/lib/localState";
 import {
+  type SocialProfile,
+  type VibeeOffer,
+  type VibeeRedemption,
   clearStoredSession,
   convertGuestSession,
+  fetchSocialProfile,
+  fetchUserRedemptions,
+  fetchVibeeOffers,
   fetchCurrentUser,
   fetchSavedVenues,
   fetchSubscriptionStatus,
   fetchSubscriptionStatusForSession,
   initGuestSession,
+  initDeviceProfile,
   loginWithMagicToken,
   logVendorInteraction,
   markNotificationOpened,
+  mergeGuestProfile,
   persistAuthSession,
   registerPushToken,
+  redeemVibeeOffer,
   saveVenueForUser,
   syncSavedVenueIds,
+  trackSocialSignal,
   toConsumerAccount,
+  updateSocialProfile,
   unsaveVenueForUser,
 } from "@/app/lib/publicApiClient";
 import { getRuntimeConfig } from "@/app/lib/runtimeConfig";
@@ -67,7 +78,11 @@ import {
   writeSignupPromptState,
   type SignupPromptTriggerReason,
 } from "@/app/lib/signupPrompt";
-import { readExternalUserId, writeExternalUserId } from "@/app/lib/sessionToken";
+import {
+  readExternalUserId,
+  readSessionId,
+  writeExternalUserId,
+} from "@/app/lib/sessionToken";
 
 type SpeechRecognitionResultShape = {
   results: ArrayLike<ArrayLike<{ transcript: string }>>;
@@ -173,6 +188,35 @@ function buildStaticMapUrl(venue: GenieVenue) {
   return `https://maps.googleapis.com/maps/api/staticmap?center=${encodedLocation}&zoom=15&size=1200x720&scale=2&markers=color:0xff4f4f%7C${encodedLocation}&key=${apiKey}`;
 }
 
+const socialTagOptions = {
+  experiences_tags: ["Brunch", "Happy Hour", "Day Party", "Dinner", "Late Night"],
+  atmosphere_tags: ["Rooftop", "Patio", "Live DJ", "Lounge", "Sports Bar"],
+  bevy_bites_tags: ["Soul Food", "Seafood", "Signature Cocktails", "Tacos", "Wine"],
+  community_tags: ["Black-Owned", "LGBTQ+ Friendly", "Free Parking", "Date Night"],
+  music_tags: ["R&B / Soul", "Hip-Hop / Rap", "AfroBeats", "House", "Top 40"],
+} as const;
+
+const socialPreferenceOptions = {
+  price_range: ["Budget-Friendly", "Mid-Range", "Upscale", "Luxury"],
+  group_size: ["solo", "couple", "small_group", "large_group"],
+  typical_time: ["afternoon", "evening", "late_night", "weekend_brunch"],
+} as const;
+
+function buildQrImageUrl(value: string, size = 240) {
+  return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(
+    value
+  )}`;
+}
+
+function formatTimestamp(value?: number | null) {
+  if (!value || !Number.isFinite(value)) {
+    return "Unknown time";
+  }
+
+  const timestamp = value < 1_000_000_000_000 ? value * 1000 : value;
+  return new Date(timestamp).toLocaleString();
+}
+
 type SinglePageGenieAppProps = {
   initialScreen?: FlowAnchor;
   initialVenueId?: string | null;
@@ -198,6 +242,8 @@ export function SinglePageGenieApp({
   const moreRef = useRef<HTMLElement | null>(null);
   const detailRef = useRef<HTMLElement | null>(null);
   const savedRef = useRef<HTMLElement | null>(null);
+  const offersRef = useRef<HTMLElement | null>(null);
+  const preferencesRef = useRef<HTMLElement | null>(null);
   const accountRef = useRef<HTMLElement | null>(null);
   const vendorRef = useRef<HTMLElement | null>(null);
   const [activeScreen, setActiveScreen] = useState<FlowAnchor>(initialScreen);
@@ -211,6 +257,22 @@ export function SinglePageGenieApp({
   const [response, setResponse] = useState<GenieResponseEnvelope | null>(null);
   const [savedVenueIds, setSavedVenueIds] = useState<string[]>([]);
   const [savedVenues, setSavedVenues] = useState<GenieVenue[]>([]);
+  const [offers, setOffers] = useState<VibeeOffer[]>([]);
+  const [offersLoading, setOffersLoading] = useState(false);
+  const [offersError, setOffersError] = useState<string | null>(null);
+  const [redemptions, setRedemptions] = useState<VibeeRedemption[]>([]);
+  const [redemptionsLoading, setRedemptionsLoading] = useState(false);
+  const [activeRedemption, setActiveRedemption] = useState<{
+    offer_id: number;
+    offer_title: string;
+    verify_url: string;
+    redeemed_at: number;
+    redemption_token: string;
+  } | null>(null);
+  const [redeemingOfferId, setRedeemingOfferId] = useState<number | null>(null);
+  const [socialProfile, setSocialProfile] = useState<SocialProfile | null>(null);
+  const [socialLoading, setSocialLoading] = useState(false);
+  const [socialSaving, setSocialSaving] = useState(false);
   const [selectedVenueId, setSelectedVenueId] = useState<string | null>(
     initialVenueId ? String(initialVenueId) : null
   );
@@ -227,6 +289,8 @@ export function SinglePageGenieApp({
     useState<BeforeInstallPromptEvent | null>(null);
   const [isStandalone, setIsStandalone] = useState(false);
   const hasPromptedForPushRef = useRef(false);
+  const offersLoadedRef = useRef(false);
+  const profileLoadedRef = useRef(false);
   const resultVenues = useMemo(
     () => (response ? [...response.decisive, ...response.more_nearby] : []),
     [response]
@@ -318,9 +382,15 @@ export function SinglePageGenieApp({
   const hydrateAuthenticatedSession = useCallback(async () => {
     const token = readAuthToken();
     if (!token) {
+      offersLoadedRef.current = false;
+      profileLoadedRef.current = false;
       setAccount(null);
       setSavedVenueIds([]);
       setSavedVenues([]);
+      setOffers([]);
+      setRedemptions([]);
+      setActiveRedemption(null);
+      setSocialProfile(null);
       setIsAuthChecked(true);
       return;
     }
@@ -350,13 +420,71 @@ export function SinglePageGenieApp({
           error.message.toLowerCase().includes("unauthorized"));
 
       if (isAuthError) {
+        offersLoadedRef.current = false;
+        profileLoadedRef.current = false;
         clearStoredSession();
         setAccount(null);
         setSavedVenueIds([]);
         setSavedVenues([]);
+        setOffers([]);
+        setRedemptions([]);
+        setActiveRedemption(null);
+        setSocialProfile(null);
       }
 
       setIsAuthChecked(true);
+    }
+  }, []);
+
+  const initializeDeviceProfile = useCallback(async () => {
+    const externalUserId = readExternalUserId() || undefined;
+    const sessionId = readSessionId();
+    await initDeviceProfile({
+      external_user_id: externalUserId,
+      session_id: sessionId ? String(sessionId) : undefined,
+    }).catch(() => {});
+  }, []);
+
+  const loadOffersAndRedemptions = useCallback(async () => {
+    if (offersLoadedRef.current || !account || account.membership !== "vibee") {
+      return;
+    }
+
+    setOffersLoading(true);
+    setRedemptionsLoading(true);
+    setOffersError(null);
+    try {
+      const [offersResponse, redemptionsResponse] = await Promise.all([
+        fetchVibeeOffers(),
+        fetchUserRedemptions(),
+      ]);
+      setOffers(offersResponse.offers ?? []);
+      setRedemptions(redemptionsResponse.redemptions ?? []);
+      offersLoadedRef.current = true;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not load V.I.Bee offers.";
+      setOffersError(message);
+    } finally {
+      setOffersLoading(false);
+      setRedemptionsLoading(false);
+    }
+  }, [account]);
+
+  const loadSocialPreferences = useCallback(async () => {
+    if (profileLoadedRef.current) {
+      return;
+    }
+
+    setSocialLoading(true);
+    try {
+      const profile = await fetchSocialProfile();
+      setSocialProfile(profile);
+      profileLoadedRef.current = true;
+    } catch {
+      setSocialProfile(null);
+    } finally {
+      setSocialLoading(false);
     }
   }, []);
 
@@ -389,6 +517,11 @@ export function SinglePageGenieApp({
     trackEvent(analyticsEvents.searchSubmitted, { query: trimmed, source });
     trackEvent(analyticsEvents.genieQuerySubmitted, { query: trimmed, source });
     trackEvent(analyticsEvents.genieQueryProcessingStarted, { source });
+    void trackSocialSignal({
+      signal_type: "query",
+      signal_value: trimmed,
+      city: config.cityLabel,
+    }).catch(() => {});
 
     try {
       const nextResponse = await callGenie(trimmed);
@@ -504,7 +637,20 @@ export function SinglePageGenieApp({
         position: index + 1,
         queryText: response?.normalized_intent ?? lastQuery,
       });
+      void trackSocialSignal({
+        signal_type: "more_nearby_tap",
+        signal_value: getVenueId(venue),
+        city: venue.city ?? config.cityLabel,
+        neighborhood: venue.area_neighborhood ?? undefined,
+      }).catch(() => {});
     }
+    void trackSocialSignal({
+      signal_type: "venue_tap",
+      signal_value: getVenueId(venue),
+      city: venue.city ?? config.cityLabel,
+      neighborhood: venue.area_neighborhood ?? undefined,
+      category_tags: buildVenueTags(venue),
+    }).catch(() => {});
     trackEvent(analyticsEvents.venueClick, {
       venueId: getVenueId(venue),
       source,
@@ -578,6 +724,13 @@ export function SinglePageGenieApp({
           venueId: id,
           source: activeScreen,
         });
+        void trackSocialSignal({
+          signal_type: "venue_save",
+          signal_value: id,
+          city: venue.city ?? config.cityLabel,
+          neighborhood: venue.area_neighborhood ?? undefined,
+          category_tags: buildVenueTags(venue),
+        }).catch(() => {});
         trackSave(id);
       }
     } catch (error) {
@@ -629,6 +782,112 @@ export function SinglePageGenieApp({
     trackShare(getVenueId(venue));
   };
 
+  const handleRedeemOffer = useCallback(
+    async (offer: VibeeOffer) => {
+      if (!account || account.membership !== "vibee") {
+        setStatusMessage("Upgrade to V.I.Bee to redeem offers.");
+        navigateTo("account");
+        return;
+      }
+
+      setRedeemingOfferId(offer.id);
+      setStatusMessage(null);
+
+      try {
+        const redemption = await redeemVibeeOffer(offer.id);
+        setActiveRedemption({
+          offer_id: offer.id,
+          offer_title: redemption.offer_title,
+          verify_url: redemption.verify_url,
+          redeemed_at: redemption.redeemed_at,
+          redemption_token: redemption.redemption_token,
+        });
+
+        void trackSocialSignal({
+          signal_type: "offer_redeem",
+          signal_value: String(offer.id),
+          city: config.cityLabel,
+        }).catch(() => {});
+
+        const refreshed = await fetchUserRedemptions().catch(() => null);
+        if (refreshed?.redemptions) {
+          setRedemptions(refreshed.redemptions);
+        }
+
+        setStatusMessage("Offer redeemed. Show this QR code at the venue.");
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Could not redeem this offer right now.";
+        setStatusMessage(message);
+      } finally {
+        setRedeemingOfferId(null);
+      }
+    },
+    [account, config.cityLabel, navigateTo]
+  );
+
+  const toggleSocialTag = useCallback(
+    (field: keyof typeof socialTagOptions, value: string) => {
+      setSocialProfile((previous) => {
+        const currentProfile: SocialProfile = previous ?? {};
+        const raw = currentProfile[field];
+        const selected: string[] = Array.isArray(raw) ? raw : [];
+        const next = selected.includes(value)
+          ? selected.filter((entry) => entry !== value)
+          : [...selected, value];
+
+        return {
+          ...currentProfile,
+          [field]: next,
+        };
+      });
+    },
+    []
+  );
+
+  const selectSocialPreference = useCallback(
+    (field: keyof typeof socialPreferenceOptions, value: string) => {
+      setSocialProfile((previous) => ({
+        ...(previous ?? {}),
+        [field]: value,
+      }));
+    },
+    []
+  );
+
+  const handleSaveSocialProfile = useCallback(async () => {
+    const draft: SocialProfile = socialProfile ?? {};
+    setSocialSaving(true);
+    setStatusMessage(null);
+
+    try {
+      const updated = await updateSocialProfile({
+        experiences_tags: draft.experiences_tags ?? [],
+        atmosphere_tags: draft.atmosphere_tags ?? [],
+        bevy_bites_tags: draft.bevy_bites_tags ?? [],
+        community_tags: draft.community_tags ?? [],
+        music_tags: draft.music_tags ?? [],
+        price_range: draft.price_range ?? undefined,
+        group_size: draft.group_size ?? undefined,
+        typical_time: draft.typical_time ?? undefined,
+      });
+
+      setSocialProfile(updated);
+      profileLoadedRef.current = true;
+      setStatusMessage("Preferences saved. Genie will use these on your next ask.");
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not save preferences right now.";
+      setStatusMessage(message);
+    } finally {
+      setSocialSaving(false);
+    }
+  }, [socialProfile]);
+
   useEffect(() => {
     trackHomeScreenViewed();
     setAccount(readConsumerAccount());
@@ -662,6 +921,12 @@ export function SinglePageGenieApp({
           ) {
             await convertGuestSession(external_user_id).catch(() => {});
           }
+
+          if (external_user_id) {
+            offersLoadedRef.current = false;
+            profileLoadedRef.current = false;
+            await mergeGuestProfile(external_user_id).catch(() => {});
+          }
         } catch (error) {
           console.error("Failed to exchange magic token", error);
           setStatusMessage(
@@ -675,9 +940,34 @@ export function SinglePageGenieApp({
       }
 
       await hydrateAuthenticatedSession();
-      void initGuestSession().catch(() => {});
+      await initGuestSession().catch(() => null);
+      await initializeDeviceProfile();
     })();
-  }, [hydrateAuthenticatedSession]);
+  }, [hydrateAuthenticatedSession, initializeDeviceProfile]);
+
+  useEffect(() => {
+    if (activeScreen === "offers") {
+      void loadOffersAndRedemptions();
+    }
+  }, [activeScreen, loadOffersAndRedemptions]);
+
+  useEffect(() => {
+    if (activeScreen === "preferences") {
+      void loadSocialPreferences();
+    }
+  }, [activeScreen, loadSocialPreferences]);
+
+  useEffect(() => {
+    if (activeScreen !== "offers" || !account || account.membership !== "vibee") {
+      return;
+    }
+
+    void trackSocialSignal({
+      signal_type: "offer_view",
+      signal_value: "offers_screen",
+      city: config.cityLabel,
+    }).catch(() => {});
+  }, [activeScreen, account, config.cityLabel]);
 
   useEffect(() => {
     setMapPreviewFailed(false);
@@ -894,6 +1184,25 @@ export function SinglePageGenieApp({
     response && response.response_mode !== "structured_results"
       ? response
       : null;
+  const socialProfileDraft: SocialProfile = socialProfile ?? {};
+  const socialTagLabels: Record<keyof typeof socialTagOptions, string> = {
+    experiences_tags: "Favorite Experiences",
+    atmosphere_tags: "Atmosphere",
+    bevy_bites_tags: "Food + Drink",
+    community_tags: "Community",
+    music_tags: "Music",
+  };
+  const socialPreferenceLabels: Record<
+    keyof typeof socialPreferenceOptions,
+    string
+  > = {
+    price_range: "Price Range",
+    group_size: "Typical Group Size",
+    typical_time: "Usual Going-Out Time",
+  };
+  const intakePromptCopy =
+    response?.intake_prompt_copy?.trim() ||
+    "Help Genie learn your vibe so recommendations get more personal.";
   const mapPreviewUrl = selectedVenue ? buildStaticMapUrl(selectedVenue) : null;
   const nativeMapsUrl = selectedVenue ? buildNativeMapsUrl(selectedVenue) : null;
   const detailActions: Array<{
@@ -980,12 +1289,15 @@ export function SinglePageGenieApp({
     goBack("home");
   }, [account, goBack]);
 
+  const isVibeeMember = account?.membership === "vibee";
+
   const handleDrawerNavigate = useCallback(
     (
       target:
         | "home"
         | "account"
         | "saved"
+        | "offers"
         | "membership"
         | "vendor"
         | "how-it-works"
@@ -997,8 +1309,17 @@ export function SinglePageGenieApp({
           goHome();
           break;
         case "account":
-        case "membership":
           navigateTo("account");
+          break;
+        case "offers":
+          navigateTo("offers");
+          break;
+        case "membership":
+          if (isVibeeMember) {
+            navigateTo("offers");
+          } else {
+            navigateTo("account");
+          }
           break;
         case "saved":
           navigateTo("saved");
@@ -1028,7 +1349,7 @@ export function SinglePageGenieApp({
           break;
       }
     },
-    [goHome, navigateTo]
+    [goHome, isVibeeMember, navigateTo]
   );
 
   const handleTopBack = useCallback(() => {
@@ -1050,6 +1371,12 @@ export function SinglePageGenieApp({
         break;
       case "saved":
         goBack("home");
+        break;
+      case "offers":
+        goBack("account");
+        break;
+      case "preferences":
+        goBack("account");
         break;
       case "account":
         if (accountScreenMode) {
@@ -1228,10 +1555,22 @@ export function SinglePageGenieApp({
                   <div className="rounded-[22px] border border-gray-100 bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
                     {nonStructuredResponse.response_mode === "supported_no_results"
                       ? "Genie did not find a clean match yet. Tighten the ask and try again."
+                      : nonStructuredResponse.response_mode === "city_missing"
+                        ? "Tell Genie your city and preferences so recommendations can stay local."
                       : nonStructuredResponse.response_mode === "city_unsupported"
                         ? `Genie is not live in ${nonStructuredResponse.city_context || "that city"} yet.`
                         : nonStructuredResponse.reply}
                   </div>
+                  {(nonStructuredResponse.response_mode === "city_missing" ||
+                    nonStructuredResponse.show_intake_prompt) && (
+                    <button
+                      type="button"
+                      onClick={() => navigateTo("preferences")}
+                      className="w-full rounded-[18px] border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 dark:border-white/12 dark:bg-black/20 dark:text-white/82"
+                    >
+                      Set my preferences
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={goHome}
@@ -1256,6 +1595,20 @@ export function SinglePageGenieApp({
             subtitle="Three strong picks first. Tap one to open the full Genie detail."
           >
             <div className="space-y-3">
+              {response?.show_intake_prompt ? (
+                <div className="rounded-[22px] border border-red-200 bg-red-50/60 p-4 dark:border-white/12 dark:bg-black/20">
+                  <p className="text-sm leading-6 text-gray-700 dark:text-white/82">
+                    {intakePromptCopy}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => navigateTo("preferences")}
+                    className="mt-3 rounded-[16px] border border-red-500 bg-red-600 px-4 py-2 text-sm font-semibold text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                  >
+                    Tune preferences
+                  </button>
+                </div>
+              ) : null}
               <GenieBubble copy="I found a few spots that match your vibe." compact />
               {response?.decisive.map((venue, index) => (
                 <ResultCard
@@ -1496,6 +1849,7 @@ export function SinglePageGenieApp({
                       }}
                       className="relative block h-48 w-full overflow-hidden border-b border-gray-100 text-left dark:border-white/10"
                     >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={mapPreviewUrl}
                         alt={`Map for ${selectedVenue.venue_name}`}
@@ -1566,6 +1920,250 @@ export function SinglePageGenieApp({
           </SectionShell>
         ) : null}
 
+        {activeScreen === "offers" ? (
+          <SectionShell
+            sectionRef={offersRef}
+            title="V.I.Bee Offers"
+            subtitle="Redeem member perks and show the QR code when you are at the venue."
+          >
+            {!account ? (
+              <div className="rounded-[24px] border border-gray-100 bg-gray-50 px-4 py-5 text-sm leading-6 text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
+                Sign in to view and redeem V.I.Bee offers.
+              </div>
+            ) : account.membership !== "vibee" ? (
+              <div className="rounded-[24px] border border-gray-100 bg-gray-50 px-4 py-5 text-sm leading-6 text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
+                <p>
+                  Your account is on the free tier. Upgrade to V.I.Bee to unlock
+                  offers and redemption QR codes.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => navigateTo("account")}
+                  className="mt-3 rounded-[16px] border border-red-500 bg-red-600 px-4 py-2 text-sm font-semibold text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                >
+                  Open membership
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {offersLoading ? (
+                  <div className="rounded-[20px] border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
+                    Loading your active offers...
+                  </div>
+                ) : null}
+
+                {offersError ? (
+                  <div className="rounded-[20px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-[#8c2b2b] dark:bg-[#220909] dark:text-[#ff9f9f]">
+                    {offersError}
+                  </div>
+                ) : null}
+
+                {activeRedemption ? (
+                  <div className="rounded-[24px] border border-red-200 bg-red-50/60 p-4 dark:border-white/12 dark:bg-black/20">
+                    <p className="text-xs uppercase tracking-[0.2em] text-gray-500 dark:text-white/55">
+                      Active QR
+                    </p>
+                    <h3 className="mt-2 text-lg font-semibold text-gray-900 dark:text-white">
+                      {activeRedemption.offer_title}
+                    </h3>
+                    <p className="mt-1 text-sm text-gray-600 dark:text-white/72">
+                      Redeemed at {formatTimestamp(activeRedemption.redeemed_at)}
+                    </p>
+                    <div className="mt-3 inline-flex overflow-hidden rounded-[18px] border border-gray-200 bg-white p-2 dark:border-white/12 dark:bg-black/24">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={buildQrImageUrl(activeRedemption.verify_url)}
+                        alt={`QR code for ${activeRedemption.offer_title}`}
+                        className="h-[180px] w-[180px] object-cover"
+                      />
+                    </div>
+                    <p className="mt-3 text-xs text-gray-500 dark:text-white/55">
+                      Staff can scan this code at{" "}
+                      <span className="font-semibold text-gray-700 dark:text-white/82">
+                        /verify/{activeRedemption.redemption_token}
+                      </span>
+                    </p>
+                  </div>
+                ) : null}
+
+                {offers.length ? (
+                  <div className="space-y-3">
+                    {offers.map((offer) => (
+                      <div
+                        key={offer.id}
+                        className="rounded-[20px] border border-gray-100 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-black/20"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.2em] text-gray-400 dark:text-white/45">
+                              {offer.offer_type.replaceAll("_", " ")}
+                            </p>
+                            <h3 className="mt-1 text-lg font-semibold text-gray-900 dark:text-white">
+                              {offer.title}
+                            </h3>
+                          </div>
+                          {offer.discount_value ? (
+                            <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-600 dark:border-[#8c2b2b] dark:bg-[#220909] dark:text-[#ff9f9f]">
+                              {offer.discount_value}
+                            </span>
+                          ) : null}
+                        </div>
+                        {offer.description ? (
+                          <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-white/72">
+                            {offer.description}
+                          </p>
+                        ) : null}
+                        {offer.redeem_instructions ? (
+                          <p className="mt-2 text-xs text-gray-500 dark:text-white/55">
+                            {offer.redeem_instructions}
+                          </p>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => void handleRedeemOffer(offer)}
+                          disabled={redeemingOfferId === offer.id}
+                          className="mt-3 rounded-[16px] border border-red-500 bg-red-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                        >
+                          {redeemingOfferId === offer.id ? "Redeeming..." : "Redeem offer"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : !offersLoading ? (
+                  <div className="rounded-[20px] border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
+                    No active offers are available right now. Check back soon.
+                  </div>
+                ) : null}
+
+                <div className="rounded-[20px] border border-gray-100 bg-gray-50 p-4 dark:border-white/10 dark:bg-black/20">
+                  <h3 className="text-base font-semibold text-gray-900 dark:text-white">
+                    Redemption History
+                  </h3>
+                  {redemptionsLoading ? (
+                    <p className="mt-2 text-sm text-gray-600 dark:text-white/72">
+                      Loading redemption history...
+                    </p>
+                  ) : redemptions.length ? (
+                    <ul className="mt-3 space-y-2">
+                      {redemptions.map((redemption) => {
+                        const matchedOffer = offers.find(
+                          (offer) => offer.id === redemption.offer_id
+                        );
+                        return (
+                          <li
+                            key={redemption.id}
+                            className="rounded-[14px] border border-gray-200 bg-white px-3 py-2 text-sm dark:border-white/12 dark:bg-black/24"
+                          >
+                            <p className="font-medium text-gray-800 dark:text-white/82">
+                              {matchedOffer?.title || `Offer #${redemption.offer_id}`}
+                            </p>
+                            <p className="mt-1 text-xs text-gray-500 dark:text-white/55">
+                              Redeemed {formatTimestamp(redemption.redeemed_at)}
+                              {redemption.verified_at
+                                ? ` • Verified ${formatTimestamp(redemption.verified_at)}`
+                                : ""}
+                            </p>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-sm text-gray-600 dark:text-white/72">
+                      You have not redeemed any offers yet.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </SectionShell>
+        ) : null}
+
+        {activeScreen === "preferences" ? (
+          <SectionShell
+            sectionRef={preferencesRef}
+            title="Tune my preferences"
+            subtitle="Share your vibe so Genie can get sharper with each recommendation."
+          >
+            {socialLoading ? (
+              <div className="rounded-[20px] border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
+                Loading your preference profile...
+              </div>
+            ) : (
+              <div className="space-y-5">
+                {(Object.keys(socialTagOptions) as Array<keyof typeof socialTagOptions>).map(
+                  (field) => (
+                    <div key={field}>
+                      <p className="text-sm font-semibold text-gray-800 dark:text-white/82">
+                        {socialTagLabels[field]}
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {socialTagOptions[field].map((option) => {
+                          const fieldValue = socialProfileDraft[field];
+                          const selected = Array.isArray(fieldValue)
+                            ? fieldValue.includes(option)
+                            : false;
+                          return (
+                            <button
+                              key={`${field}-${option}`}
+                              type="button"
+                              onClick={() => toggleSocialTag(field, option)}
+                              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                                selected
+                                  ? "border-red-500 bg-red-600 text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                                  : "border-gray-200 bg-white text-gray-600 hover:border-red-300 hover:text-red-600 dark:border-white/12 dark:bg-black/20 dark:text-white/70 dark:hover:border-white/30 dark:hover:text-white"
+                              }`}
+                            >
+                              {option}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )
+                )}
+
+                {(Object.keys(socialPreferenceOptions) as Array<
+                  keyof typeof socialPreferenceOptions
+                >).map((field) => (
+                  <div key={field}>
+                    <p className="text-sm font-semibold text-gray-800 dark:text-white/82">
+                      {socialPreferenceLabels[field]}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {socialPreferenceOptions[field].map((option) => {
+                        const selected = socialProfileDraft[field] === option;
+                        return (
+                          <button
+                            key={`${field}-${option}`}
+                            type="button"
+                            onClick={() => selectSocialPreference(field, option)}
+                            className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                              selected
+                                ? "border-red-500 bg-red-600 text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                                : "border-gray-200 bg-white text-gray-600 hover:border-red-300 hover:text-red-600 dark:border-white/12 dark:bg-black/20 dark:text-white/70 dark:hover:border-white/30 dark:hover:text-white"
+                            }`}
+                          >
+                            {option.replaceAll("_", " ")}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={() => void handleSaveSocialProfile()}
+                  disabled={socialSaving}
+                  className="w-full rounded-[18px] border border-red-500 bg-red-600 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                >
+                  {socialSaving ? "Saving preferences..." : "Save preferences"}
+                </button>
+              </div>
+            )}
+          </SectionShell>
+        ) : null}
+
         <AccountSection
           sectionRef={accountRef}
           visible={activeScreen === "account"}
@@ -1574,6 +2172,8 @@ export function SinglePageGenieApp({
           onDismiss={dismissAccount}
           onModeChange={setAccountScreenMode}
           onOpenVendor={() => navigateTo("vendor")}
+          onOpenOffers={() => navigateTo("offers")}
+          onOpenPreferences={() => navigateTo("preferences")}
           onAccountChange={(nextAccount) => {
             setAccount(nextAccount);
             void hydrateAuthenticatedSession();

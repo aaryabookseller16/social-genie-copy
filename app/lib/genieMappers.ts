@@ -48,7 +48,7 @@ function inferResponseMode(
       case "supported_no_results":
         return "supported_no_results";
       case "city_missing":
-        return "supported_no_results"; // treat as no results with location prompt
+        return "city_missing";
       case "city_unsupported":
         return "city_unsupported";
     }
@@ -101,6 +101,15 @@ export function normalizeHandleMessageResponse(
     needs_location: Boolean(response.needs_location),
     session_id: response.session_id,
     session_token: response.session_token,
+    show_intake_prompt: Boolean(response.show_intake_prompt),
+    intake_prompt_copy:
+      typeof response.intake_prompt_copy === "string"
+        ? response.intake_prompt_copy
+        : "",
+    profile_strength_tier:
+      typeof response.profile_strength_tier === "string"
+        ? response.profile_strength_tier
+        : undefined,
     filters: {
       city: response.filters?.city ?? cityContext,
       energy: response.filters?.energy ?? "",

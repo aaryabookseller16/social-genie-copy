@@ -10,6 +10,7 @@ import {
   type ConsumerSubscriptionStatus,
 } from "./localState";
 import {
+  getOrCreateDeviceId,
   readSessionToken,
   readSessionId,
   readExternalUserId,
@@ -28,6 +29,65 @@ export type PublicApiUser = {
   membership: "free" | "vibee";
   subscription_status?: ConsumerSubscriptionStatus;
   vendor_id?: number | null;
+};
+
+export type SocialProfile = {
+  profile_id?: number;
+  device_id?: string;
+  external_user_id?: string | null;
+  experiences_tags?: string[];
+  atmosphere_tags?: string[];
+  bevy_bites_tags?: string[];
+  community_tags?: string[];
+  music_tags?: string[];
+  price_range?: string;
+  group_size?: string;
+  typical_time?: string;
+  intake_completed?: boolean;
+  intake_shown_count?: number;
+  signal_count?: number;
+  last_updated_at?: number;
+};
+
+export type SocialSignalType =
+  | "query"
+  | "venue_tap"
+  | "venue_save"
+  | "offer_view"
+  | "offer_redeem"
+  | "more_nearby_tap";
+
+export type VibeeOffer = {
+  id: number;
+  title: string;
+  offer_type: string;
+  description?: string;
+  discount_value?: string;
+  redeem_instructions?: string;
+  vendor_id: number;
+  active?: boolean;
+  redemption_count?: number;
+  redemption_limit?: number;
+  vibee_only?: boolean;
+};
+
+export type VibeeRedemption = {
+  id: number;
+  offer_id: number;
+  vendor_id: number;
+  redemption_token: string;
+  redeemed_at: number;
+  verified_by_staff?: boolean;
+  verified_at?: number | null;
+};
+
+export type VerifyRedemptionResult = {
+  valid: boolean;
+  offer_title: string;
+  redeemed_at: number;
+  verified_at: number;
+  member_name: string;
+  vendor_id: number;
 };
 
 type JsonInit = RequestInit & {
@@ -217,6 +277,7 @@ export async function createSubscriptionCheckout(payload: {
   success_url?: string;
   cancel_url?: string;
 }) {
+  const appBase = "https://genie.socialbevy.com";
   if (payload.vendor_id) {
     return apiJson<{
       checkout_url: string;
@@ -229,8 +290,7 @@ export async function createSubscriptionCheckout(payload: {
         vendor_id: payload.vendor_id,
         plan_type: payload.plan_type,
         boost_tier: payload.boost_tier,
-        success_url:
-          payload.success_url ?? "https://genie.socialbevy.com/vendor/success",
+        success_url: payload.success_url ?? `${appBase}/?checkout=success`,
         cancel_url: payload.cancel_url ?? "https://genie.socialbevy.com/vendor",
       }),
     });
@@ -241,10 +301,155 @@ export async function createSubscriptionCheckout(payload: {
     method: "POST",
     body: JSON.stringify({
       external_user_id: payload.external_user_id || externalUserId || undefined,
-      success_url: payload.success_url ?? "https://genie.socialbevy.com/vibee/success",
+      success_url: payload.success_url ?? `${appBase}/?checkout=success`,
       cancel_url: payload.cancel_url ?? "https://genie.socialbevy.com/account",
     }),
   });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Social Learning + V.I.Bee Offers                                   */
+/* ------------------------------------------------------------------ */
+
+export async function initDeviceProfile(payload: {
+  external_user_id?: string;
+  session_id?: string;
+}) {
+  return apiJson<SocialProfile & { is_new?: boolean }>("/api/genie/init-device", {
+    method: "POST",
+    auth: false,
+    body: JSON.stringify({
+      device_id: getOrCreateDeviceId(),
+      external_user_id: payload.external_user_id,
+      session_id: payload.session_id,
+    }),
+  });
+}
+
+export async function mergeGuestProfile(externalUserId: string) {
+  return apiJson<{ success?: boolean; signals_merged?: number }>(
+    "/api/genie/merge-guest-profile",
+    {
+      method: "POST",
+      auth: false,
+      body: JSON.stringify({
+        device_id: getOrCreateDeviceId(),
+        external_user_id: externalUserId,
+      }),
+    }
+  );
+}
+
+export async function trackSocialSignal(payload: {
+  signal_type: SocialSignalType;
+  signal_value: string;
+  category_tags?: string[];
+  city?: string;
+  neighborhood?: string;
+}) {
+  const externalUserId = readExternalUserId();
+  const sessionId = readSessionId();
+
+  return apiJson("/api/genie/track-signal", {
+    method: "POST",
+    auth: false,
+    body: JSON.stringify({
+      device_id: getOrCreateDeviceId(),
+      external_user_id: externalUserId || undefined,
+      session_id: sessionId ? String(sessionId) : undefined,
+      signal_type: payload.signal_type,
+      signal_value: payload.signal_value,
+      category_tags: payload.category_tags ?? undefined,
+      city: payload.city ?? undefined,
+      neighborhood: payload.neighborhood ?? undefined,
+    }),
+  });
+}
+
+export async function fetchSocialProfile() {
+  const externalUserId = readExternalUserId();
+  const params = new URLSearchParams();
+
+  if (externalUserId) {
+    params.set("external_user_id", externalUserId);
+  } else {
+    params.set("device_id", getOrCreateDeviceId());
+  }
+
+  return apiJson<SocialProfile>(`/api/genie/social-profile?${params.toString()}`, {
+    auth: false,
+  });
+}
+
+export async function updateSocialProfile(payload: Partial<SocialProfile>) {
+  const externalUserId = readExternalUserId();
+  return apiJson<SocialProfile & { success?: boolean }>(
+    "/api/genie/social-profile",
+    {
+      method: "POST",
+      auth: false,
+      body: JSON.stringify({
+        device_id: getOrCreateDeviceId(),
+        external_user_id: externalUserId || undefined,
+        ...payload,
+      }),
+    }
+  );
+}
+
+export async function fetchVibeeOffers() {
+  const externalUserId = readExternalUserId();
+  if (!externalUserId) {
+    throw new Error("Sign in required to view V.I.Bee offers.");
+  }
+
+  const params = new URLSearchParams({ external_user_id: externalUserId });
+  return apiJson<{ offers: VibeeOffer[]; offer_count: number }>(
+    `/api/genie/offers?${params.toString()}`,
+    { auth: false }
+  );
+}
+
+export async function redeemVibeeOffer(offerId: number) {
+  const externalUserId = readExternalUserId();
+  if (!externalUserId) {
+    throw new Error("Sign in required to redeem offers.");
+  }
+
+  return apiJson<{
+    success: boolean;
+    redemption_token: string;
+    offer_title: string;
+    redeemed_at: number;
+    verify_url: string;
+  }>("/api/genie/redeem-offer", {
+    method: "POST",
+    auth: false,
+    body: JSON.stringify({
+      external_user_id: externalUserId,
+      offer_id: offerId,
+    }),
+  });
+}
+
+export async function fetchUserRedemptions() {
+  const externalUserId = readExternalUserId();
+  if (!externalUserId) {
+    throw new Error("Sign in required to view redemptions.");
+  }
+
+  const params = new URLSearchParams({ external_user_id: externalUserId });
+  return apiJson<{ redemptions: VibeeRedemption[]; redemption_count: number }>(
+    `/api/genie/redemptions?${params.toString()}`,
+    { auth: false }
+  );
+}
+
+export async function verifyRedemptionToken(token: string) {
+  return apiJson<VerifyRedemptionResult>(
+    `/api/genie/verify-redemption/${encodeURIComponent(token)}`,
+    { auth: false }
+  );
 }
 
 /* ------------------------------------------------------------------ */

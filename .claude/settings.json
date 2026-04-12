@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx next:*)",
+      "Bash(find /c/Users/defaultuser0/OneDrive/Desktop/social-genie/app/components -type f \\\\\\( -name \"*.tsx\" -o -name \"*.ts\" \\\\\\) -exec basename {} \\\\;)",
+      "Bash(npm run:*)",
+      "Read(//c/Users/defaultuser0/.claude/**)",
+      "Bash(grep -n \"xanoFetch\\\\|xanoAuthFetch\\\\|xanoStripeFetch\" c:/Users/defaultuser0/OneDrive/Desktop/social-genie/app/api/vendor/*/route.ts)"
+    ]
+  },
+  "enableAllProjectMcpServers": true
+}

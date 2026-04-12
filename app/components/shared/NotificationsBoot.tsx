@@ -14,7 +14,6 @@ export function NotificationsBoot() {
     if (!oneSignalInitPromise) {
       oneSignalInitPromise = OneSignal.init({
         appId: "2b0988a9-9a1e-4039-9131-e4859ea641e2",
-        notifyButton: { enable: false },
         allowLocalhostAsSecureOrigin: true,
         serviceWorkerPath: "/OneSignalSDKWorker.js",
       }).catch((error) => {

@@ -1,6 +1,7 @@
 export type GenieResponseMode =
   | "structured_results"
   | "supported_no_results"
+  | "city_missing"
   | "city_unsupported"
   | "ai_fallback";
 
@@ -77,6 +78,9 @@ export type RawHandleMessageResponse = {
     city_supported?: boolean;
     reply_mode?: string;
   };
+  show_intake_prompt?: boolean;
+  intake_prompt_copy?: string;
+  profile_strength_tier?: string;
   filters?: Partial<GenieNormalizedFilters>;
   result?: RawHandleMessageResponse;
 };
@@ -92,6 +96,9 @@ export type GenieResponseEnvelope = {
   needs_location: boolean;
   session_id?: number;
   session_token?: string;
+  show_intake_prompt: boolean;
+  intake_prompt_copy: string;
+  profile_strength_tier?: string;
   filters: GenieNormalizedFilters;
   debug?: Record<string, unknown>;
   raw?: unknown;

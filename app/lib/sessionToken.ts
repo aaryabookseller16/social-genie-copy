@@ -1,6 +1,7 @@
 const SESSION_TOKEN_STORAGE_KEY = "genie_session_token";
 const SESSION_ID_STORAGE_KEY = "genie_session_id";
 const EXTERNAL_USER_ID_STORAGE_KEY = "genie_external_user_id";
+const DEVICE_ID_STORAGE_KEY = "genie_device_id";
 
 export function readSessionToken() {
   if (typeof window === "undefined") {
@@ -54,4 +55,39 @@ export function writeExternalUserId(externalUserId: string) {
 
 export function hasSession(): boolean {
   return Boolean(readSessionToken()) || Boolean(readExternalUserId());
+}
+
+export function readDeviceId(): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  return window.localStorage.getItem(DEVICE_ID_STORAGE_KEY) ?? "";
+}
+
+export function writeDeviceId(deviceId: string) {
+  if (!deviceId || typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(DEVICE_ID_STORAGE_KEY, deviceId);
+}
+
+function createDeviceId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+export function getOrCreateDeviceId() {
+  const existing = readDeviceId();
+  if (existing) {
+    return existing;
+  }
+
+  const next = createDeviceId();
+  writeDeviceId(next);
+  return next;
 }

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -n \"type.*Vendor\\\\|interface.*Vendor\" /c/Users/defaultuser0/OneDrive/Desktop/social-genie/app/lib/*.ts)",
+      "Bash(npx tsc:*)"
+    ]
+  }
+}

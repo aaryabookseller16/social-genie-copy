@@ -10,6 +10,7 @@ import { xanoFetch, XanoError } from "@/app/lib/server/xanoProxy";
  */
 export async function POST(request: NextRequest) {
   try {
+    const appBase = "https://genie.socialbevy.com";
     const body = (await request.json().catch(() => ({}))) as Record<
       string,
       unknown
@@ -27,9 +28,7 @@ export async function POST(request: NextRequest) {
           vendor_id: body.vendor_id,
           plan_type: body.plan_type ?? "founding_partner",
           boost_tier: body.boost_tier ?? undefined,
-          success_url:
-            body.success_url ??
-            "https://genie.socialbevy.com/vendor/success",
+          success_url: body.success_url ?? `${appBase}/?checkout=success`,
           cancel_url:
             body.cancel_url ??
             "https://genie.socialbevy.com/vendor",
@@ -51,8 +50,7 @@ export async function POST(request: NextRequest) {
       method: "POST",
       body: {
         external_user_id: body.external_user_id ?? "",
-        success_url:
-          body.success_url ?? "https://genie.socialbevy.com/vibee/success",
+        success_url: body.success_url ?? `${appBase}/?checkout=success`,
         cancel_url:
           body.cancel_url ?? "https://genie.socialbevy.com/account",
       },
