@@ -75,6 +75,8 @@ export async function callGenie(message: string): Promise<GenieResponseEnvelope>
       decisive: [],
       more_nearby: [],
       needs_location: false,
+      show_intake_prompt: false,
+      intake_prompt_copy: "",
       filters: {
         city: config.cityLabel,
         energy: "",

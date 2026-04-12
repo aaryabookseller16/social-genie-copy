@@ -83,6 +83,8 @@ export function AccountSection({
   config,
   onDismiss,
   onOpenVendor,
+  onOpenOffers,
+  onOpenPreferences,
   onAccountChange,
   onModeChange,
 }: {
@@ -92,6 +94,8 @@ export function AccountSection({
   config: RuntimeConfig;
   onDismiss: () => void;
   onOpenVendor: () => void;
+  onOpenOffers: () => void;
+  onOpenPreferences: () => void;
   onAccountChange: (account: ConsumerAccount, message: string) => void;
   onModeChange?: (mode: AccountScreenMode) => void;
 }) {
@@ -526,6 +530,14 @@ export function AccountSection({
                   Upgrade to V.I.Bee
                 </ActionButton>
               )}
+              {account.membership === "vibee" ? (
+                <ActionButton onClick={onOpenOffers} className="w-full">
+                  View V.I.Bee Offers
+                </ActionButton>
+              ) : null}
+              <ActionButton onClick={onOpenPreferences} className="w-full">
+                Tune my preferences
+              </ActionButton>
               <ActionButton
                 onClick={() => {
                   trackEvent(analyticsEvents.vendorSignupCtaTapped);

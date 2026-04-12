@@ -9,6 +9,7 @@ type DrawerMenuActionId =
   | "home"
   | "account"
   | "saved"
+  | "offers"
   | "membership"
   | "vendor"
   | "how-it-works"
@@ -26,6 +27,7 @@ const menuItems: Array<{ id: DrawerMenuActionId; label: string }> = [
   { id: "home", label: "Home" },
   { id: "account", label: "My Account" },
   { id: "saved", label: "Saved Spots" },
+  { id: "offers", label: "V.I.Bee Offers" },
   { id: "membership", label: "V.I.Bee Membership" },
   { id: "vendor", label: "Claim your business" },
   { id: "how-it-works", label: "How it works" },
@@ -34,7 +36,11 @@ const menuItems: Array<{ id: DrawerMenuActionId; label: string }> = [
 ];
 
 function isActiveItem(id: DrawerMenuActionId, activeScreen: FlowAnchor) {
-  if (id === "membership") {
+  if (id === "membership" || id === "offers") {
+    return activeScreen === "offers";
+  }
+
+  if (id === "account") {
     return activeScreen === "account";
   }
 

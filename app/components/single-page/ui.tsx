@@ -13,6 +13,8 @@ export type FlowAnchor =
   | "more"
   | "detail"
   | "saved"
+  | "offers"
+  | "preferences"
   | "account"
   | "vendor";
 
@@ -97,7 +99,7 @@ export function ActionButton({
   const variantClasses =
     variant === "primary"
       ? "border-red-500 bg-red-600 text-white shadow-sm hover:bg-red-700 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))] dark:shadow-[0_0_0_1px_rgba(255,120,120,0.08),0_18px_36px_rgba(0,0,0,0.28)]"
-      : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-white/12 dark:bg-black/20 dark:text-white/82";
+      : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-white/20 dark:!bg-[rgba(255,255,255,0.08)] dark:text-white dark:hover:bg-[rgba(255,255,255,0.13)]";
 
   return (
     <button

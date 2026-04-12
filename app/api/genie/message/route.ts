@@ -159,6 +159,18 @@ export async function POST(request: NextRequest) {
         typeof upstreamJson.debug === "object" && upstreamJson.debug
           ? upstreamJson.debug
           : undefined,
+      show_intake_prompt:
+        typeof upstreamJson.show_intake_prompt === "boolean"
+          ? upstreamJson.show_intake_prompt
+          : false,
+      intake_prompt_copy:
+        typeof upstreamJson.intake_prompt_copy === "string"
+          ? upstreamJson.intake_prompt_copy
+          : "",
+      profile_strength_tier:
+        typeof upstreamJson.profile_strength_tier === "string"
+          ? upstreamJson.profile_strength_tier
+          : undefined,
     });
   } catch (error) {
     if (error instanceof XanoError) {
