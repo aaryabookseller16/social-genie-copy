@@ -1412,7 +1412,8 @@ export function SinglePageGenieApp({
     activeScreen === "saved" ? "saved" : activeScreen === "home" ? "home" : "decision";
 
   return (
-    <main className="flex h-dvh flex-col overflow-x-hidden overflow-y-auto bg-white px-4 pb-24 pt-3 dark:bg-[#0a0000] sm:px-6 sm:pt-5">
+    <main className="relative flex h-dvh flex-col overflow-x-hidden overflow-y-auto bg-white px-4 pb-24 pt-3 dark:bg-[url('/bg.png')] dark:bg-cover dark:bg-center sm:px-6 sm:pt-5">
+      <div className="pointer-events-none fixed inset-0 z-0 hidden bg-black/50 dark:block" />
       <DrawerMenu
         visible={isDrawerOpen}
         activeScreen={activeScreen}
@@ -1420,7 +1421,7 @@ export function SinglePageGenieApp({
         onNavigate={handleDrawerNavigate}
       />
 
-      <div className="mx-auto flex w-full max-w-md flex-1 flex-col gap-3">
+      <div className="relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col gap-3">
         {installPrompt && !isStandalone ? (
           <button
             type="button"
@@ -1528,64 +1529,83 @@ export function SinglePageGenieApp({
         ) : null}
 
         {activeScreen === "thinking" ? (
-          <SectionShell
-            sectionRef={thinkingRef}
-            title="Got it - looking for:"
-            subtitle={
-              response?.normalized_intent || lastQuery || "Your next spot in Houston"
-            }
-            className="min-h-[28rem]"
+          <section
+            ref={thinkingRef}
+            className="flex flex-1 flex-col items-center pt-6 text-center"
           >
-            <div className="flex flex-col items-center text-center">
+            {/* Header */}
+            <h2 className="font-[family:var(--font-display)] text-[1.6rem] font-semibold leading-tight text-white">
+              Got it - looking for:
+            </h2>
+            <p className="mt-1 max-w-[24ch] text-base font-medium text-white/80">
+              {response?.normalized_intent || lastQuery || "Your next spot in Houston"}
+            </p>
+
+            {/* Girl + Orb */}
+            <div className="relative mt-2 flex w-full flex-1 items-center justify-center">
+              <Image
+                src="/orb.png"
+                alt=""
+                aria-hidden="true"
+                width={500}
+                height={500}
+                className="pointer-events-none absolute left-1/2 top-1/2 z-0 w-[110%] max-w-[26rem] -translate-x-1/2 -translate-y-1/2 object-contain opacity-95"
+              />
               <Image
                 src="/genie-pic2.png"
                 alt="Genie thinking"
                 width={320}
                 height={440}
-                className="w-full max-w-[15rem] object-contain"
+                className="relative z-10 w-full max-w-[15rem] object-contain drop-shadow-[0_20px_40px_rgba(0,0,0,0.4)]"
               />
-              <p className="mt-2 text-3xl font-medium text-red-600 dark:text-[#ff6b6b]">
-                {isThinking ? "Say less... I got you!" : response?.reply || statusMessage}
-              </p>
-              <div className="mt-5">
-                <GenieOrb mode="thinking" size={122} />
-              </div>
-              {nonStructuredResponse ? (
-                <div className="mt-5 w-full space-y-4">
-                  <div className="rounded-[22px] border border-gray-100 bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
-                    {nonStructuredResponse.response_mode === "supported_no_results"
-                      ? "Genie did not find a clean match yet. Tighten the ask and try again."
-                      : nonStructuredResponse.response_mode === "city_missing"
-                        ? "Tell Genie your city and preferences so recommendations can stay local."
-                      : nonStructuredResponse.response_mode === "city_unsupported"
-                        ? `Genie is not live in ${nonStructuredResponse.city_context || "that city"} yet.`
-                        : nonStructuredResponse.reply}
-                  </div>
-                  {(nonStructuredResponse.response_mode === "city_missing" ||
-                    nonStructuredResponse.show_intake_prompt) && (
-                    <button
-                      type="button"
-                      onClick={() => navigateTo("preferences")}
-                      className="w-full rounded-[18px] border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 dark:border-white/12 dark:bg-black/20 dark:text-white/82"
-                    >
-                      Set my preferences
-                    </button>
-                  )}
+            </div>
+
+            {/* Status text */}
+            <p className="mt-2 text-2xl font-semibold text-white">
+              {isThinking ? "Say less... I got you!" : response?.reply || statusMessage}
+            </p>
+
+            {/* Orb mic */}
+            <div className="mt-4 shrink-0">
+              <GenieOrb mode="thinking" size={100} />
+            </div>
+
+            {/* Non-structured responses */}
+            {nonStructuredResponse ? (
+              <div className="mt-5 w-full space-y-3">
+                <div className="rounded-[22px] border border-white/15 bg-black/30 px-4 py-3 text-sm leading-6 text-white/80 backdrop-blur-sm">
+                  {nonStructuredResponse.response_mode === "supported_no_results"
+                    ? "Genie did not find a clean match yet. Tighten the ask and try again."
+                    : nonStructuredResponse.response_mode === "city_missing"
+                      ? "Tell Genie your city and preferences so recommendations can stay local."
+                    : nonStructuredResponse.response_mode === "city_unsupported"
+                      ? `Genie is not live in ${nonStructuredResponse.city_context || "that city"} yet.`
+                      : nonStructuredResponse.reply}
+                </div>
+                {(nonStructuredResponse.response_mode === "city_missing" ||
+                  nonStructuredResponse.show_intake_prompt) && (
                   <button
                     type="button"
-                    onClick={goHome}
-                    className="w-full rounded-[18px] border border-red-500 bg-red-600 px-4 py-3 text-sm font-semibold text-white shadow-sm dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))] dark:shadow-[0_18px_36px_rgba(0,0,0,0.28)]"
+                    onClick={() => navigateTo("preferences")}
+                    className="w-full rounded-[18px] border border-white/30 bg-white/10 px-4 py-3 text-sm font-semibold text-white backdrop-blur-sm hover:bg-white/20"
                   >
-                    Ask Genie again
+                    Set my preferences
                   </button>
-                </div>
-              ) : statusMessage && currentResponseMode !== "structured_results" ? (
-                <div className="mt-5 rounded-[22px] border border-gray-100 bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
-                  {statusMessage}
-                </div>
-              ) : null}
-            </div>
-          </SectionShell>
+                )}
+                <button
+                  type="button"
+                  onClick={goHome}
+                  className="w-full rounded-[18px] border border-red-500 bg-red-600 px-4 py-3 text-sm font-semibold text-white shadow-sm"
+                >
+                  Ask Genie again
+                </button>
+              </div>
+            ) : statusMessage && currentResponseMode !== "structured_results" ? (
+              <div className="mt-5 rounded-[22px] border border-white/15 bg-black/30 px-4 py-3 text-sm leading-6 text-white/80 backdrop-blur-sm">
+                {statusMessage}
+              </div>
+            ) : null}
+          </section>
         ) : null}
 
         {activeScreen === "decision" && showResultSections ? (
