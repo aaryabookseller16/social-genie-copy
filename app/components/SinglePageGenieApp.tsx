@@ -14,9 +14,13 @@ import {
   GenieBubble,
   ResultCard,
   SectionShell,
-  TagPill,
   type FlowAnchor,
   buildVenueTags,
+  getVenueDistance,
+  getVenueHeadlineShort,
+  getVenueStatus,
+  getVenueDescription,
+  getOpenUntil,
 } from "@/app/components/single-page/ui";
 import { HomeScreen } from "@/app/components/discovery/HomeScreen";
 import { GenieOrb } from "@/app/components/shared/GenieOrb";
@@ -114,38 +118,7 @@ function getVenueId(venue: GenieVenue) {
   return String(venue.id);
 }
 
-function getVenueDistance(venue: GenieVenue, index: number) {
-  if (venue.latitude && venue.longitude) {
-    return `${(0.5 + index * 0.7).toFixed(1)} mi`;
-  }
 
-  return `${(0.8 + index * 0.9).toFixed(1)} mi`;
-}
-
-function getVenueHeadline(venue: GenieVenue) {
-  const parts = [venue.area_neighborhood, venue.city].filter(Boolean);
-  return parts.length > 0 ? parts.join(" - ") : "Houston";
-}
-
-function getVenueDescription(venue: GenieVenue) {
-  return (
-    venue.vibe_notes ??
-    "Genie thinks this spot matches your vibe for tonight."
-  );
-}
-
-function getVenueStatus(venue: GenieVenue, index: number) {
-  if (venue.is_open_now) {
-    return "Open now";
-  }
-
-  if (venue.best_time_to_go) {
-    return venue.best_time_to_go;
-  }
-
-  const fallbacks = ["Busy right now", "Good time to go", "Picks up after 9p"];
-  return fallbacks[index % fallbacks.length];
-}
 
 function buildNativeMapsUrl(venue: GenieVenue) {
   if (venue.google_maps_url?.trim()) {
@@ -273,6 +246,8 @@ export function SinglePageGenieApp({
   const [socialProfile, setSocialProfile] = useState<SocialProfile | null>(null);
   const [socialLoading, setSocialLoading] = useState(false);
   const [socialSaving, setSocialSaving] = useState(false);
+  const [activeTagCategory, setActiveTagCategory] =
+    useState<keyof typeof socialTagOptions>("music_tags");
   const [selectedVenueId, setSelectedVenueId] = useState<string | null>(
     initialVenueId ? String(initialVenueId) : null
   );
@@ -1186,9 +1161,9 @@ export function SinglePageGenieApp({
       : null;
   const socialProfileDraft: SocialProfile = socialProfile ?? {};
   const socialTagLabels: Record<keyof typeof socialTagOptions, string> = {
-    experiences_tags: "Favorite Experiences",
+    experiences_tags: "Experiences",
     atmosphere_tags: "Atmosphere",
-    bevy_bites_tags: "Food + Drink",
+    bevy_bites_tags: "Bevy Bites",
     community_tags: "Community",
     music_tags: "Music",
   };
@@ -1412,7 +1387,7 @@ export function SinglePageGenieApp({
     activeScreen === "saved" ? "saved" : activeScreen === "home" ? "home" : "decision";
 
   return (
-    <main className="relative flex h-dvh flex-col overflow-x-hidden overflow-y-auto bg-white px-4 pb-24 pt-3 dark:bg-[url('/bg.png')] dark:bg-cover dark:bg-center sm:px-6 sm:pt-5">
+    <main className={`relative flex h-dvh flex-col overflow-x-hidden ${activeScreen === "home" || activeScreen === "listening" || activeScreen === "thinking" ? "overflow-y-hidden" : "overflow-y-auto"} bg-white px-4 pb-3 pt-3 dark:bg-[url('/bg.png')] dark:bg-cover dark:bg-center sm:px-6 sm:pb-4 sm:pt-5`}>
       <div className="pointer-events-none fixed inset-0 z-0 hidden bg-black/50 dark:block" />
       <DrawerMenu
         visible={isDrawerOpen}
@@ -1421,7 +1396,7 @@ export function SinglePageGenieApp({
         onNavigate={handleDrawerNavigate}
       />
 
-      <div className="relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col gap-3">
+      <div className={`relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col gap-3 ${activeScreen === "home" || activeScreen === "listening" || activeScreen === "thinking" ? "min-h-0" : ""}`}>
         {installPrompt && !isStandalone ? (
           <button
             type="button"
@@ -1471,7 +1446,7 @@ export function SinglePageGenieApp({
         ) : null}
 
         {activeScreen === "home" ? (
-          <section ref={homeRef} className="flex flex-1 flex-col">
+          <section ref={homeRef} className="flex min-h-0 flex-1 flex-col">
           <HomeScreen
             config={config}
             inputValue={inputValue}
@@ -1503,71 +1478,88 @@ export function SinglePageGenieApp({
         ) : null}
 
         {activeScreen === "listening" ? (
-          <SectionShell
-            sectionRef={listeningRef}
-            title="What's your vibe today?"
-            subtitle="Ask me anything, food, drinks or something to do."
-            className="min-h-[34rem] text-center"
+          <section
+            ref={listeningRef}
+            className="relative flex min-h-0 flex-1 flex-col items-center text-center"
           >
-            <div className="flex flex-col items-center justify-center">
+            <h2 className="mt-2 whitespace-nowrap font-[family:var(--font-display)] text-[1.5rem] font-semibold leading-[1.1] text-gray-900 dark:text-white sm:text-[1.85rem]">
+              What&apos;s your vibe today?
+            </h2>
+            <p className="mt-1 max-w-[28ch] text-[0.85rem] leading-[1.2rem] text-gray-500 dark:text-white/70">
+              Ask me anything, food, drinks or something to do.
+            </p>
+
+            <div className="relative mt-1 min-h-0 w-full max-w-[20rem] flex-1">
+              <Image
+                src="/orb.png"
+                alt=""
+                aria-hidden="true"
+                width={420}
+                height={420}
+                priority
+                className="pointer-events-none absolute left-[48%] top-1/2 z-0 h-auto w-[88%] max-w-none -translate-x-1/2 -translate-y-1/2 object-contain opacity-95"
+              />
               <Image
                 src="/genie-pic2.png"
                 alt="Genie listening"
-                width={360}
-                height={520}
-                className="mx-auto w-full max-w-[17rem] object-contain"
+                width={420}
+                height={680}
+                className="relative z-10 mx-auto h-full w-auto max-w-[55%] object-contain drop-shadow-[0_20px_40px_rgba(0,0,0,0.25)]"
               />
-              <div className="mt-2">
-                <GenieOrb mode="listening" size={122} />
-              </div>
-              <p className="mt-5 text-2xl text-gray-800 dark:text-white">I&apos;m listening...</p>
-              <p className="mt-2 text-sm text-gray-400 dark:text-white/55">
-                Speak naturally. Genie will take it from here.
-              </p>
             </div>
-          </SectionShell>
+
+            <div className="mt-1 shrink-0">
+              <GenieOrb mode="listening" size={76} />
+            </div>
+            <p className="mt-2 shrink-0 text-[1.1rem] font-semibold text-gray-800 dark:text-white">
+              I&apos;m listening...
+            </p>
+            <p className="mt-0.5 shrink-0 text-[0.75rem] text-gray-400 dark:text-white/55">
+              Speak naturally. Genie will take it from here.
+            </p>
+          </section>
         ) : null}
 
         {activeScreen === "thinking" ? (
           <section
             ref={thinkingRef}
-            className="flex flex-1 flex-col items-center pt-6 text-center"
+            className="relative flex min-h-0 flex-1 flex-col items-center text-center"
           >
             {/* Header */}
-            <h2 className="font-[family:var(--font-display)] text-[1.6rem] font-semibold leading-tight text-white">
+            <h2 className="mt-1 font-[family:var(--font-display)] text-[1.4rem] font-semibold leading-[1.1] text-gray-900 dark:text-white sm:text-[1.7rem]">
               Got it - looking for:
             </h2>
-            <p className="mt-1 max-w-[24ch] text-base font-medium text-white/80">
+            <p className="mt-1 max-w-[28ch] text-[0.85rem] font-medium text-gray-600 dark:text-white/80">
               {response?.normalized_intent || lastQuery || "Your next spot in Houston"}
             </p>
 
             {/* Girl + Orb */}
-            <div className="relative mt-2 flex w-full flex-1 items-center justify-center">
+            <div className="relative mt-1 min-h-0 w-full max-w-[20rem] flex-1">
               <Image
                 src="/orb.png"
                 alt=""
                 aria-hidden="true"
                 width={500}
                 height={500}
-                className="pointer-events-none absolute left-1/2 top-1/2 z-0 w-[110%] max-w-[26rem] -translate-x-1/2 -translate-y-1/2 object-contain opacity-95"
+                className="pointer-events-none absolute left-[48%] top-1/2 z-0 h-auto w-[88%] max-w-none -translate-x-1/2 -translate-y-1/2 object-contain opacity-95"
               />
               <Image
                 src="/genie-pic2.png"
                 alt="Genie thinking"
-                width={320}
-                height={440}
-                className="relative z-10 w-full max-w-[15rem] object-contain drop-shadow-[0_20px_40px_rgba(0,0,0,0.4)]"
+                width={420}
+                height={680}
+                className="relative z-10 mx-auto h-full w-auto max-w-[55%] object-contain drop-shadow-[0_20px_40px_rgba(0,0,0,0.4)]"
               />
             </div>
 
             {/* Status text */}
-            <p className="mt-2 text-2xl font-semibold text-white">
+            <p className="mt-1 shrink-0 text-[1.1rem] font-semibold text-gray-900 dark:text-white">
               {isThinking ? "Say less... I got you!" : response?.reply || statusMessage}
             </p>
 
             {/* Orb mic */}
-            <div className="mt-4 shrink-0">
-              <GenieOrb mode="thinking" size={100} />
+            <div className="mt-2 shrink-0">
+              <GenieOrb mode="thinking" size={64} />
             </div>
 
             {/* Non-structured responses */}
@@ -1609,305 +1601,343 @@ export function SinglePageGenieApp({
         ) : null}
 
         {activeScreen === "decision" && showResultSections ? (
-          <SectionShell
-            sectionRef={decisionRef}
-            title="A few spots match your vibe."
-            subtitle="Three strong picks first. Tap one to open the full Genie detail."
-          >
-            <div className="space-y-3">
-              {response?.show_intake_prompt ? (
-                <div className="rounded-[22px] border border-red-200 bg-red-50/60 p-4 dark:border-white/12 dark:bg-black/20">
-                  <p className="text-sm leading-6 text-gray-700 dark:text-white/82">
-                    {intakePromptCopy}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => navigateTo("preferences")}
-                    className="mt-3 rounded-[16px] border border-red-500 bg-red-600 px-4 py-2 text-sm font-semibold text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
-                  >
-                    Tune preferences
-                  </button>
-                </div>
-              ) : null}
-              <GenieBubble copy="I found a few spots that match your vibe." compact />
-              {response?.decisive.map((venue, index) => (
-                <ResultCard
-                  key={venue.id}
-                  venue={venue}
-                  index={index}
-                  onOpen={() => selectVenue(venue, index, "decision")}
-                  onSave={() => handleSaveVenue(venue)}
-                />
-              ))}
-              <button
-                type="button"
-                onClick={() => {
-                  setHasOpenedMoreNearby(true);
-                  trackEvent(analyticsEvents.seeMoreNearbyTapped);
-                  trackEvent(analyticsEvents.moreNearbyOpened, {
-                    count: response?.more_nearby.length ?? 0,
-                    queryText: response?.normalized_intent ?? lastQuery,
-                  });
-                  navigateTo("more");
-                }}
-                className="flex w-full items-center justify-center gap-2 rounded-[18px] border border-red-200 bg-white px-4 py-3 text-[1.05rem] font-medium text-gray-800 shadow-sm hover:bg-red-50 dark:border-white/12 dark:bg-black/20 dark:text-white"
-              >
-                <span>See More Nearby</span>
-                <span aria-hidden="true">→</span>
-              </button>
-            </div>
-          </SectionShell>
+          <section ref={decisionRef} className="space-y-3 pb-24">
+            {response?.show_intake_prompt ? (
+              <div className="rounded-[22px] border border-red-200 bg-red-50/60 p-4 dark:border-white/12 dark:bg-black/20">
+                <p className="text-sm leading-6 text-gray-700 dark:text-white/82">
+                  {intakePromptCopy}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => navigateTo("preferences")}
+                  className="mt-3 rounded-[16px] border border-red-500 bg-red-600 px-4 py-2 text-sm font-semibold text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                >
+                  Tune preferences
+                </button>
+              </div>
+            ) : null}
+            <GenieBubble copy="I found a few spots that match your vibe." compact />
+            {response?.decisive.map((venue, index) => (
+              <ResultCard
+                key={venue.id}
+                venue={venue}
+                index={index}
+                onOpen={() => selectVenue(venue, index, "decision")}
+                onSave={() => handleSaveVenue(venue)}
+              />
+            ))}
+            <button
+              type="button"
+              onClick={() => {
+                setHasOpenedMoreNearby(true);
+                trackEvent(analyticsEvents.seeMoreNearbyTapped);
+                trackEvent(analyticsEvents.moreNearbyOpened, {
+                  count: response?.more_nearby.length ?? 0,
+                  queryText: response?.normalized_intent ?? lastQuery,
+                });
+                navigateTo("more");
+              }}
+              className="mt-1 flex w-full items-center justify-center gap-2 py-3 text-[1rem] font-medium text-gray-800 dark:text-white"
+            >
+              <span>See More Nearby</span>
+              <span aria-hidden="true">→</span>
+            </button>
+          </section>
         ) : null}
 
         {activeScreen === "more" && showResultSections && response?.more_nearby.length ? (
-          <SectionShell
-            sectionRef={moreRef}
-            title="A couple more spots you might like."
-            subtitle="Browse the second layer from the same Genie answer set."
-          >
-            <div className="space-y-4">
-              <GenieBubble copy="Here are a couple more spots you might like." compact />
-              <div className="grid grid-cols-2 gap-3">
-                {response.more_nearby.slice(0, 2).map((venue, index) => (
-                  <button
-                    key={venue.id}
-                    type="button"
-                    onClick={() => selectVenue(venue, index, "more")}
-                    className="overflow-hidden rounded-[16px] border border-red-200 bg-white text-left shadow-[0_8px_24px_rgba(0,0,0,0.06)] dark:border-[#8c2b2b] dark:bg-black/20 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
-                  >
-                    <div className="relative h-36 w-full">
-                      <Image
-                        src={venue.image || "/sample-venue-2.jpeg"}
-                        alt={venue.venue_name || "Venue"}
-                        fill
-                        className="object-cover"
-                      />
-                    </div>
-                    <div className="p-2.5">
-                      <p className="line-clamp-1 text-[1rem] font-semibold text-gray-900 dark:text-white">{venue.venue_name}</p>
-                      <p className="mt-1 text-[0.72rem] text-gray-500 dark:text-white/55">
-                        {getVenueHeadline(venue)} - {getVenueDistance(venue, index + 3)}
-                      </p>
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {buildVenueTags(venue)
-                          .slice(0, 2)
-                          .map((tag) => (
-                            <TagPill key={`${venue.id}-${tag}`}>{tag}</TagPill>
-                          ))}
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-              {response.more_nearby.length > 2 ? (
-                <>
-                  <p className="mt-5 font-[family:var(--font-display)] text-xl text-gray-800 dark:text-white">More spots you might like</p>
-                  <div className="grid grid-cols-3 gap-3">
-                {response.more_nearby.slice(2, 5).map((venue, index) => (
-                  <button
-                    key={venue.id}
-                    type="button"
-                    onClick={() => selectVenue(venue, index + 2, "more")}
-                    className="overflow-hidden rounded-[16px] border border-red-200 bg-white text-left shadow-[0_8px_20px_rgba(0,0,0,0.05)] dark:border-[#8c2b2b] dark:bg-black/20 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
-                  >
-                    <div className="relative h-24 w-full">
-                      <Image
-                        src={venue.image || "/sample-venue-2.jpeg"}
-                        alt={venue.venue_name || "Venue"}
-                        fill
-                        className="object-cover"
-                      />
-                    </div>
-                    <div className="p-2">
-                      <p className="line-clamp-2 text-[0.9rem] font-medium leading-5 text-gray-900 dark:text-white">{venue.venue_name}</p>
-                      <p className="mt-1 text-[0.66rem] leading-4 text-gray-500 dark:text-white/55">
-                        {getVenueHeadline(venue)} - {getVenueDistance(venue, index + 5)}
-                      </p>
-                      <div className="mt-1.5 flex flex-wrap gap-1">
-                        {buildVenueTags(venue)
-                          .slice(0, 1)
-                          .map((tag) => (
-                            <TagPill key={`${venue.id}-${tag}`}>{tag}</TagPill>
-                          ))}
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-                </>
-              ) : null}
-            </div>
-          </SectionShell>
-        ) : null}
-
-        {activeScreen === "detail" && selectedVenue ? (
-          <SectionShell sectionRef={detailRef} className="p-0">
-            <div className="overflow-hidden rounded-[32px]">
-              <div className="relative h-[18rem] w-full">
-                <Image
-                  src={selectedVenue.image || "/sample-venue-1.jpeg"}
-                  alt={selectedVenue.venue_name || "Venue"}
-                  fill
-                  className="object-cover"
-                />
-                <div className="absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,transparent,rgba(0,0,0,0.7))] px-5 pb-5 pt-12">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h2 className="text-3xl font-bold text-white">
-                        {selectedVenue.venue_name}
-                      </h2>
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {[selectedVenue.energy_level || "Trending", selectedVenue.price_band || "Luxury", selectedVenue.music || "DJ set"].map((tag) => (
-                          <span key={tag} className="rounded-full border border-white/30 bg-white/15 px-3 py-1 text-xs font-medium text-white">{tag}</span>
-                        ))}
-                      </div>
-                      <p className="mt-2 text-sm text-white/80">
-                        {selectedVenue.google_rating
-                          ? `${"★".repeat(Math.round(selectedVenue.google_rating))} ${selectedVenue.google_rating.toFixed(1)}${selectedVenue.google_user_ratings_total ? ` (${selectedVenue.google_user_ratings_total} reviews)` : ""}`
-                          : "Loved by the Genie crowd"}{" "}
-                        · {getVenueDistance(selectedVenue, 1)} · {selectedVenue.area_neighborhood || selectedVenue.city || "Downtown"}
-                      </p>
-                      <p className="mt-1 text-sm text-orange-300">
-                        {getVenueStatus(selectedVenue, 0)}
-                        {selectedVenue.is_official_vendor ? " - Official Vendor" : ""}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleSaveVenue(selectedVenue)}
-                      className="rounded-full border border-white/20 bg-black/30 p-3"
-                    >
-                      <svg viewBox="0 0 24 24" className="h-6 w-6" fill={savedVenueIds.includes(getVenueId(selectedVenue)) ? "#ff4f4f" : "none"} stroke={savedVenueIds.includes(getVenueId(selectedVenue)) ? "#ff4f4f" : "currentColor"} strokeWidth="1.8">
-                        <path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.5-7 10-7 10Z" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-5 px-5 pb-5 pt-4">
-                <div
-                  className="grid gap-3"
-                  style={{
-                    gridTemplateColumns: `repeat(${Math.max(detailActions.length, 1)}, minmax(0, 1fr))`,
-                  }}
+          <section ref={moreRef} className="space-y-4 pb-24">
+            <GenieBubble copy="Here are a couple more spots you might like." compact />
+            <div className="grid grid-cols-2 gap-3">
+              {response.more_nearby.slice(0, 2).map((venue, index) => (
+                <button
+                  key={venue.id}
+                  type="button"
+                  onClick={() => selectVenue(venue, index, "more")}
+                  className="overflow-hidden rounded-[18px] border border-red-200 bg-white text-left shadow-[0_8px_24px_rgba(0,0,0,0.06)] dark:border-[#6a1d1d] dark:bg-black/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
                 >
-                  {detailActions.map((action) => (
-                    <button
-                      key={action.id}
-                      type="button"
-                      onClick={action.onClick}
-                      className={`rounded-[18px] border px-4 py-3 text-sm font-semibold ${
-                        action.variant === "primary"
-                          ? "border-red-500 bg-red-600 text-white shadow-sm dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
-                          : "border-gray-200 bg-white text-gray-700 dark:border-white/12 dark:bg-black/20 dark:text-white/82"
-                      }`}
-                    >
-                      {action.label}
-                    </button>
-                  ))}
-                </div>
-
-                <div>
-                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white">About</h3>
-                  <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-white/72">
-                    {getVenueDescription(selectedVenue)}
-                  </p>
-                </div>
-
-                <div className="overflow-hidden rounded-[24px] border border-gray-100 bg-gray-50 dark:border-white/10 dark:bg-black/20">
-                  <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 dark:border-white/10">
-                    <div>
-                      <p className="text-sm uppercase tracking-[0.22em] text-gray-400 dark:text-white/42">
-                        Location
-                      </p>
-                      <p className="mt-1 text-base text-gray-900 dark:text-white">
-                        {selectedVenue.address || "Houston, Texas"}
-                      </p>
-                    </div>
-                    {nativeMapsUrl ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          trackEvent(analyticsEvents.mapOpen, {
-                            venueId: getVenueId(selectedVenue),
-                          });
-                          trackEvent(analyticsEvents.vendorMapTap, {
-                            venueId: getVenueId(selectedVenue),
-                          });
-                          logVendorInteraction("map_click", Number(selectedVenue.id));
-                          window.open(
-                            nativeMapsUrl,
-                            "_blank",
-                            "noopener,noreferrer"
-                          );
-                        }}
-                        className="rounded-[18px] border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-700 dark:border-white/12 dark:bg-black/20 dark:text-white/82"
-                      >
-                        Open Map
-                      </button>
-                    ) : null}
+                  <div className="relative h-36 w-full">
+                    <Image
+                      src={venue.image || "/sample-venue-2.jpeg"}
+                      alt={venue.venue_name || "Venue"}
+                      fill
+                      className="object-cover"
+                      sizes="(max-width: 640px) 45vw, 200px"
+                    />
                   </div>
-                  {mapPreviewUrl && !mapPreviewFailed ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (nativeMapsUrl) {
-                          trackEvent(analyticsEvents.mapOpen, {
-                            venueId: getVenueId(selectedVenue),
-                          });
-                          trackEvent(analyticsEvents.vendorMapTap, {
-                            venueId: getVenueId(selectedVenue),
-                          });
-                          logVendorInteraction("map_click", Number(selectedVenue.id));
-                          window.open(
-                            nativeMapsUrl,
-                            "_blank",
-                            "noopener,noreferrer"
-                          );
-                        }
-                      }}
-                      className="relative block h-48 w-full overflow-hidden border-b border-gray-100 text-left dark:border-white/10"
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={mapPreviewUrl}
-                        alt={`Map for ${selectedVenue.venue_name}`}
-                        onError={() => setMapPreviewFailed(true)}
-                        className="h-full w-full object-cover"
-                      />
-                    </button>
-                  ) : null}
-                  <div className="flex flex-wrap gap-2 px-4 py-4">
-                    {buildVenueTags(selectedVenue).map((tag) => (
-                      <TagPill key={`${selectedVenue.id}-${tag}`}>{tag}</TagPill>
+                  <div className="px-3 py-2.5">
+                    <p className="line-clamp-1 text-[1rem] font-semibold text-gray-900 dark:text-white">
+                      {venue.venue_name}
+                    </p>
+                    <p className="mt-0.5 text-[0.75rem] text-gray-500 dark:text-white/60">
+                      {getVenueHeadlineShort(venue)} - {getVenueDistance(venue, index + 3)}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {buildVenueTags(venue).slice(0, 2).map((tag) => (
+                        <span
+                          key={`${venue.id}-${tag}`}
+                          className="rounded-full border border-gray-200 bg-transparent px-2.5 py-0.5 text-[0.65rem] font-medium text-gray-600 dark:border-white/25 dark:text-white/70"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {response.more_nearby.length > 2 ? (
+              <>
+                <p className="mt-5 text-[1.25rem] font-semibold text-gray-900 dark:text-white">
+                  More spots you might like
+                </p>
+                <div className="-mx-4 overflow-x-auto">
+                  <div className="flex gap-3 px-4 pb-2">
+                    {response.more_nearby.slice(2, 8).map((venue, index) => (
+                      <button
+                        key={venue.id}
+                        type="button"
+                        onClick={() => selectVenue(venue, index + 2, "more")}
+                        className="w-[9.5rem] flex-none overflow-hidden rounded-[18px] border border-red-200 bg-white text-left shadow-[0_8px_20px_rgba(0,0,0,0.05)] dark:border-[#6a1d1d] dark:bg-black/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
+                      >
+                        <div className="relative h-24 w-full">
+                          <Image
+                            src={venue.image || "/sample-venue-2.jpeg"}
+                            alt={venue.venue_name || "Venue"}
+                            fill
+                            className="object-cover"
+                            sizes="152px"
+                          />
+                        </div>
+                        <div className="px-2.5 py-2">
+                          <p className="line-clamp-1 text-[0.88rem] font-semibold text-gray-900 dark:text-white">
+                            {venue.venue_name}
+                          </p>
+                          <p className="mt-0.5 truncate text-[0.66rem] text-gray-500 dark:text-white/60">
+                            {getVenueHeadlineShort(venue)} - {getVenueDistance(venue, index + 5)}
+                          </p>
+                          <div className="mt-1.5 flex flex-wrap gap-1">
+                            {buildVenueTags(venue).slice(0, 2).map((tag) => (
+                              <span
+                                key={`${venue.id}-${tag}`}
+                                className="rounded-full border border-gray-200 bg-transparent px-2 py-0.5 text-[0.6rem] font-medium text-gray-600 dark:border-white/25 dark:text-white/70"
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </button>
                     ))}
                   </div>
                 </div>
+              </>
+            ) : null}
+          </section>
+        ) : null}
 
-                <div className="rounded-[24px] border border-red-100 bg-red-50/50 p-4 dark:border-white/10 dark:bg-black/16">
-                  <div className="flex items-center gap-3">
-                    <div className="relative h-16 w-16 flex-none overflow-hidden rounded-[18px] border border-red-100 bg-white dark:border-white/10 dark:bg-[#230404]">
-                      <Image
-                        src="/genie-profile-pic.png"
-                        alt="Genie"
-                        fill
-                        className="object-cover"
-                      />
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.28em] text-gray-400 dark:text-white/42">
-                        Genie note
-                      </p>
-                      <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-white/72">
-                        Save this spot or sign up so Genie can remember your favorites, unlock your vibe history, and keep your next asks feeling smarter.
-                      </p>
-                    </div>
-                  </div>
+        {activeScreen === "detail" && selectedVenue ? (
+          <section ref={detailRef} className="-mx-4 pb-24 sm:-mx-6">
+            <div className="relative h-[22rem] w-full overflow-hidden">
+              <Image
+                src={selectedVenue.image || "/sample-venue-1.jpeg"}
+                alt={selectedVenue.venue_name || "Venue"}
+                fill
+                className="object-cover"
+                priority
+                sizes="100vw"
+              />
+              <div className="absolute inset-x-0 top-0 flex items-center justify-between px-4 pt-4">
+                <button
+                  type="button"
+                  onClick={handleTopBack}
+                  className="flex h-10 w-10 items-center justify-center text-white"
+                  aria-label="Go back"
+                >
+                  <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <path d="M19 12H6m0 0 5-5m-5 5 5 5" />
+                  </svg>
+                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleSaveVenue(selectedVenue)}
+                    className="flex h-10 w-10 items-center justify-center rounded-full border border-white/40 bg-black/30 text-white backdrop-blur-sm"
+                    aria-label="Save"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="h-5 w-5"
+                      fill={savedVenueIds.includes(getVenueId(selectedVenue)) ? "#ff4f4f" : "none"}
+                      stroke={savedVenueIds.includes(getVenueId(selectedVenue)) ? "#ff4f4f" : "currentColor"}
+                      strokeWidth="1.8"
+                    >
+                      <path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.5-7 10-7 10Z" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsDrawerOpen(true)}
+                    className="flex h-10 w-10 items-center justify-center rounded-full border border-white/40 bg-black/30 text-white backdrop-blur-sm"
+                    aria-label="Menu"
+                  >
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <path d="M5 7.5h14" />
+                      <path d="M5 12h14" />
+                      <path d="M5 16.5h14" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <div className="absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,transparent,rgba(0,0,0,0.85))] px-5 pb-5 pt-16">
+                <h2 className="text-[2.1rem] font-bold leading-tight text-white">
+                  {selectedVenue.venue_name}
+                </h2>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-white px-3 py-1 text-[0.72rem] font-semibold text-gray-900">
+                    {getVenueStatus(selectedVenue, 0)}
+                  </span>
+                  <span className="text-[0.8rem] text-white/85">
+                    {[
+                      selectedVenue.energy_level,
+                      selectedVenue.price_band === "$$" ? "Mid-Range" : selectedVenue.price_band,
+                      selectedVenue.music?.split(",")[0].split(" ").slice(0, 2).join(" "),
+                      selectedVenue.crowd?.split(" ").slice(0, 2).join(" "),
+                    ]
+                      .filter(Boolean)
+                      .slice(0, 4)
+                      .join(" - ")}
+                  </span>
                 </div>
               </div>
             </div>
-          </SectionShell>
+
+            <div className="space-y-4 px-5 pb-5 pt-4">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.82rem] text-gray-700 dark:text-white/80">
+                {selectedVenue.google_rating ? (
+                  <span className="flex items-center gap-1">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <svg
+                        key={n}
+                        viewBox="0 0 20 20"
+                        className={`h-4 w-4 ${n <= Math.round(selectedVenue.google_rating ?? 0) ? "text-amber-400" : "text-gray-400 dark:text-white/25"}`}
+                        fill="currentColor"
+                      >
+                        <path d="M10 1.5 12.6 7l6.1.6-4.6 4.2 1.3 6-5.4-3.2L4.6 18l1.3-6L1.3 7.6 7.4 7z" />
+                      </svg>
+                    ))}
+                    <span className="ml-1 font-medium">
+                      {selectedVenue.google_rating.toFixed(1)}
+                    </span>
+                    {selectedVenue.google_user_ratings_total ? (
+                      <span className="text-gray-500 dark:text-white/55">
+                        ({selectedVenue.google_user_ratings_total} Reviews)
+                      </span>
+                    ) : null}
+                  </span>
+                ) : null}
+                <span className="text-gray-500 dark:text-white/55">
+                  - {getVenueHeadlineShort(selectedVenue)} - {getVenueDistance(selectedVenue, 1)}
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 text-[0.82rem]">
+                {getOpenUntil(selectedVenue) ? (
+                  <span className="text-gray-800 dark:text-white/85">
+                    {getOpenUntil(selectedVenue)}
+                  </span>
+                ) : selectedVenue.is_open_now ? (
+                  <span className="text-gray-800 dark:text-white/85">Open now</span>
+                ) : null}
+                {selectedVenue.is_official_vendor ? (
+                  <span className="rounded-full border border-gray-300 bg-transparent px-3 py-0.5 text-[0.72rem] text-gray-700 dark:border-white/30 dark:text-white/80">
+                    Official Vendor
+                  </span>
+                ) : null}
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                {detailActions.slice(0, 3).map((action) => (
+                  <button
+                    key={action.id}
+                    type="button"
+                    onClick={action.onClick}
+                    className="flex items-center justify-center gap-1.5 rounded-[14px] border border-gray-200 bg-white px-2 py-2.5 text-[0.8rem] font-medium text-gray-800 dark:border-white/20 dark:bg-black/30 dark:text-white"
+                  >
+                    {action.id.includes("call") || action.label.toLowerCase().includes("call") ? (
+                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.86 19.86 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.86 19.86 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.86.33 1.7.63 2.5a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.58-1.2a2 2 0 0 1 2.11-.45c.8.3 1.64.51 2.5.63A2 2 0 0 1 22 16.92z" />
+                      </svg>
+                    ) : action.label.toLowerCase().includes("reserv") ? (
+                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2" />
+                        <path d="M16 2v4M8 2v4M3 10h18" />
+                      </svg>
+                    ) : (
+                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="18" cy="5" r="3" />
+                        <circle cx="6" cy="12" r="3" />
+                        <circle cx="18" cy="19" r="3" />
+                        <path d="m8.59 13.51 6.83 3.98M15.41 6.51 8.59 10.49" />
+                      </svg>
+                    )}
+                    {action.label}
+                  </button>
+                ))}
+              </div>
+
+              <div>
+                <h3 className="text-[1.1rem] font-semibold text-gray-900 dark:text-white">About</h3>
+                <p className="mt-1 text-[0.88rem] leading-6 text-gray-600 dark:text-white/75">
+                  {getVenueDescription(selectedVenue)}
+                </p>
+              </div>
+
+              {mapPreviewUrl && !mapPreviewFailed ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (nativeMapsUrl) {
+                      trackEvent(analyticsEvents.mapOpen, {
+                        venueId: getVenueId(selectedVenue),
+                      });
+                      trackEvent(analyticsEvents.vendorMapTap, {
+                        venueId: getVenueId(selectedVenue),
+                      });
+                      logVendorInteraction("map_click", Number(selectedVenue.id));
+                      window.open(nativeMapsUrl, "_blank", "noopener,noreferrer");
+                    }
+                  }}
+                  className="relative block h-40 w-full overflow-hidden rounded-[18px] border border-gray-200 text-left dark:border-white/10"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={mapPreviewUrl}
+                    alt={`Map for ${selectedVenue.venue_name}`}
+                    onError={() => setMapPreviewFailed(true)}
+                    className="h-full w-full object-cover"
+                  />
+                </button>
+              ) : null}
+
+              <p className="text-center text-[0.95rem] font-medium text-gray-900 dark:text-white">
+                {selectedVenue.address || "Houston, Texas"}
+              </p>
+
+              <div className="flex flex-wrap gap-2">
+                {buildVenueTags(selectedVenue).map((tag) => (
+                  <span
+                    key={`${selectedVenue.id}-${tag}`}
+                    className="rounded-full border border-gray-300 bg-transparent px-3 py-1 text-[0.78rem] font-medium text-gray-700 dark:border-white/30 dark:text-white/85"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </section>
         ) : null}
 
         {activeScreen === "saved" ? (
@@ -2099,38 +2129,110 @@ export function SinglePageGenieApp({
         ) : null}
 
         {activeScreen === "preferences" ? (
-          <SectionShell
-            sectionRef={preferencesRef}
-            title="Tune my preferences"
-            subtitle="Share your vibe so Genie can get sharper with each recommendation."
-          >
+          <section ref={preferencesRef} className="relative flex flex-1 flex-col pb-4">
+            <div className="mb-5 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => navigateTo("home")}
+                className="text-gray-800 dark:text-white"
+                aria-label="Go back"
+              >
+                <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M19 12H6m0 0 5-5m-5 5 5 5" />
+                </svg>
+              </button>
+              <h2 className="flex-1 text-center pr-6 text-[1.35rem] font-semibold text-gray-900 dark:text-white">
+                Social Preferences
+              </h2>
+            </div>
+
             {socialLoading ? (
               <div className="rounded-[20px] border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
                 Loading your preference profile...
               </div>
             ) : (
-              <div className="space-y-5">
-                {(Object.keys(socialTagOptions) as Array<keyof typeof socialTagOptions>).map(
-                  (field) => (
-                    <div key={field}>
-                      <p className="text-sm font-semibold text-gray-800 dark:text-white/82">
-                        {socialTagLabels[field]}
-                      </p>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {socialTagOptions[field].map((option) => {
-                          const fieldValue = socialProfileDraft[field];
+              <>
+                {(() => {
+                  const categories = Object.keys(socialTagOptions) as Array<
+                    keyof typeof socialTagOptions
+                  >;
+                  const categoryImage: Record<keyof typeof socialTagOptions, string> = {
+                    experiences_tags: "/sample-venue-1.jpeg",
+                    atmosphere_tags: "/sample-venue-2.jpeg",
+                    bevy_bites_tags: "/sample-venue-1.jpeg",
+                    community_tags: "/sample-venue-2.jpeg",
+                    music_tags: "",
+                  };
+                  const totalSelected = categories.reduce((sum, key) => {
+                    const value = socialProfileDraft[key];
+                    return sum + (Array.isArray(value) ? value.length : 0);
+                  }, 0);
+
+                  return (
+                    <>
+                      <div className="grid grid-cols-2 gap-3">
+                        {categories.map((field) => {
+                          const isActive = activeTagCategory === field;
+                          const isMusic = field === "music_tags";
+                          return (
+                            <button
+                              key={field}
+                              type="button"
+                              onClick={() => setActiveTagCategory(field)}
+                              className={`relative overflow-hidden rounded-[18px] border bg-white text-left shadow-[0_6px_18px_rgba(0,0,0,0.08)] transition dark:bg-black/30 ${
+                                isActive
+                                  ? "border-red-500 ring-2 ring-red-500/40 dark:border-[#ff7b7b]"
+                                  : "border-gray-100 dark:border-white/10"
+                              }`}
+                            >
+                              <div className="relative h-28 w-full overflow-hidden">
+                                {isMusic ? (
+                                  <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(145deg,#1a1033,#3a1a5a)]">
+                                    <svg viewBox="0 0 24 24" className="h-12 w-12" fill="url(#musicGrad)">
+                                      <defs>
+                                        <linearGradient id="musicGrad" x1="0" y1="0" x2="1" y2="1">
+                                          <stop offset="0%" stopColor="#f472b6" />
+                                          <stop offset="100%" stopColor="#8b5cf6" />
+                                        </linearGradient>
+                                      </defs>
+                                      <path d="M9 18V5l12-2v13" fill="none" stroke="url(#musicGrad)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                      <circle cx="6" cy="18" r="3" />
+                                      <circle cx="18" cy="16" r="3" />
+                                    </svg>
+                                  </div>
+                                ) : (
+                                  <Image
+                                    src={categoryImage[field]}
+                                    alt={socialTagLabels[field]}
+                                    fill
+                                    className="object-cover"
+                                    sizes="(max-width: 768px) 45vw, 200px"
+                                  />
+                                )}
+                              </div>
+                              <p className="px-3 py-2 text-center text-[14px] font-medium text-gray-900 dark:text-white">
+                                {socialTagLabels[field]}
+                              </p>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+                        {socialTagOptions[activeTagCategory].map((option) => {
+                          const fieldValue = socialProfileDraft[activeTagCategory];
                           const selected = Array.isArray(fieldValue)
                             ? fieldValue.includes(option)
                             : false;
                           return (
                             <button
-                              key={`${field}-${option}`}
+                              key={`${activeTagCategory}-${option}`}
                               type="button"
-                              onClick={() => toggleSocialTag(field, option)}
-                              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                              onClick={() => toggleSocialTag(activeTagCategory, option)}
+                              className={`rounded-full border px-4 py-1.5 text-[13px] font-medium transition ${
                                 selected
                                   ? "border-red-500 bg-red-600 text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
-                                  : "border-gray-200 bg-white text-gray-600 hover:border-red-300 hover:text-red-600 dark:border-white/12 dark:bg-black/20 dark:text-white/70 dark:hover:border-white/30 dark:hover:text-white"
+                                  : "border-gray-300 bg-transparent text-gray-700 hover:border-red-300 hover:text-red-600 dark:border-white/25 dark:text-white/85 dark:hover:border-white/55"
                               }`}
                             >
                               {option}
@@ -2138,50 +2240,25 @@ export function SinglePageGenieApp({
                           );
                         })}
                       </div>
-                    </div>
-                  )
-                )}
 
-                {(Object.keys(socialPreferenceOptions) as Array<
-                  keyof typeof socialPreferenceOptions
-                >).map((field) => (
-                  <div key={field}>
-                    <p className="text-sm font-semibold text-gray-800 dark:text-white/82">
-                      {socialPreferenceLabels[field]}
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {socialPreferenceOptions[field].map((option) => {
-                        const selected = socialProfileDraft[field] === option;
-                        return (
-                          <button
-                            key={`${field}-${option}`}
-                            type="button"
-                            onClick={() => selectSocialPreference(field, option)}
-                            className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                              selected
-                                ? "border-red-500 bg-red-600 text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
-                                : "border-gray-200 bg-white text-gray-600 hover:border-red-300 hover:text-red-600 dark:border-white/12 dark:bg-black/20 dark:text-white/70 dark:hover:border-white/30 dark:hover:text-white"
-                            }`}
-                          >
-                            {option.replaceAll("_", " ")}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
+                      <p className="mt-4 text-center text-[13px] text-gray-500 dark:text-white/65">
+                        {totalSelected} {totalSelected === 1 ? "tag" : "tags"} selected
+                      </p>
 
-                <button
-                  type="button"
-                  onClick={() => void handleSaveSocialProfile()}
-                  disabled={socialSaving}
-                  className="w-full rounded-[18px] border border-red-500 bg-red-600 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
-                >
-                  {socialSaving ? "Saving preferences..." : "Save preferences"}
-                </button>
-              </div>
+                      <button
+                        type="button"
+                        onClick={() => void handleSaveSocialProfile()}
+                        disabled={socialSaving}
+                        className="mt-3 w-full rounded-[20px] border border-red-500 bg-red-600 px-4 py-3.5 text-[15px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                      >
+                        {socialSaving ? "Saving..." : "Next"}
+                      </button>
+                    </>
+                  );
+                })()}
+              </>
             )}
-          </SectionShell>
+          </section>
         ) : null}
 
         <AccountSection

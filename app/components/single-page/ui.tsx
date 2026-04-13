@@ -215,7 +215,7 @@ export function BottomDock({
   );
 }
 
-function getVenueDistance(venue: GenieVenue, index: number) {
+export function getVenueDistance(venue: GenieVenue, index: number) {
   if (venue.latitude && venue.longitude) {
     return `${(0.5 + index * 0.7).toFixed(1)} mi`;
   }
@@ -223,12 +223,12 @@ function getVenueDistance(venue: GenieVenue, index: number) {
   return `${(0.8 + index * 0.9).toFixed(1)} mi`;
 }
 
-function getVenueHeadline(venue: GenieVenue) {
+export function getVenueHeadline(venue: GenieVenue) {
   const parts = [venue.area_neighborhood, venue.city].filter(Boolean);
   return parts.length > 0 ? parts.join(" - ") : "Houston";
 }
 
-function getVenueStatus(venue: GenieVenue, index: number) {
+export function getVenueStatus(venue: GenieVenue, index: number) {
   if (venue.is_open_now) {
     return "Open now";
   }
@@ -237,22 +237,60 @@ function getVenueStatus(venue: GenieVenue, index: number) {
     return venue.best_time_to_go;
   }
 
-  const fallbacks = ["Busy right now", "Good time to go", "Picks up after 9p"];
+  const fallbacks = ["Busy right now", "Good time to go", "Picks up after 9pm"];
   return fallbacks[index % fallbacks.length];
 }
 
-function getVenueDescription(venue: GenieVenue) {
+export function getVenueStatusTone(venue: GenieVenue, index: number) {
+  const fallbackIndex = index % 3;
+  if (venue.is_open_now) {
+    return fallbackIndex === 1 ? "good" : "open";
+  }
+  return ["busy", "good", "picks"][fallbackIndex] as "busy" | "good" | "picks";
+}
+
+export function getVenueHeadlineShort(venue: GenieVenue) {
+  return (
+    venue.area_neighborhood ||
+    venue.neighborhood_text ||
+    venue.city ||
+    "Houston"
+  );
+}
+
+export function getVenueTagline(venue: GenieVenue) {
+  // Short red line — energy or crowd first
+  if (venue.energy_level && venue.crowd) {
+    return `${venue.energy_level}-energy ${venue.crowd.split(",")[0].split(" ").slice(0, 2).join(" ").toLowerCase()}`;
+  }
+  return venue.energy_level || "Lively spot";
+}
+
+export function getVenueDescription(venue: GenieVenue) {
   return (
     venue.vibe_notes ??
     "Genie thinks this spot matches your vibe for tonight."
   );
 }
 
+export function getOpenUntil(venue: GenieVenue) {
+  const text = venue.hours_json?.weekday_text;
+  if (!text || !Array.isArray(text) || text.length === 0) return null;
+  const today = new Date().getDay();
+  const idx = today === 0 ? 6 : today - 1;
+  const line = text[idx];
+  if (!line) return null;
+  const m = line.match(/([0-9]{1,2}(?::[0-9]{2})?\s*(?:AM|PM))\s*$/i);
+  return m ? `Open until ${m[1]}` : null;
+}
+
 export function buildVenueTags(venue: GenieVenue) {
+  const cuisineArr = Array.isArray(venue.cuisine_tags) ? venue.cuisine_tags : [];
   return [
     venue.energy_level,
-    venue.crowd,
-    venue.music,
+    ...cuisineArr.map((c) => String(c).charAt(0).toUpperCase() + String(c).slice(1)),
+    venue.crowd ? venue.crowd.split(",")[0].split(" ").slice(0, 2).join(" ") : null,
+    venue.music ? venue.music.split(",")[0].split(" ").slice(0, 2).join(" ") : null,
     venue.price_band ? `Price: ${venue.price_band}` : null,
     venue.is_official_vendor ? "Official Vendor" : null,
     venue.is_vendor_subscriber ? "Featured" : null,
@@ -270,59 +308,57 @@ export function ResultCard({
   onOpen: () => void;
   onSave?: () => void;
 }) {
+  void onSave;
+  const tone = getVenueStatusTone(venue, index);
+  const statusColor =
+    tone === "busy"
+      ? "bg-red-500"
+      : tone === "good"
+        ? "bg-green-500"
+        : "bg-amber-400";
+  const statusText =
+    tone === "busy"
+      ? "Busy right now"
+      : tone === "good"
+        ? "Good time to go"
+        : "Picks up after 9pm";
+
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="w-full overflow-hidden rounded-[18px] border border-red-200 bg-[rgba(255,251,251,0.96)] text-left shadow-[0_8px_24px_rgba(0,0,0,0.06)] transition hover:shadow-[0_10px_26px_rgba(0,0,0,0.1)] dark:border-[#8c2b2b] dark:bg-black/20 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)] dark:hover:border-[#dc5d5d]"
+      className="w-full overflow-hidden rounded-[20px] border border-red-200 bg-white text-left shadow-[0_8px_24px_rgba(0,0,0,0.06)] transition hover:shadow-[0_10px_26px_rgba(0,0,0,0.1)] dark:border-[#6a1d1d] dark:bg-black/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.4)] dark:hover:border-[#ff7b7b]"
     >
       <div className="flex gap-3 p-3">
-        <div className="relative h-[7.25rem] w-[7.25rem] flex-none overflow-hidden rounded-[14px]">
+        <div className="relative h-[7.5rem] w-[7.5rem] flex-none overflow-hidden rounded-[16px]">
           <Image
             src={venue.image || "/sample-venue-1.jpeg"}
             alt={venue.venue_name || "Venue"}
             fill
             className="object-cover"
+            sizes="120px"
           />
         </div>
 
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <p className="truncate text-[1.1rem] font-semibold leading-6 text-gray-900 dark:text-white">
-                {venue.venue_name}
-              </p>
-              <p className="mt-0.5 truncate text-[0.75rem] text-gray-500 dark:text-white/55">
-                {getVenueHeadline(venue)} - {getVenueDistance(venue, index)}
-              </p>
-            </div>
-            {onSave ? (
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onSave();
-                }}
-                className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-500 hover:border-red-300 hover:text-red-600 dark:border-white/12 dark:bg-black/24 dark:text-white/60 dark:hover:border-white/30 dark:hover:text-white"
-              >
-                Save
-              </button>
-            ) : null}
-          </div>
-
-          <p className="mt-1 text-[0.76rem] leading-4 text-red-500 dark:text-[#ff9d7d]">
-            {buildVenueTags(venue)[0] || "Lively sports bar"}
+        <div className="min-w-0 flex-1 py-0.5">
+          <p className="truncate text-[1.1rem] font-semibold leading-tight text-gray-900 dark:text-white">
+            {venue.venue_name}
+          </p>
+          <p className="mt-1 truncate text-[0.78rem] text-gray-500 dark:text-white/60">
+            {getVenueHeadlineShort(venue)} - {getVenueDistance(venue, index)}
           </p>
 
-          <p className="mt-1 line-clamp-2 text-[0.82rem] leading-4 text-gray-600 dark:text-white/72">
+          <p className="mt-1.5 truncate text-[0.82rem] font-medium text-red-500 dark:text-[#ff9d7d]">
+            {getVenueTagline(venue)}
+          </p>
+
+          <p className="mt-1 line-clamp-2 text-[0.8rem] leading-5 text-gray-600 dark:text-white/72">
             {getVenueDescription(venue)}
           </p>
 
-          <p className="mt-2 flex items-center gap-1.5 text-[0.78rem] text-[#ff9b45] dark:text-[#ffb45d]">
-            <span className={`inline-block h-2 w-2 rounded-full ${
-              venue.is_open_now ? "bg-[#f7c948]" : "bg-orange-400 dark:bg-[#ff9f4f]"
-            }`} />
-            {getVenueStatus(venue, index)}
+          <p className="mt-2 flex items-center gap-1.5 text-[0.8rem] font-medium text-amber-500 dark:text-amber-300">
+            <span className={`inline-block h-2 w-2 rounded-full ${statusColor}`} />
+            {statusText}
           </p>
         </div>
       </div>

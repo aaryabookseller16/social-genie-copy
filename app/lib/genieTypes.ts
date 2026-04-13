@@ -54,6 +54,16 @@ export type RawGenieVenue = {
   priority_tier?: string | null;
   match_confidence?: number | null;
   vibe_score?: number | null;
+  cuisine_tags?: string[] | Record<string, unknown> | null;
+  neighborhood_text?: string | null;
+  hours_json?: {
+    periods?: Array<{
+      open?: { day: number; time: string };
+      close?: { day: number; time: string };
+    }>;
+    open_now?: boolean;
+    weekday_text?: string[];
+  } | null;
 };
 
 export type GenieVenue = RawGenieVenue & {
