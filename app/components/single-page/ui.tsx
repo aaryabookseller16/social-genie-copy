@@ -34,9 +34,8 @@ export function SectionShell({
   return (
     <section
       ref={sectionRef}
-      className={`relative overflow-hidden rounded-[28px] border border-gray-100 bg-white p-5 shadow-[0_4px_24px_rgba(0,0,0,0.06)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(21,0,0,0.92),rgba(56,5,7,0.88)_54%,rgba(18,0,0,0.96))] dark:shadow-[0_24px_80px_rgba(0,0,0,0.38)] dark:backdrop-blur-xl ${className}`}
+      className={`relative overflow-hidden rounded-[28px] border border-gray-100 bg-white p-5 shadow-[0_4px_24px_rgba(0,0,0,0.06)] dark:border-transparent dark:bg-transparent dark:shadow-none ${className}`}
     >
-      <div className="pointer-events-none absolute inset-0 hidden dark:block dark:bg-[radial-gradient(circle_at_50%_18%,rgba(255,86,86,0.18),transparent_24%),radial-gradient(circle_at_80%_80%,rgba(170,18,18,0.12),transparent_22%)]" />
       <div className="relative">
         {title ? (
           <h2 className="font-[family:var(--font-display)] text-[1.75rem] leading-[0.95] text-gray-900 dark:text-white">
@@ -44,7 +43,7 @@ export function SectionShell({
           </h2>
         ) : null}
         {subtitle ? (
-          <p className="mt-2 max-w-[28rem] text-sm leading-6 text-gray-500 dark:text-white/72">
+          <p className="mt-2 max-w-[28rem] text-sm leading-6 text-gray-500 dark:text-white/70">
             {subtitle}
           </p>
         ) : null}
@@ -162,7 +161,7 @@ export function BottomDock({
 }) {
   return (
     <div className="pointer-events-auto fixed bottom-0 left-1/2 z-50 w-[min(100vw,28rem)] -translate-x-1/2">
-      <div className="relative flex items-end justify-between border-t border-red-300 bg-white/95 px-10 pb-[calc(env(safe-area-inset-bottom,0px)+12px)] pt-3 backdrop-blur-2xl dark:border-[#8a2020] dark:bg-[rgba(11,0,0,0.9)]">
+      <div className="relative flex items-end justify-between border-t border-red-200 bg-white/95 px-10 pb-[calc(env(safe-area-inset-bottom,0px)+12px)] pt-3 backdrop-blur-2xl dark:border-white/15 dark:bg-black/30">
         <button
           type="button"
           onClick={onHome}

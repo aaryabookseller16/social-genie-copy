@@ -55,7 +55,7 @@ function toMonthlyPriceLabel(value: string) {
 
 function BenefitList({ benefits }: { benefits: string[] }) {
   return (
-    <ul className="mt-2.5 space-y-1 text-[13px] leading-relaxed text-gray-600 dark:text-white/72">
+    <ul className="mt-2.5 space-y-1 text-[13px] leading-relaxed text-gray-600 dark:text-white/75">
       {benefits.map((benefit) => (
         <li key={benefit} className="flex items-center gap-2.5">
           <svg
@@ -228,7 +228,7 @@ export function AccountSection({
     return (
       <section
         ref={sectionRef}
-        className="relative min-h-screen overflow-hidden bg-white px-5 pb-32 pt-14 dark:bg-[#0a0000]"
+        className="relative min-h-screen overflow-hidden bg-white px-5 pb-32 pt-14 dark:bg-transparent"
       >
         <button
           type="button"
@@ -351,14 +351,14 @@ export function AccountSection({
   return (
     <section
       ref={sectionRef}
-      className="relative min-h-screen overflow-hidden bg-white px-4 pb-32 pt-8 dark:bg-[#0a0000] sm:px-5"
+      className="relative min-h-screen overflow-hidden bg-white px-4 pb-32 pt-8 dark:bg-transparent sm:px-5"
     >
       {!account ? (
         <>
           <div className="relative mx-auto w-full max-w-[23rem]">
-            <div className="rounded-[22px] border border-red-100 bg-red-50/40 px-3 py-2.5 dark:border-white/10 dark:bg-black/16">
+            <div className="rounded-[22px] border border-red-100 bg-red-50/40 px-3 py-2.5 dark:border-white/20 dark:bg-black/25 dark:backdrop-blur-sm">
               <div className="flex items-center gap-3">
-                <div className="relative h-[82px] w-[82px] flex-none overflow-hidden rounded-full border-2 border-red-400 shadow-[0_0_16px_rgba(220,38,38,0.25)]">
+                <div className="relative h-[82px] w-[82px] flex-none overflow-hidden rounded-full border-2 border-red-400 shadow-[0_0_16px_rgba(220,38,38,0.35)]">
                   <Image
                     src="/genie-profile-pic.png"
                     alt="Genie"
@@ -375,7 +375,7 @@ export function AccountSection({
               </div>
             </div>
 
-            <p className="mt-8 text-center text-[15px] leading-relaxed text-gray-600 dark:text-white/72">
+            <p className="mt-8 text-center text-[15px] leading-relaxed text-gray-600 dark:text-white/75">
               Sign up so I can get you connected to your vibe, favorite food,
               social spaces, and more!
             </p>
@@ -384,7 +384,7 @@ export function AccountSection({
               <button
                 type="button"
                 onClick={openFreeSignup}
-                className="w-full rounded-[22px] border border-gray-100 bg-white px-4 py-3.5 text-left shadow-[0_2px_16px_rgba(0,0,0,0.05)] transition hover:shadow-[0_4px_20px_rgba(0,0,0,0.08)] dark:border-[#8c2b2b] dark:bg-black/20 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
+                className="w-full rounded-[22px] border border-gray-100 bg-white px-4 py-3.5 text-left shadow-[0_2px_16px_rgba(0,0,0,0.05)] transition hover:shadow-md dark:border-white/20 dark:bg-black/25 dark:shadow-none dark:backdrop-blur-sm dark:hover:bg-black/35"
               >
                 <div className="flex items-start gap-3">
                   <div className="mt-0.5 flex h-14 w-14 flex-none items-center justify-center rounded-xl border-2 border-red-500 dark:border-0 dark:bg-transparent dark:p-0">
@@ -415,7 +415,7 @@ export function AccountSection({
               <button
                 type="button"
                 onClick={openVibeeSignup}
-                className="w-full rounded-[22px] border border-gray-100 bg-white px-4 py-3.5 text-left shadow-[0_2px_16px_rgba(0,0,0,0.05)] transition hover:shadow-[0_4px_20px_rgba(0,0,0,0.08)] dark:border-[#8c2b2b] dark:bg-black/20 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
+                className="w-full rounded-[22px] border border-gray-100 bg-white px-4 py-3.5 text-left shadow-[0_2px_16px_rgba(0,0,0,0.05)] transition hover:shadow-md dark:border-white/20 dark:bg-black/25 dark:shadow-none dark:backdrop-blur-sm dark:hover:bg-black/35"
               >
                 <div className="flex items-start gap-3">
                   <div className="mt-0.5 flex h-14 w-14 flex-none items-center justify-center rounded-xl border-2 border-red-500 dark:border-0 dark:bg-transparent dark:p-0">
