@@ -7,7 +7,8 @@ import {
   AccountSection,
   type AccountScreenMode,
 } from "@/app/components/single-page/AccountSection";
-import { DrawerMenu } from "@/app/components/single-page/DrawerMenu";
+import { DrawerMenu, type DrawerMenuActionId } from "@/app/components/single-page/DrawerMenu";
+import { ProfileSection } from "@/app/components/single-page/ProfileSection";
 import { VendorSection } from "@/app/components/single-page/VendorSection";
 import {
   BottomDock,
@@ -219,6 +220,7 @@ export function SinglePageGenieApp({
   const preferencesRef = useRef<HTMLElement | null>(null);
   const accountRef = useRef<HTMLElement | null>(null);
   const vendorRef = useRef<HTMLElement | null>(null);
+  const profileRef = useRef<HTMLElement | null>(null);
   const [activeScreen, setActiveScreen] = useState<FlowAnchor>(initialScreen);
   const [detailReturnScreen, setDetailReturnScreen] = useState<
     "decision" | "more" | "saved"
@@ -257,6 +259,16 @@ export function SinglePageGenieApp({
   const [accountScreenMode, setAccountScreenMode] =
     useState<AccountScreenMode>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [contactForm, setContactForm] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    subject: "",
+    description: "",
+  });
+  const [contactSending, setContactSending] = useState(false);
+  const [contactSent, setContactSent] = useState(false);
   const [queryCount, setQueryCount] = useState(0);
   const [browseCount, setBrowseCount] = useState(0);
   const [hasOpenedMoreNearby, setHasOpenedMoreNearby] = useState(false);
@@ -921,7 +933,11 @@ export function SinglePageGenieApp({
   }, [hydrateAuthenticatedSession, initializeDeviceProfile]);
 
   useEffect(() => {
-    if (activeScreen === "offers") {
+    if (
+      activeScreen === "offers" ||
+      activeScreen === "dashboard" ||
+      activeScreen === "membership"
+    ) {
       void loadOffersAndRedemptions();
     }
   }, [activeScreen, loadOffersAndRedemptions]);
@@ -1266,43 +1282,37 @@ export function SinglePageGenieApp({
 
   const isVibeeMember = account?.membership === "vibee";
 
+  const handleLogout = useCallback(() => {
+    clearStoredSession();
+    setAccount(null);
+    setSavedVenueIds([]);
+    setSavedVenues([]);
+    setIsDrawerOpen(false);
+    goHome();
+  }, [goHome]);
+
   const handleDrawerNavigate = useCallback(
-    (
-      target:
-        | "home"
-        | "account"
-        | "saved"
-        | "offers"
-        | "membership"
-        | "vendor"
-        | "how-it-works"
-        | "contact"
-        | "terms"
-    ) => {
+    (target: DrawerMenuActionId) => {
       switch (target) {
         case "home":
           goHome();
           break;
-        case "account":
-          navigateTo("account");
+        case "profile":
+          navigateTo("profile");
           break;
-        case "offers":
-          navigateTo("offers");
+        case "dashboard":
+          navigateTo("dashboard");
           break;
-        case "membership":
-          if (isVibeeMember) {
-            navigateTo("offers");
-          } else {
-            navigateTo("account");
-          }
+        case "preferences":
+          navigateTo("preferences");
           break;
         case "saved":
           navigateTo("saved");
           break;
-        case "vendor":
-          navigateTo("vendor");
+        case "membership":
+          navigateTo("membership");
           break;
-        case "how-it-works":
+        case "how-genie-works":
           setIsDrawerOpen(false);
           window.open(
             "https://www.socialbevy.com/how-genie-works",
@@ -1310,17 +1320,35 @@ export function SinglePageGenieApp({
             "noopener,noreferrer"
           );
           break;
-        case "contact":
+        case "vendor":
+          navigateTo("vendor");
+          break;
+        case "help-faq":
           setIsDrawerOpen(false);
           window.open(
-            "https://www.socialbevy.com/vendors",
+            "https://www.socialbevy.com/faq",
+            "_blank",
+            "noopener,noreferrer"
+          );
+          break;
+        case "contact":
+          navigateTo("contact");
+          break;
+        case "privacy":
+          setIsDrawerOpen(false);
+          window.open(
+            "https://www.socialbevy.com/privacy",
             "_blank",
             "noopener,noreferrer"
           );
           break;
         case "terms":
           setIsDrawerOpen(false);
-          window.open("https://www.socialbevy.com/", "_blank", "noopener,noreferrer");
+          window.open(
+            "https://www.socialbevy.com/terms",
+            "_blank",
+            "noopener,noreferrer"
+          );
           break;
       }
     },
@@ -1353,6 +1381,18 @@ export function SinglePageGenieApp({
       case "preferences":
         goBack("account");
         break;
+      case "profile":
+        goBack("home");
+        break;
+      case "dashboard":
+        goBack("home");
+        break;
+      case "contact":
+        goBack("home");
+        break;
+      case "membership":
+        goBack("home");
+        break;
       case "account":
         if (accountScreenMode) {
           setAccountScreenMode(null);
@@ -1375,13 +1415,19 @@ export function SinglePageGenieApp({
   const shouldShowTopBar =
     activeScreen !== "home" &&
     activeScreen !== "vendor" &&
-    activeScreen !== "account";
+    activeScreen !== "account" &&
+    activeScreen !== "profile" &&
+    activeScreen !== "dashboard" &&
+    activeScreen !== "contact" &&
+    activeScreen !== "membership" &&
+    activeScreen !== "saved";
 
   const shouldShowFooter =
     activeScreen === "decision" ||
     activeScreen === "more" ||
     activeScreen === "detail" ||
-    activeScreen === "saved";
+    activeScreen === "saved" ||
+    activeScreen === "dashboard";
 
   const footerActiveId: FlowAnchor =
     activeScreen === "saved" ? "saved" : activeScreen === "home" ? "home" : "decision";
@@ -1394,6 +1440,9 @@ export function SinglePageGenieApp({
         activeScreen={activeScreen}
         onClose={() => setIsDrawerOpen(false)}
         onNavigate={handleDrawerNavigate}
+        onLogout={handleLogout}
+        notificationsEnabled={notificationsEnabled}
+        onToggleNotifications={() => setNotificationsEnabled((prev) => !prev)}
       />
 
       <div className={`relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col gap-3 ${activeScreen === "home" || activeScreen === "listening" || activeScreen === "thinking" ? "min-h-0" : ""}`}>
@@ -1941,33 +1990,87 @@ export function SinglePageGenieApp({
         ) : null}
 
         {activeScreen === "saved" ? (
-          <SectionShell
-            sectionRef={savedRef}
-            title="Your saved spots"
-            subtitle="Anything you save lives here so you can jump back into your favorites."
-          >
+          <section ref={savedRef} className="pb-28">
+            {/* Header */}
+            <div className="mb-5 flex items-center">
+              <button
+                type="button"
+                onClick={() => goBack("home")}
+                aria-label="Go back"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 dark:border-white/12 dark:bg-black/24 dark:text-white/82"
+              >
+                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M19 12H6m0 0 5-5m-5 5 5 5" />
+                </svg>
+              </button>
+              <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
+                Saved Spots
+              </h2>
+            </div>
+
             {!account ? (
-              <div className="rounded-[24px] border border-gray-100 bg-gray-50 px-4 py-5 text-sm leading-6 text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
+              <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-5 text-sm text-white/70">
                 Sign up or log in to save venues and keep them here.
               </div>
             ) : savedVenues.length ? (
-              <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
                 {savedVenues.map((venue, index) => (
-                  <ResultCard
+                  <button
                     key={`saved-${venue.id}`}
-                    venue={venue}
-                    index={index}
-                    onOpen={() => selectVenue(venue, index, "saved")}
-                    onSave={() => handleSaveVenue(venue)}
-                  />
+                    type="button"
+                    onClick={() => selectVenue(venue, index, "saved")}
+                    className="overflow-hidden rounded-[18px] border border-white/10 bg-black/30 text-left"
+                  >
+                    <div className="relative h-44 w-full">
+                      <Image
+                        src={venue.image || "/sample-venue-1.jpeg"}
+                        alt={venue.venue_name || "Venue"}
+                        fill
+                        className="object-cover"
+                        sizes="(max-width: 640px) 44vw, 200px"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent" />
+                      {/* Heart */}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); void handleSaveVenue(venue); }}
+                        className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-black/35 backdrop-blur-sm"
+                        aria-label="Unsave"
+                      >
+                        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="#ff4f4f" stroke="#ff4f4f" strokeWidth="1.5">
+                          <path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.5-7 10-7 10Z" />
+                        </svg>
+                      </button>
+                      {/* Name + location overlay */}
+                      <div className="absolute bottom-0 left-0 right-0 px-3 pb-3">
+                        <p className="line-clamp-1 text-[0.88rem] font-bold text-white">
+                          {venue.venue_name}
+                        </p>
+                        <p className="mt-0.5 truncate text-[0.68rem] text-white/65">
+                          {getVenueHeadlineShort(venue)} · {getVenueDistance(venue, index)}
+                        </p>
+                      </div>
+                    </div>
+                    {/* Tags */}
+                    <div className="flex flex-wrap gap-1.5 px-2.5 py-2.5">
+                      {buildVenueTags(venue).slice(0, 2).map((tag) => (
+                        <span
+                          key={tag}
+                          className="rounded-full border border-white/15 bg-white/8 px-2.5 py-0.5 text-[0.62rem] font-medium text-white/75"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </button>
                 ))}
               </div>
             ) : (
-              <div className="rounded-[24px] border border-gray-100 bg-gray-50 px-4 py-5 text-sm leading-6 text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
+              <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-5 text-sm text-white/70">
                 You have not saved any spots yet. Save one from a Genie result and it will appear here.
               </div>
             )}
-          </SectionShell>
+          </section>
         ) : null}
 
         {activeScreen === "offers" ? (
@@ -2288,6 +2391,463 @@ export function SinglePageGenieApp({
           onContinueHome={() => goBack("home")}
           onRefreshSession={() => void hydrateAuthenticatedSession()}
         />
+
+        {activeScreen === "dashboard" ? (
+          <section className="space-y-5 pb-28">
+            {/* Header */}
+            <div className="flex items-center justify-between pt-1">
+              <h1 className="font-[family:var(--font-display)] text-[1.75rem] font-semibold leading-tight text-gray-900 dark:text-white">
+                Hi, {account?.firstName || "there"}!
+              </h1>
+              <button
+                type="button"
+                onClick={() => setIsDrawerOpen(true)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-red-600 shadow-sm dark:border-white/12 dark:bg-black/24 dark:text-white/82"
+                aria-label="Open menu"
+              >
+                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                  <path d="M5 7.5h14" /><path d="M5 12h14" /><path d="M5 16.5h14" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Stats row */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-[18px] border border-red-200/60 bg-[rgba(120,10,10,0.55)] px-4 py-4 dark:border-white/10 dark:bg-black/30">
+                <p className="text-[2rem] font-bold leading-none text-white">
+                  {offers.length}
+                </p>
+                <p className="mt-1 text-[0.75rem] font-medium text-white/70">
+                  Offers Available
+                </p>
+              </div>
+              <div className="rounded-[18px] border border-red-200/60 bg-[rgba(120,10,10,0.55)] px-4 py-4 dark:border-white/10 dark:bg-black/30">
+                <p className="text-[2rem] font-bold leading-none text-white">
+                  {redemptions.length}
+                </p>
+                <p className="mt-1 text-[0.75rem] font-medium text-white/70">
+                  Redemption Used
+                </p>
+              </div>
+            </div>
+
+            {/* V.I.Bee Offers */}
+            <div>
+              <h2 className="mb-3 text-[1.05rem] font-semibold text-gray-900 dark:text-white">
+                Your V.I.Bee Offers
+              </h2>
+              {offersLoading ? (
+                <p className="text-sm text-white/60">Loading offers...</p>
+              ) : offers.length ? (
+                <>
+                  <div className="-mx-4 overflow-x-auto">
+                    <div className="flex gap-3 px-4 pb-1">
+                      {offers.slice(0, 6).map((offer) => (
+                        <div
+                          key={offer.id}
+                          className="w-[9rem] flex-none rounded-[18px] border border-red-200/40 bg-[rgba(80,5,5,0.70)] p-3 dark:border-white/10 dark:bg-black/35"
+                        >
+                          <p className="truncate text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-white/55">
+                            {offer.offer_type?.replaceAll("_", " ") || "Offer"}
+                          </p>
+                          <p className="mt-1 line-clamp-2 text-[0.88rem] font-bold leading-snug text-white">
+                            {offer.title}
+                          </p>
+                          {offer.description ? (
+                            <p className="mt-0.5 truncate text-[0.65rem] text-white/50">
+                              {offer.description}
+                            </p>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() => navigateTo("offers")}
+                            className="mt-2.5 w-full rounded-[10px] bg-[#e8900a] px-2 py-1.5 text-[0.65rem] font-bold text-white"
+                          >
+                            V.I.Bee Only
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => navigateTo("offers")}
+                    className="mt-3 w-full rounded-[16px] border border-red-500/60 bg-[rgba(150,15,15,0.55)] py-3 text-sm font-semibold text-white dark:border-white/15"
+                  >
+                    See All Offers
+                  </button>
+                </>
+              ) : (
+                <div className="rounded-[16px] border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/60">
+                  {account?.membership === "vibee"
+                    ? "No active offers right now. Check back soon."
+                    : "Upgrade to V.I.Bee to unlock exclusive offers."}
+                </div>
+              )}
+            </div>
+
+            {/* Recent Redemptions */}
+            {redemptions.length > 0 ? (
+              <div>
+                <h2 className="mb-3 text-[1.05rem] font-semibold text-gray-900 dark:text-white">
+                  Recent Redemptions
+                </h2>
+                <div className="space-y-2">
+                  {redemptions.slice(0, 3).map((redemption) => {
+                    const matchedOffer = offers.find((o) => o.id === redemption.offer_id);
+                    const isVerified = !!redemption.verified_at;
+                    const date = redemption.redeemed_at
+                      ? new Date(
+                          redemption.redeemed_at < 1_000_000_000_000
+                            ? redemption.redeemed_at * 1000
+                            : redemption.redeemed_at
+                        ).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                      : null;
+                    return (
+                      <div
+                        key={redemption.id}
+                        className="flex items-center justify-between rounded-[16px] border border-white/10 bg-[rgba(60,5,5,0.55)] px-4 py-3 dark:bg-black/25"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-white">
+                            {matchedOffer?.title || `Offer #${redemption.offer_id}`}
+                          </p>
+                          {date ? (
+                            <p className="mt-0.5 text-[0.72rem] text-white/50">
+                              {date}
+                            </p>
+                          ) : null}
+                        </div>
+                        <span
+                          className={`ml-3 flex-none rounded-full px-2.5 py-1 text-[0.65rem] font-bold ${
+                            isVerified
+                              ? "bg-green-500/20 text-green-400"
+                              : "bg-white/10 text-white/55"
+                          }`}
+                        >
+                          {isVerified ? "Verified" : "Pending"}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigateTo("offers")}
+                  className="mt-3 w-full rounded-[16px] border border-red-500/60 bg-[rgba(150,15,15,0.55)] py-3 text-sm font-semibold text-white dark:border-white/15"
+                >
+                  See All
+                </button>
+              </div>
+            ) : null}
+
+            {/* Saved Venues */}
+            {savedVenues.length > 0 ? (
+              <div>
+                <h2 className="mb-3 text-[1.05rem] font-semibold text-gray-900 dark:text-white">
+                  Saved Venues
+                </h2>
+                <div className="grid grid-cols-2 gap-3">
+                  {savedVenues.slice(0, 4).map((venue, index) => (
+                    <button
+                      key={venue.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedVenueId(getVenueId(venue));
+                        setDetailReturnScreen("saved");
+                        navigateTo("detail");
+                      }}
+                      className="overflow-hidden rounded-[18px] border border-white/10 bg-black/30 text-left"
+                    >
+                      <div className="relative h-28 w-full">
+                        <Image
+                          src={venue.image || "/sample-venue-1.jpeg"}
+                          alt={venue.venue_name || "Venue"}
+                          fill
+                          className="object-cover"
+                          sizes="(max-width: 640px) 44vw, 200px"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                        <div className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm">
+                          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="#ff4f4f" stroke="#ff4f4f" strokeWidth="1.5">
+                            <path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.5-7 10-7 10Z" />
+                          </svg>
+                        </div>
+                      </div>
+                      <div className="px-2.5 py-2">
+                        <p className="line-clamp-1 text-[0.85rem] font-semibold text-white">
+                          {venue.venue_name}
+                        </p>
+                        <p className="mt-0.5 truncate text-[0.68rem] text-white/55">
+                          {getVenueHeadlineShort(venue)} · {getVenueDistance(venue, index)}
+                        </p>
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          {buildVenueTags(venue).slice(0, 2).map((tag) => (
+                            <span
+                              key={tag}
+                              className="rounded-full bg-white/10 px-2 py-0.5 text-[0.6rem] font-medium text-white/70"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+
+        {activeScreen === "profile" ? (
+          <section ref={profileRef} className="flex flex-1 flex-col">
+            <ProfileSection
+              visible
+              account={account}
+              onBack={() => goBack("home")}
+              onSave={async (data) => {
+                if (!account) return;
+                const updated = {
+                  ...account,
+                  firstName: data.firstName,
+                  lastName: data.lastName,
+                  email: data.email,
+                  phone: data.phone,
+                };
+                setAccount(updated);
+                const { writeConsumerAccount } = await import("@/app/lib/localState");
+                writeConsumerAccount(updated);
+              }}
+            />
+          </section>
+        ) : null}
+
+        {/* ── CONTACT ── */}
+        {activeScreen === "contact" ? (
+          <section className="pb-8">
+            <div className="mb-5 flex items-center">
+              <button
+                type="button"
+                onClick={() => goBack("home")}
+                aria-label="Go back"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 dark:border-white/12 dark:bg-black/24 dark:text-white/82"
+              >
+                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M19 12H6m0 0 5-5m-5 5 5 5" />
+                </svg>
+              </button>
+              <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
+                Contact
+              </h2>
+            </div>
+
+            {/* Offer preview cards */}
+            {offers.length > 0 ? (
+              <div className="mb-5">
+                <div className="-mx-4 overflow-x-auto">
+                  <div className="flex gap-3 px-4 pb-1">
+                    {offers.slice(0, 6).map((offer) => (
+                      <div
+                        key={offer.id}
+                        className="w-[8rem] flex-none rounded-[16px] border border-red-200/30 bg-[rgba(80,5,5,0.65)] p-3 dark:border-white/10 dark:bg-black/35"
+                      >
+                        <p className="truncate text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-white/50">
+                          {offer.offer_type?.replaceAll("_", " ") || "Offer"}
+                        </p>
+                        <p className="mt-1 line-clamp-2 text-[0.82rem] font-bold leading-snug text-white">
+                          {offer.title}
+                        </p>
+                        {offer.description ? (
+                          <p className="mt-0.5 truncate text-[0.62rem] text-white/45">
+                            {offer.description}
+                          </p>
+                        ) : null}
+                        <div className="mt-2 rounded-[8px] bg-[#e8900a] py-1 text-center text-[0.6rem] font-bold text-white">
+                          V.I.Bee Only
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {/* Form */}
+            {contactSent ? (
+              <div className="rounded-[20px] border border-green-500/30 bg-green-500/10 px-4 py-6 text-center">
+                <p className="text-base font-semibold text-white">Message sent!</p>
+                <p className="mt-1 text-sm text-white/65">We&apos;ll get back to you shortly.</p>
+                <button
+                  type="button"
+                  onClick={() => { setContactSent(false); setContactForm({ firstName: "", lastName: "", email: "", subject: "", description: "" }); }}
+                  className="mt-4 rounded-[14px] border border-white/20 bg-white/10 px-5 py-2 text-sm font-semibold text-white"
+                >
+                  Send another
+                </button>
+              </div>
+            ) : (
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  setContactSending(true);
+                  await new Promise((r) => setTimeout(r, 800));
+                  setContactSending(false);
+                  setContactSent(true);
+                }}
+                className="space-y-3"
+              >
+                {(
+                  [
+                    { key: "firstName", label: "First Name", placeholder: "First Name", type: "text" },
+                    { key: "lastName", label: "Last Name", placeholder: "Last Name", type: "text" },
+                    { key: "email", label: "Email", placeholder: "Email", type: "email" },
+                    { key: "subject", label: "Subject", placeholder: "Subject", type: "text" },
+                  ] as Array<{ key: keyof typeof contactForm; label: string; placeholder: string; type: string }>
+                ).map(({ key, placeholder, type }) => (
+                  <input
+                    key={key}
+                    type={type}
+                    value={contactForm[key]}
+                    onChange={(e) => setContactForm((prev) => ({ ...prev, [key]: e.target.value }))}
+                    placeholder={placeholder}
+                    className="w-full rounded-[14px] border border-white/15 bg-white/8 px-4 py-3.5 text-sm text-white placeholder:text-white/35 focus:border-white/30 focus:outline-none dark:bg-black/25"
+                  />
+                ))}
+                <textarea
+                  value={contactForm.description}
+                  onChange={(e) => setContactForm((prev) => ({ ...prev, description: e.target.value }))}
+                  placeholder="Short Description"
+                  rows={4}
+                  className="w-full resize-none rounded-[14px] border border-white/15 bg-white/8 px-4 py-3.5 text-sm text-white placeholder:text-white/35 focus:border-white/30 focus:outline-none dark:bg-black/25"
+                />
+                <button
+                  type="submit"
+                  disabled={contactSending}
+                  className="mt-1 w-full rounded-[18px] border border-red-500 bg-red-600 py-3.5 text-sm font-semibold text-white disabled:opacity-60 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                >
+                  {contactSending ? "Sending..." : "Send Message"}
+                </button>
+              </form>
+            )}
+          </section>
+        ) : null}
+
+        {/* ── MEMBERSHIP ── */}
+        {activeScreen === "membership" ? (() => {
+          const isVibee = account?.membership === "vibee";
+          const isActive = account?.subscriptionStatus === "active";
+          const wasVibee = !isVibee && (account?.subscriptionStatus === "cancelled" || account?.subscriptionStatus === "inactive" || account?.subscriptionStatus === "past_due");
+          return (
+            <section className="pb-8">
+              <div className="mb-5 flex items-center">
+                <button
+                  type="button"
+                  onClick={() => goBack("home")}
+                  aria-label="Go back"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 dark:border-white/12 dark:bg-black/24 dark:text-white/82"
+                >
+                  <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M19 12H6m0 0 5-5m-5 5 5 5" />
+                  </svg>
+                </button>
+                <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
+                  Membership
+                </h2>
+              </div>
+
+              <div className="space-y-3">
+                {/* Free member card — always shown when not active vibee */}
+                {!isVibee || !isActive ? (
+                  <div className="flex items-center gap-4 rounded-[20px] border border-white/15 bg-[rgba(60,5,5,0.55)] px-4 py-4 dark:bg-black/25">
+                    <div className="flex h-12 w-12 flex-none items-center justify-center rounded-full border-2 border-white/20 bg-white/10 text-[0.65rem] font-bold uppercase tracking-wide text-white">
+                      FREE
+                    </div>
+                    <div>
+                      <p className="text-base font-semibold text-white">Free Member</p>
+                      <p className="mt-0.5 text-[0.78rem] text-white/55">Currently Active</p>
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* V.I.Bee active */}
+                {isVibee && isActive ? (
+                  <div className="flex items-center gap-4 rounded-[20px] border border-red-500/40 bg-[rgba(120,10,10,0.55)] px-4 py-4">
+                    <div className="flex h-12 w-12 flex-none items-center justify-center rounded-full border-2 border-red-400/60 bg-red-500/20">
+                      <svg viewBox="0 0 24 24" className="h-6 w-6 text-red-300" fill="none" stroke="currentColor" strokeWidth="1.6">
+                        <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-base font-semibold text-white">V.I.Bee Member</p>
+                      <p className="mt-0.5 text-[0.78rem] text-white/55">Next Payment: —</p>
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* Expired V.I.Bee */}
+                {wasVibee ? (
+                  <>
+                    <div className="flex items-center gap-4 rounded-[20px] border border-white/15 bg-[rgba(60,5,5,0.55)] px-4 py-4 opacity-70 dark:bg-black/25">
+                      <div className="flex h-12 w-12 flex-none items-center justify-center rounded-full border-2 border-white/20 bg-white/10">
+                        <svg viewBox="0 0 24 24" className="h-6 w-6 text-white/50" fill="none" stroke="currentColor" strokeWidth="1.6">
+                          <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <p className="text-base font-semibold text-white">V.I.Bee Member</p>
+                        <p className="mt-0.5 text-[0.78rem] text-white/55">Expired</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => navigateTo("account")}
+                      className="w-full rounded-[18px] border border-red-500 bg-red-600 py-4 text-sm font-semibold text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                    >
+                      Renew V.I.Bee Now
+                    </button>
+                  </>
+                ) : null}
+
+                {/* Upgrade prompt — free with no prior vibee */}
+                {!isVibee && !wasVibee ? (
+                  <>
+                    <div className="rounded-[20px] border border-red-500/30 bg-[rgba(80,5,5,0.60)] px-4 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-12 w-12 flex-none items-center justify-center rounded-full border-2 border-red-400/50 bg-red-500/15">
+                          <svg viewBox="0 0 24 24" className="h-6 w-6 text-red-300" fill="none" stroke="currentColor" strokeWidth="1.6">
+                            <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="text-base font-semibold text-white">Become a V.I.Bee</p>
+                          <p className="mt-0.5 text-[0.82rem] font-medium text-red-300">{config.vibeeMonthlyPrice ?? "$2.99"} / month</p>
+                        </div>
+                      </div>
+                      <ul className="mt-4 space-y-2">
+                        {(config.vibeeBenefits ?? ["Exclusive event access", "Early invites & giveaways", "Hidden gems & VIP deals"]).map((benefit) => (
+                          <li key={benefit} className="flex items-center gap-2 text-[0.85rem] text-white/80">
+                            <svg viewBox="0 0 24 24" className="h-4 w-4 flex-none text-red-400" fill="none" stroke="currentColor" strokeWidth="2.5">
+                              <path d="M20 6 9 17l-5-5" />
+                            </svg>
+                            {benefit}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => navigateTo("account")}
+                      className="w-full rounded-[18px] border border-red-500 bg-red-600 py-4 text-sm font-semibold text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                    >
+                      Upgrade to V.I.Bee Now
+                    </button>
+                  </>
+                ) : null}
+              </div>
+            </section>
+          );
+        })() : null}
       </div>
 
       {shouldShowFooter ? (

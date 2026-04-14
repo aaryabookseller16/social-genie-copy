@@ -16,7 +16,11 @@ export type FlowAnchor =
   | "offers"
   | "preferences"
   | "account"
-  | "vendor";
+  | "vendor"
+  | "profile"
+  | "dashboard"
+  | "contact"
+  | "membership";
 
 export function SectionShell({
   sectionRef,
