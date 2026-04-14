@@ -1438,9 +1438,11 @@ export function SinglePageGenieApp({
       <DrawerMenu
         visible={isDrawerOpen}
         activeScreen={activeScreen}
+        isLoggedIn={!!account}
         onClose={() => setIsDrawerOpen(false)}
         onNavigate={handleDrawerNavigate}
         onLogout={handleLogout}
+        onLogin={() => { setIsDrawerOpen(false); navigateTo("account"); }}
         notificationsEnabled={notificationsEnabled}
         onToggleNotifications={() => setNotificationsEnabled((prev) => !prev)}
       />
@@ -2233,132 +2235,147 @@ export function SinglePageGenieApp({
 
         {activeScreen === "preferences" ? (
           <section ref={preferencesRef} className="relative flex flex-1 flex-col pb-4">
-            <div className="mb-5 flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => navigateTo("home")}
-                className="text-gray-800 dark:text-white"
-                aria-label="Go back"
-              >
-                <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M19 12H6m0 0 5-5m-5 5 5 5" />
-                </svg>
-              </button>
-              <h2 className="flex-1 text-center pr-6 text-[1.35rem] font-semibold text-gray-900 dark:text-white">
-                Social Preferences
-              </h2>
-            </div>
-
-            {socialLoading ? (
-              <div className="rounded-[20px] border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
-                Loading your preference profile...
+            {!account ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-4 pt-20 text-center">
+                <p className="text-[1.1rem] font-semibold text-gray-900 dark:text-white">
+                  Sign in to set preferences
+                </p>
+                <p className="max-w-[22rem] text-sm text-gray-500 dark:text-white/60">
+                  Log in or create an account so Genie can personalise results just for you.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => navigateTo("account")}
+                  className="rounded-[18px] border border-red-500 bg-red-600 px-6 py-3 text-sm font-semibold text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                >
+                  Login / Sign Up
+                </button>
               </div>
             ) : (
               <>
-                {(() => {
-                  const categories = Object.keys(socialTagOptions) as Array<
-                    keyof typeof socialTagOptions
-                  >;
-                  const categoryImage: Record<keyof typeof socialTagOptions, string> = {
-                    experiences_tags: "/sample-venue-1.jpeg",
-                    atmosphere_tags: "/sample-venue-2.jpeg",
-                    bevy_bites_tags: "/sample-venue-1.jpeg",
-                    community_tags: "/sample-venue-2.jpeg",
-                    music_tags: "",
-                  };
-                  const totalSelected = categories.reduce((sum, key) => {
-                    const value = socialProfileDraft[key];
-                    return sum + (Array.isArray(value) ? value.length : 0);
-                  }, 0);
+                <div className="mb-5 flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => navigateTo("home")}
+                    className="text-gray-800 dark:text-white"
+                    aria-label="Go back"
+                  >
+                    <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M19 12H6m0 0 5-5m-5 5 5 5" />
+                    </svg>
+                  </button>
+                  <h2 className="flex-1 pr-6 text-center text-[1.35rem] font-semibold text-gray-900 dark:text-white">
+                    Social Preferences
+                  </h2>
+                </div>
 
-                  return (
-                    <>
-                      <div className="grid grid-cols-2 gap-3">
-                        {categories.map((field) => {
-                          const isActive = activeTagCategory === field;
-                          const isMusic = field === "music_tags";
-                          return (
-                            <button
-                              key={field}
-                              type="button"
-                              onClick={() => setActiveTagCategory(field)}
-                              className={`relative overflow-hidden rounded-[18px] border bg-white text-left shadow-[0_6px_18px_rgba(0,0,0,0.08)] transition dark:bg-black/30 ${
-                                isActive
-                                  ? "border-red-500 ring-2 ring-red-500/40 dark:border-[#ff7b7b]"
-                                  : "border-gray-100 dark:border-white/10"
-                              }`}
-                            >
-                              <div className="relative h-28 w-full overflow-hidden">
-                                {isMusic ? (
-                                  <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(145deg,#1a1033,#3a1a5a)]">
-                                    <svg viewBox="0 0 24 24" className="h-12 w-12" fill="url(#musicGrad)">
-                                      <defs>
-                                        <linearGradient id="musicGrad" x1="0" y1="0" x2="1" y2="1">
-                                          <stop offset="0%" stopColor="#f472b6" />
-                                          <stop offset="100%" stopColor="#8b5cf6" />
-                                        </linearGradient>
-                                      </defs>
-                                      <path d="M9 18V5l12-2v13" fill="none" stroke="url(#musicGrad)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                      <circle cx="6" cy="18" r="3" />
-                                      <circle cx="18" cy="16" r="3" />
-                                    </svg>
+                {socialLoading ? (
+                  <div className="rounded-[20px] border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
+                    Loading your preference profile...
+                  </div>
+                ) : (
+                  <>
+                    {(() => {
+                      const categories = Object.keys(socialTagOptions) as Array<keyof typeof socialTagOptions>;
+                      const categoryImage: Record<keyof typeof socialTagOptions, string> = {
+                        experiences_tags: "/sample-venue-1.jpeg",
+                        atmosphere_tags: "/sample-venue-2.jpeg",
+                        bevy_bites_tags: "/sample-venue-1.jpeg",
+                        community_tags: "/sample-venue-2.jpeg",
+                        music_tags: "",
+                      };
+                      const totalSelected = categories.reduce((sum, key) => {
+                        const value = socialProfileDraft[key];
+                        return sum + (Array.isArray(value) ? value.length : 0);
+                      }, 0);
+                      return (
+                        <>
+                          <div className="grid grid-cols-2 gap-3">
+                            {categories.map((field) => {
+                              const isActive = activeTagCategory === field;
+                              const isMusic = field === "music_tags";
+                              return (
+                                <button
+                                  key={field}
+                                  type="button"
+                                  onClick={() => setActiveTagCategory(field)}
+                                  className={`relative overflow-hidden rounded-[18px] border bg-white text-left shadow-[0_6px_18px_rgba(0,0,0,0.08)] transition dark:bg-black/30 ${
+                                    isActive
+                                      ? "border-red-500 ring-2 ring-red-500/40 dark:border-[#ff7b7b]"
+                                      : "border-gray-100 dark:border-white/10"
+                                  }`}
+                                >
+                                  <div className="relative h-28 w-full overflow-hidden">
+                                    {isMusic ? (
+                                      <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(145deg,#1a1033,#3a1a5a)]">
+                                        <svg viewBox="0 0 24 24" className="h-12 w-12">
+                                          <defs>
+                                            <linearGradient id="musicGrad" x1="0" y1="0" x2="1" y2="1">
+                                              <stop offset="0%" stopColor="#f472b6" />
+                                              <stop offset="100%" stopColor="#8b5cf6" />
+                                            </linearGradient>
+                                          </defs>
+                                          <path d="M9 18V5l12-2v13" fill="none" stroke="url(#musicGrad)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                          <circle cx="6" cy="18" r="3" fill="url(#musicGrad)" />
+                                          <circle cx="18" cy="16" r="3" fill="url(#musicGrad)" />
+                                        </svg>
+                                      </div>
+                                    ) : (
+                                      <Image
+                                        src={categoryImage[field]}
+                                        alt={socialTagLabels[field]}
+                                        fill
+                                        className="object-cover"
+                                        sizes="(max-width: 768px) 45vw, 200px"
+                                      />
+                                    )}
                                   </div>
-                                ) : (
-                                  <Image
-                                    src={categoryImage[field]}
-                                    alt={socialTagLabels[field]}
-                                    fill
-                                    className="object-cover"
-                                    sizes="(max-width: 768px) 45vw, 200px"
-                                  />
-                                )}
-                              </div>
-                              <p className="px-3 py-2 text-center text-[14px] font-medium text-gray-900 dark:text-white">
-                                {socialTagLabels[field]}
-                              </p>
-                            </button>
-                          );
-                        })}
-                      </div>
+                                  <p className="px-3 py-2 text-center text-[14px] font-medium text-gray-900 dark:text-white">
+                                    {socialTagLabels[field]}
+                                  </p>
+                                </button>
+                              );
+                            })}
+                          </div>
 
-                      <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-                        {socialTagOptions[activeTagCategory].map((option) => {
-                          const fieldValue = socialProfileDraft[activeTagCategory];
-                          const selected = Array.isArray(fieldValue)
-                            ? fieldValue.includes(option)
-                            : false;
-                          return (
-                            <button
-                              key={`${activeTagCategory}-${option}`}
-                              type="button"
-                              onClick={() => toggleSocialTag(activeTagCategory, option)}
-                              className={`rounded-full border px-4 py-1.5 text-[13px] font-medium transition ${
-                                selected
-                                  ? "border-red-500 bg-red-600 text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
-                                  : "border-gray-300 bg-transparent text-gray-700 hover:border-red-300 hover:text-red-600 dark:border-white/25 dark:text-white/85 dark:hover:border-white/55"
-                              }`}
-                            >
-                              {option}
-                            </button>
-                          );
-                        })}
-                      </div>
+                          <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+                            {socialTagOptions[activeTagCategory].map((option) => {
+                              const fieldValue = socialProfileDraft[activeTagCategory];
+                              const selected = Array.isArray(fieldValue) ? fieldValue.includes(option) : false;
+                              return (
+                                <button
+                                  key={`${activeTagCategory}-${option}`}
+                                  type="button"
+                                  onClick={() => toggleSocialTag(activeTagCategory, option)}
+                                  className={`rounded-full border px-4 py-1.5 text-[13px] font-medium transition ${
+                                    selected
+                                      ? "border-red-500 bg-red-600 text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                                      : "border-gray-300 bg-transparent text-gray-700 hover:border-red-300 hover:text-red-600 dark:border-white/25 dark:text-white/85 dark:hover:border-white/55"
+                                  }`}
+                                >
+                                  {option}
+                                </button>
+                              );
+                            })}
+                          </div>
 
-                      <p className="mt-4 text-center text-[13px] text-gray-500 dark:text-white/65">
-                        {totalSelected} {totalSelected === 1 ? "tag" : "tags"} selected
-                      </p>
+                          <p className="mt-4 text-center text-[13px] text-gray-500 dark:text-white/65">
+                            {totalSelected} {totalSelected === 1 ? "tag" : "tags"} selected
+                          </p>
 
-                      <button
-                        type="button"
-                        onClick={() => void handleSaveSocialProfile()}
-                        disabled={socialSaving}
-                        className="mt-3 w-full rounded-[20px] border border-red-500 bg-red-600 px-4 py-3.5 text-[15px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
-                      >
-                        {socialSaving ? "Saving..." : "Next"}
-                      </button>
-                    </>
-                  );
-                })()}
+                          <button
+                            type="button"
+                            onClick={() => void handleSaveSocialProfile()}
+                            disabled={socialSaving}
+                            className="mt-3 w-full rounded-[20px] border border-red-500 bg-red-600 px-4 py-3.5 text-[15px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                          >
+                            {socialSaving ? "Saving..." : "Next"}
+                          </button>
+                        </>
+                      );
+                    })()}
+                  </>
+                )}
               </>
             )}
           </section>
@@ -2394,6 +2411,20 @@ export function SinglePageGenieApp({
 
         {activeScreen === "dashboard" ? (
           <section className="space-y-5 pb-28">
+            {!account ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-4 pt-20 text-center">
+                <p className="text-[1.1rem] font-semibold text-gray-900 dark:text-white">Sign in to access your dashboard</p>
+                <p className="max-w-[22rem] text-sm text-gray-500 dark:text-white/60">Log in or create an account to view your offers, redemptions, and saved spots.</p>
+                <button
+                  type="button"
+                  onClick={() => navigateTo("account")}
+                  className="rounded-[18px] border border-red-500 bg-red-600 px-6 py-3 text-sm font-semibold text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                >
+                  Login / Sign Up
+                </button>
+              </div>
+            ) : (
+              <>
             {/* Header */}
             <div className="flex items-center justify-between pt-1">
               <h1 className="font-[family:var(--font-display)] text-[1.75rem] font-semibold leading-tight text-gray-900 dark:text-white">
@@ -2597,29 +2628,45 @@ export function SinglePageGenieApp({
                 </div>
               </div>
             ) : null}
+              </>
+            )}
           </section>
         ) : null}
 
         {activeScreen === "profile" ? (
           <section ref={profileRef} className="flex flex-1 flex-col">
-            <ProfileSection
-              visible
-              account={account}
-              onBack={() => goBack("home")}
-              onSave={async (data) => {
-                if (!account) return;
-                const updated = {
-                  ...account,
-                  firstName: data.firstName,
-                  lastName: data.lastName,
-                  email: data.email,
-                  phone: data.phone,
-                };
-                setAccount(updated);
-                const { writeConsumerAccount } = await import("@/app/lib/localState");
-                writeConsumerAccount(updated);
-              }}
-            />
+            {!account ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-4 pb-10 text-center">
+                <p className="text-[1rem] font-semibold text-gray-900 dark:text-white">Sign in to view your profile</p>
+                <p className="max-w-[22rem] text-sm text-gray-500 dark:text-white/60">Create an account or log in to manage your profile details.</p>
+                <button
+                  type="button"
+                  onClick={() => navigateTo("account")}
+                  className="rounded-[18px] border border-red-500 bg-red-600 px-6 py-3 text-sm font-semibold text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                >
+                  Login / Sign Up
+                </button>
+              </div>
+            ) : (
+              <ProfileSection
+                visible
+                account={account}
+                onBack={() => goBack("home")}
+                onSave={async (data) => {
+                  if (!account) return;
+                  const updated = {
+                    ...account,
+                    firstName: data.firstName,
+                    lastName: data.lastName,
+                    email: data.email,
+                    phone: data.phone,
+                  };
+                  setAccount(updated);
+                  const { writeConsumerAccount } = await import("@/app/lib/localState");
+                  writeConsumerAccount(updated);
+                }}
+              />
+            )}
           </section>
         ) : null}
 
