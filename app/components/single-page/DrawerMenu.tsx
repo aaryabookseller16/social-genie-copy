@@ -22,9 +22,11 @@ export type DrawerMenuActionId =
 type DrawerMenuProps = {
   visible: boolean;
   activeScreen: FlowAnchor;
+  isLoggedIn: boolean;
   onClose: () => void;
   onNavigate: (target: DrawerMenuActionId) => void;
   onLogout: () => void;
+  onLogin: () => void;
   notificationsEnabled: boolean;
   onToggleNotifications: () => void;
 };
@@ -71,9 +73,11 @@ function ToggleSwitch({
 export function DrawerMenu({
   visible,
   activeScreen,
+  isLoggedIn,
   onClose,
   onNavigate,
   onLogout,
+  onLogin,
   notificationsEnabled,
   onToggleNotifications,
 }: DrawerMenuProps) {
@@ -202,27 +206,33 @@ export function DrawerMenu({
           {/* Divider */}
           <div className="mb-2 mt-3 h-px bg-white/15" />
 
-          {/* Logout */}
-          <button
-            type="button"
-            onClick={onLogout}
-            className="flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-[0.92rem] font-semibold text-red-400 transition hover:bg-white/8 hover:text-red-300"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              className="h-4 w-4 flex-none"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+          {isLoggedIn ? (
+            <button
+              type="button"
+              onClick={onLogout}
+              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-[0.92rem] font-semibold text-red-400 transition hover:bg-white/8 hover:text-red-300"
             >
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-              <polyline points="16 17 21 12 16 7" />
-              <line x1="21" y1="12" x2="9" y2="12" />
-            </svg>
-            Logout
-          </button>
+              <svg viewBox="0 0 24 24" className="h-4 w-4 flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+              Logout
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onLogin}
+              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-[0.92rem] font-semibold text-white/80 transition hover:bg-white/8 hover:text-white"
+            >
+              <svg viewBox="0 0 24 24" className="h-4 w-4 flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                <polyline points="10 17 15 12 10 7" />
+                <line x1="15" y1="12" x2="3" y2="12" />
+              </svg>
+              Login / Sign Up
+            </button>
+          )}
         </div>
       </div>
     </div>
