@@ -134,6 +134,38 @@ export function AccountSection({
     setMessage(null);
   };
 
+  const openLogin = () => {
+    setMode("login");
+    setForm(createEmptyConsumerForm());
+    setMessage(null);
+  };
+
+  const submitLogin = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!isEmailValid(form.email)) {
+      setMessage("Enter the email you signed up with.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setMessage(null);
+
+    try {
+      const result = await signUpUser({ email: form.email.trim() });
+      setMessage(
+        result.message ||
+          "Check your email for a one-tap magic link to sign in."
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Could not send your magic link."
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const submitSignup = async (
     event: FormEvent<HTMLFormElement>,
     membership: "free" | "vibee"
@@ -222,44 +254,103 @@ export function AccountSection({
     }
   };
 
+  if (!account && mode === "login") {
+    return (
+      <section
+        ref={sectionRef}
+        className="relative flex min-h-screen flex-col overflow-hidden bg-white px-5 pb-10 pt-14 dark:bg-transparent"
+      >
+        <button
+          type="button"
+          onClick={() => setMode(null)}
+          className="absolute left-5 top-14 text-gray-600 dark:text-white/82"
+          aria-label="Go back"
+        >
+          <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M19 12H6m0 0 5-5m-5 5 5 5" />
+          </svg>
+        </button>
+
+        <div className="flex flex-1 flex-col">
+          <h2 className="mt-2 text-center text-[1.85rem] font-semibold leading-tight text-gray-900 dark:text-white">
+            Welcome back
+          </h2>
+          <p className="mx-auto mt-3 max-w-[26ch] text-center text-[15px] leading-relaxed text-gray-500 dark:text-white/70">
+            Enter your email and I&apos;ll send you a magic link to get back into your account.
+          </p>
+
+          <form onSubmit={(event) => void submitLogin(event)} className="mt-8 space-y-4">
+            <input
+              type="email"
+              value={form.email}
+              onChange={(e) => setForm((c) => ({ ...c, email: e.target.value }))}
+              placeholder="Your Email"
+              autoComplete="email"
+              className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3.5 text-[15px] text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
+            />
+            <ActionButton type="submit" className="w-full" disabled={isSubmitting}>
+              {isSubmitting ? "Sending..." : "Send my link"}
+            </ActionButton>
+          </form>
+
+          <p className="mx-auto mt-4 max-w-[32ch] text-center text-[12px] leading-relaxed text-gray-400 dark:text-white/50">
+            We&apos;ll send you a one-tap magic link so you can sign in easily. No password needed.
+          </p>
+
+          {message && (
+            <div className="mt-5 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
+              {message}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-auto pt-8 text-center">
+          <p className="text-[13px] text-gray-500 dark:text-white/55">Don&apos;t have an account?</p>
+          <button
+            type="button"
+            onClick={openFreeSignup}
+            className="mt-1 text-[15px] font-semibold text-gray-900 dark:text-white"
+          >
+            Create a free account
+          </button>
+        </div>
+      </section>
+    );
+  }
+
   if (!account && (mode === "free" || mode === "vibee")) {
     const membership = mode === "free" ? "free" : "vibee";
 
     return (
       <section
         ref={sectionRef}
-        className="relative min-h-screen overflow-hidden bg-white px-5 pb-32 pt-14 dark:bg-transparent"
+        className="relative flex min-h-screen flex-col overflow-hidden bg-white px-5 pb-10 pt-14 dark:bg-transparent"
       >
         <button
           type="button"
           onClick={() => setMode(null)}
-          className="mb-5 flex-none text-gray-600 dark:text-white/82"
+          className="absolute left-5 top-14 text-gray-600 dark:text-white/82"
           aria-label="Go back"
         >
-          <svg
-            viewBox="0 0 24 24"
-            className="h-6 w-6"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
+          <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M19 12H6m0 0 5-5m-5 5 5 5" />
           </svg>
         </button>
 
-        <h2 className="text-center text-[1.65rem] font-semibold leading-tight text-gray-900 dark:text-white">
-          {mode === "free"
-            ? "Create your Free Account"
-            : "Create your V.I. Bee Membership"}
-        </h2>
-        <p className="mt-2 text-center text-[15px] text-gray-500 dark:text-white/60">
-          Takes just 30 seconds
-        </p>
+        <div className="flex flex-1 flex-col">
+          <h2 className="mt-2 text-center text-[1.75rem] font-semibold leading-tight text-gray-900 dark:text-white">
+            {mode === "free"
+              ? "Create your Free Account"
+              : "Create your V.I.Bee Membership"}
+          </h2>
+          <p className="mt-2 text-center text-[15px] text-gray-500 dark:text-white/60">
+            Takes just 30 seconds
+          </p>
 
-        <form
-          onSubmit={(event) => void submitSignup(event, membership)}
-          className="mt-6 space-y-3"
-        >
+          <form
+            onSubmit={(event) => void submitSignup(event, membership)}
+            className="mt-6 space-y-3"
+          >
           <input
             type="text"
             value={form.firstName}
@@ -293,18 +384,22 @@ export function AccountSection({
             onChange={(e) =>
               setForm((c) => ({ ...c, phone: e.target.value }))
             }
-            placeholder="Phone (Optional)"
+            placeholder="Phone (optional)"
             className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3.5 text-[15px] text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
           />
 
-          <label className="flex cursor-pointer items-start gap-3 pt-1 text-[13px] leading-relaxed text-gray-500 dark:text-white/60">
+          <p className="pt-1 text-center text-[12px] text-gray-500 dark:text-white/55">
+            For updates and confirmations
+          </p>
+
+          <label className="flex cursor-pointer items-center justify-center gap-2 pt-1 text-[13px] leading-relaxed text-gray-500 dark:text-white/60">
             <input
               type="checkbox"
               checked={form.consent}
               onChange={(e) =>
                 setForm((c) => ({ ...c, consent: e.target.checked }))
               }
-              className="mt-0.5 h-4 w-4 flex-none rounded border-gray-300 accent-red-600"
+              className="h-4 w-4 flex-none rounded border-gray-300 accent-red-600"
             />
             <span>
               I agree to the <span className="text-red-600 underline">Terms</span> and{" "}
@@ -313,8 +408,10 @@ export function AccountSection({
           </label>
 
           {mode === "vibee" && (
-            <div className="rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-center text-[14px] text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
-              V.I.Bee Member - {config.vibeeMonthlyPrice}
+            <div className="flex items-center gap-3 py-1 text-center text-[13px] text-gray-500 dark:text-white/60">
+              <span className="h-px flex-1 bg-gray-200 dark:bg-white/15" />
+              <span>V.I.Bee Member - {config.vibeeMonthlyPrice}</span>
+              <span className="h-px flex-1 bg-gray-200 dark:bg-white/15" />
             </div>
           )}
 
@@ -323,27 +420,49 @@ export function AccountSection({
               ? "Please wait..."
               : mode === "free"
                 ? "Ask Genie"
-                : "Continue to Stripe Checkout"}
+                : "Continue to Secure Checkout"}
           </ActionButton>
 
           {mode === "vibee" && (
-            <p className="text-center text-[11px] leading-relaxed text-gray-400 dark:text-white/40">
-              Powered by Stripe - Cancel anytime.{"\n"}Renews monthly until
-              cancelled. Terms Privacy
+            <>
+              <p className="text-center text-[12px] leading-relaxed text-gray-500 dark:text-white/55">
+                Powered by Stripe - Cancel anytime
+              </p>
+              <p className="text-center text-[12px] leading-relaxed text-gray-400 dark:text-white/45">
+                Renews monthly until cancelled.{" "}
+                <span className="underline">Terms</span>{" "}
+                <span className="underline">Privacy</span>
+              </p>
+            </>
+          )}
+
+          {mode === "free" && (
+            <p className="text-center text-[12px] text-gray-400 dark:text-white/45">
+              By signing up, you agree to our{" "}
+              <span className="text-red-600 underline dark:text-[#ff7b7b]">Terms</span>{" "}
+              and{" "}
+              <span className="text-red-600 underline dark:text-[#ff7b7b]">Privacy Policy</span>.
             </p>
           )}
 
-          <p className="text-center text-[11px] text-gray-400 dark:text-white/40">
-            By signing up, you agree to our <span className="text-red-600 dark:text-[#ff7b7b]">Terms</span> and{" "}
-            <span className="text-red-600 dark:text-[#ff7b7b]">Privacy Policy</span>
-          </p>
-        </form>
+          {message && (
+            <div className="rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
+              {message}
+            </div>
+          )}
+          </form>
+        </div>
 
-        {message && (
-          <div className="mt-5 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
-            {message}
-          </div>
-        )}
+        <div className="mt-auto pt-8 text-center">
+          <p className="text-[13px] text-gray-500 dark:text-white/55">Already have an account?</p>
+          <button
+            type="button"
+            onClick={openLogin}
+            className="mt-1 text-[15px] font-semibold text-gray-900 dark:text-white"
+          >
+            Login
+          </button>
+        </div>
       </section>
     );
   }
@@ -375,9 +494,19 @@ export function AccountSection({
               </div>
             </div>
 
-            <p className="mt-8 text-center text-[15px] leading-relaxed text-gray-600 dark:text-white/75">
-              Sign up so I can get you connected to your vibe, favorite food,
-              social spaces, and more!
+            <p className="mt-6 text-center text-[15px] leading-relaxed text-gray-600 dark:text-white/75">
+              Sign up. Let&apos;s get you connected
+              <br />
+              to your vibe!
+              <br />
+              Already signed up?{" "}
+              <button
+                type="button"
+                onClick={openLogin}
+                className="font-semibold text-red-600 dark:text-[#ff7b7b]"
+              >
+                Login!
+              </button>
             </p>
 
             <div className="mt-8 space-y-3.5">
@@ -493,7 +622,7 @@ export function AccountSection({
                 Already signed up?{" "}
                 <button
                   type="button"
-                  onClick={openFreeSignup}
+                  onClick={openLogin}
                   className="text-red-600 underline underline-offset-2"
                 >
                   Login

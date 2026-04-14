@@ -65,13 +65,12 @@ export function GenieOrb({
       className={`relative inline-flex items-center justify-center ${className}`}
       style={{ width: size, height: size }}
     >
-      <span className="absolute inset-[-18%] rounded-full bg-[radial-gradient(circle,rgba(220,38,38,0.35)_0%,rgba(220,38,38,0.12)_48%,transparent_72%)] blur-xl animate-orbGlow" />
       <Image
-        src="/orb.png"
+        src="/Ellipse 120.png"
         alt=""
         fill
         sizes={`${size}px`}
-        className={`rounded-full object-cover ${
+        className={`object-contain ${
           mode === "thinking" ? "animate-orbPulse" : ""
         }`}
         priority
