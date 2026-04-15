@@ -14,6 +14,8 @@ export type FlowAnchor =
   | "detail"
   | "saved"
   | "offers"
+  | "offer-activated"
+  | "redemptions"
   | "preferences"
   | "account"
   | "vendor"

@@ -10,13 +10,17 @@ import { xanoFetch, XanoError } from "@/app/lib/server/xanoProxy";
  */
 export async function POST(request: NextRequest) {
   try {
-    const appBase = "https://genie.socialbevy.com";
+    const appBase =
+      process.env.NEXT_PUBLIC_APP_BASE_URL ||
+      process.env.APP_BASE_URL ||
+      "https://genie.socialbevy.com";
     const body = (await request.json().catch(() => ({}))) as Record<
       string,
       unknown
     >;
 
     if (body.vendor_id) {
+      const planType = String(body.plan_type ?? "founding_partner");
       const result = await xanoFetch<{
         checkout_url: string;
         session_id: string;
@@ -26,12 +30,12 @@ export async function POST(request: NextRequest) {
         method: "POST",
         body: {
           vendor_id: body.vendor_id,
-          plan_type: body.plan_type ?? "founding_partner",
+          plan_type: planType,
           boost_tier: body.boost_tier ?? undefined,
-          success_url: body.success_url ?? `${appBase}/?checkout=success`,
-          cancel_url:
-            body.cancel_url ??
-            "https://genie.socialbevy.com/vendor",
+          success_url:
+            body.success_url ??
+            `${appBase}/vendor/success?session_id={CHECKOUT_SESSION_ID}&plan=${encodeURIComponent(planType)}`,
+          cancel_url: body.cancel_url ?? `${appBase}/?checkout=cancel`,
         },
       });
 
@@ -50,9 +54,10 @@ export async function POST(request: NextRequest) {
       method: "POST",
       body: {
         external_user_id: body.external_user_id ?? "",
-        success_url: body.success_url ?? `${appBase}/?checkout=success`,
-        cancel_url:
-          body.cancel_url ?? "https://genie.socialbevy.com/account",
+        success_url:
+          body.success_url ??
+          `${appBase}/vibee/success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: body.cancel_url ?? `${appBase}/?checkout=cancel`,
       },
     });
 
