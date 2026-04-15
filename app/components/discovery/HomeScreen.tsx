@@ -56,11 +56,11 @@ export function HomeScreen({
         <h1 className="mt-4 whitespace-nowrap font-[family:var(--font-display)] text-[1.5rem] font-semibold leading-[1.1] text-black dark:text-white sm:text-[1.85rem]">
           What&apos;s your vibe today?
         </h1>
-        <p className="mt-1 max-w-[24ch] text-[0.85rem] leading-[1.2rem] text-gray-500 dark:text-white/70">
+        <p className="mt-1 max-w-[24ch] text-[0.8rem] leading-[1.15rem] text-gray-500 dark:text-white/70">
           Ask me anything, food, drinks or something to do.
         </p>
 
-        <div className="relative mt-3 min-h-0 w-full flex-1 max-h-[52vh]">
+        <div className="relative mt-1 min-h-0 w-full flex-1 max-h-[48vh]">
           <Image
             src="/orb.png"
             alt=""
@@ -68,7 +68,7 @@ export function HomeScreen({
             width={520}
             height={520}
             priority
-            className="pointer-events-none absolute left-1/2 top-1/2 z-0 h-auto w-[115%] max-w-none -translate-x-1/2 -translate-y-1/2 object-contain opacity-95"
+            className="pointer-events-none absolute left-1/2 top-1/2 z-0 h-auto w-full max-w-none -translate-x-1/2 -translate-y-1/2 object-contain opacity-95"
           />
           <Image
             src="/icons/Social-Genie-Home-Screen.png"
@@ -76,28 +76,28 @@ export function HomeScreen({
             width={520}
             height={820}
             priority
-            className="relative z-10 mx-auto h-full w-auto max-w-[78%] object-contain drop-shadow-[0_20px_40px_rgba(0,0,0,0.25)]"
+            className="relative z-10 mx-auto h-full w-auto max-w-[60%] object-contain drop-shadow-[0_20px_40px_rgba(0,0,0,0.25)]"
           />
         </div>
 
-        <div className="mt-3 w-full shrink-0">
+        <div className="mt-2 w-full shrink-0">
           <QuickChips
             chips={config.quickChips}
             onSelect={(chip) => onChipSelect(chip.prompt)}
           />
         </div>
 
-        <div className="mt-3 shrink-0">
+        <div className="mt-2 shrink-0">
           <GenieOrb
             mode={isSubmitting ? "thinking" : "idle"}
             onClick={onOrbTap}
             disabled={isSubmitting}
-            size={68}
+            size={60}
           />
         </div>
 
         <form
-          className="mt-3 w-full shrink-0"
+          className="mt-2 w-full shrink-0 pb-2"
           onSubmit={(event) => {
             event.preventDefault();
             if (pendingTranscript) {
