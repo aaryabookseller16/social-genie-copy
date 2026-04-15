@@ -240,6 +240,7 @@ export function SinglePageGenieApp({
     "decision" | "more" | "saved"
   >("decision");
   const [inputValue, setInputValue] = useState("");
+  const [pendingTranscript, setPendingTranscript] = useState(false);
   const [lastQuery, setLastQuery] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -283,6 +284,7 @@ export function SinglePageGenieApp({
   const [selectedVenueId, setSelectedVenueId] = useState<string | null>(
     initialVenueId ? String(initialVenueId) : null
   );
+  const [selectedOfferId, setSelectedOfferId] = useState<number | null>(null);
   const [account, setAccount] = useState<ConsumerAccount | null>(null);
   const [isAuthChecked, setIsAuthChecked] = useState(false);
   const [mapPreviewFailed, setMapPreviewFailed] = useState(false);
@@ -306,6 +308,12 @@ export function SinglePageGenieApp({
   const [installPrompt, setInstallPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
   const [isStandalone, setIsStandalone] = useState(false);
+  const [locationPromptDismissed, setLocationPromptDismissed] = useState(true);
+  const [locationGranted, setLocationGranted] = useState(false);
+  const [userCoords, setUserCoords] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
   const hasPromptedForPushRef = useRef(false);
   const offersLoadedRef = useRef(false);
   const profileLoadedRef = useRef(false);
@@ -614,7 +622,10 @@ export function SinglePageGenieApp({
 
       recognitionRef.current = null;
       setInputValue(transcript);
-      void handleQuery(transcript, "voice");
+      setPendingTranscript(true);
+      // Return to home so the user can confirm/cancel the heard transcript
+      // before Genie actually submits it.
+      setActiveScreen("home");
     };
 
     recognition.onerror = (event: SpeechRecognitionErrorShape) => {
@@ -1039,6 +1050,105 @@ export function SinglePageGenieApp({
     return () => window.removeEventListener("beforeinstallprompt", handler);
   }, []);
 
+  // ── Geolocation permission ──
+  // Show a friendly in-app banner before triggering the browser prompt so the
+  // user understands why we need their location ("near me" queries depend on
+  // it). Once dismissed or granted, we don't pester them again on this device.
+  useEffect(() => {
+    if (typeof window === "undefined" || !("geolocation" in navigator)) {
+      return;
+    }
+
+    const dismissedKey = "genie_location_prompt_dismissed_v1";
+    const dismissed = window.localStorage.getItem(dismissedKey) === "1";
+
+    type PermissionStatusLike = {
+      state: "granted" | "denied" | "prompt";
+      addEventListener?: (type: "change", listener: () => void) => void;
+    };
+    type PermissionsLike = {
+      query: (descriptor: { name: "geolocation" }) => Promise<PermissionStatusLike>;
+    };
+    const permissionsApi = (navigator as Navigator & { permissions?: PermissionsLike })
+      .permissions;
+
+    const onGranted = (latitude: number, longitude: number) => {
+      setLocationGranted(true);
+      setUserCoords({ latitude, longitude });
+      setLocationPromptDismissed(true);
+      window.localStorage.setItem(dismissedKey, "1");
+    };
+
+    const askNow = () => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => onGranted(pos.coords.latitude, pos.coords.longitude),
+        () => {
+          // User denied or error - mark dismissed so we don't keep asking.
+          setLocationPromptDismissed(true);
+          window.localStorage.setItem(dismissedKey, "1");
+        },
+        { enableHighAccuracy: false, timeout: 8000, maximumAge: 5 * 60 * 1000 }
+      );
+    };
+
+    if (permissionsApi?.query) {
+      permissionsApi
+        .query({ name: "geolocation" })
+        .then((status) => {
+          if (status.state === "granted") {
+            // Already granted - silently fetch once for use in queries.
+            navigator.geolocation.getCurrentPosition(
+              (pos) => onGranted(pos.coords.latitude, pos.coords.longitude),
+              () => {
+                setLocationGranted(true);
+                setLocationPromptDismissed(true);
+              }
+            );
+          } else if (status.state === "prompt" && !dismissed) {
+            setLocationPromptDismissed(false);
+          } else {
+            setLocationPromptDismissed(true);
+          }
+        })
+        .catch(() => {
+          if (!dismissed) {
+            setLocationPromptDismissed(false);
+          }
+        });
+    } else if (!dismissed) {
+      setLocationPromptDismissed(false);
+    }
+
+    // Expose askNow on the ref so the banner can call it
+    (window as Window & { __genieAskLocation?: () => void }).__genieAskLocation =
+      askNow;
+
+    return () => {
+      delete (window as Window & { __genieAskLocation?: () => void })
+        .__genieAskLocation;
+    };
+  }, []);
+
+  const requestLocationPermission = useCallback(() => {
+    const ask = (
+      window as Window & { __genieAskLocation?: () => void }
+    ).__genieAskLocation;
+    if (typeof ask === "function") {
+      ask();
+    }
+  }, []);
+
+  const dismissLocationPrompt = useCallback(() => {
+    setLocationPromptDismissed(true);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("genie_location_prompt_dismissed_v1", "1");
+    }
+  }, []);
+
+  // Silence unused variable warnings — these are wired into future API calls.
+  void locationGranted;
+  void userCoords;
+
   // Deep-link: `?screen=offers|redemptions|dashboard|saved|vendor|profile|membership`
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -1281,7 +1391,7 @@ export function SinglePageGenieApp({
           ? [
               {
                 id: "call",
-                label: "📞 Call",
+                label: "Call",
                 variant: "secondary" as const,
                 onClick: () => {
                   trackEvent(analyticsEvents.callClick, {
@@ -1303,7 +1413,7 @@ export function SinglePageGenieApp({
           ? [
               {
                 id: "reservations",
-                label: "📋 Reservations",
+                label: "Reservations",
                 variant: "secondary" as const,
                 onClick: () => {
                   trackEvent(analyticsEvents.reserveClick, {
@@ -1325,7 +1435,7 @@ export function SinglePageGenieApp({
           : []),
         {
           id: "share",
-          label: "↗ Share",
+          label: "Share",
           variant: "secondary",
           onClick: () => {
             trackEvent(analyticsEvents.vendorShareTap, {
@@ -1458,8 +1568,11 @@ export function SinglePageGenieApp({
       case "offers":
         goBack("home");
         break;
-      case "offer-activated":
+      case "offer-detail":
         goBack("offers");
+        break;
+      case "offer-activated":
+        goBack("offer-detail");
         break;
       case "redemptions":
         goBack("home");
@@ -1508,8 +1621,10 @@ export function SinglePageGenieApp({
     activeScreen !== "membership" &&
     activeScreen !== "offers" &&
     activeScreen !== "offer-activated" &&
+    activeScreen !== "offer-detail" &&
     activeScreen !== "redemptions" &&
-    activeScreen !== "saved";
+    activeScreen !== "saved" &&
+    activeScreen !== "detail";
 
   const shouldShowFooter =
     activeScreen === "decision" ||
@@ -1537,7 +1652,57 @@ export function SinglePageGenieApp({
       />
 
       <div className={`relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col gap-3 ${activeScreen === "home" || activeScreen === "listening" || activeScreen === "thinking" ? "min-h-0" : ""}`}>
-        {installPrompt && !isStandalone ? (
+        {!locationPromptDismissed && activeScreen === "home" ? (
+          <div className="flex items-start gap-3 rounded-[18px] border border-red-200 bg-white px-3 py-2.5 shadow-sm dark:border-white/15 dark:bg-black/30">
+            <span className="mt-0.5 text-red-500 dark:text-[#ff9d7d]" aria-hidden="true">
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 1 1 18 0z" />
+                <circle cx="12" cy="10" r="3" />
+              </svg>
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[0.82rem] font-semibold text-gray-900 dark:text-white">
+                Use your location?
+              </p>
+              <p className="mt-0.5 text-[0.72rem] leading-4 text-gray-500 dark:text-white/65">
+                Genie can pick spots that are actually near you.
+              </p>
+              <div className="mt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={requestLocationPermission}
+                  className="rounded-full border border-red-500 bg-red-600 px-3 py-1 text-[0.72rem] font-semibold text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                >
+                  Allow
+                </button>
+                <button
+                  type="button"
+                  onClick={dismissLocationPrompt}
+                  className="rounded-full border border-gray-300 px-3 py-1 text-[0.72rem] font-semibold text-gray-700 dark:border-white/25 dark:text-white/85"
+                >
+                  Not now
+                </button>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={dismissLocationPrompt}
+              aria-label="Dismiss location prompt"
+              className="-mr-1 -mt-1 flex h-6 w-6 items-center justify-center text-gray-400 dark:text-white/55"
+            >
+              <Image
+                src="/icons/close.png"
+                alt=""
+                aria-hidden="true"
+                width={14}
+                height={14}
+                className="h-3.5 w-3.5 object-contain opacity-70"
+              />
+            </button>
+          </div>
+        ) : null}
+
+        {installPrompt && !isStandalone && activeScreen !== "detail" ? (
           <button
             type="button"
             onClick={async () => {
@@ -1559,15 +1724,14 @@ export function SinglePageGenieApp({
               className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 shadow-sm dark:border-white/12 dark:bg-black/24 dark:text-white/82 dark:shadow-[0_20px_50px_rgba(0,0,0,0.36)]"
               aria-label="Go back"
             >
-              <svg
-                viewBox="0 0 24 24"
-                className="h-5 w-5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-              >
-                <path d="m15 18-6-6 6-6" />
-              </svg>
+              <Image
+                src="/icons/Back.png"
+                alt=""
+                aria-hidden="true"
+                width={20}
+                height={20}
+                className="h-5 w-5 object-contain"
+              />
             </button>
 
             <button
@@ -1592,6 +1756,7 @@ export function SinglePageGenieApp({
             inputValue={inputValue}
             isSubmitting={isThinking}
             showBottomNav={false}
+            pendingTranscript={pendingTranscript}
             onMenuOpen={() => setIsDrawerOpen(true)}
             onInputChange={(value) => {
               if (!hasTrackedTypingRef.current && value.trim().length > 0) {
@@ -1599,6 +1764,10 @@ export function SinglePageGenieApp({
                 trackTypedQueryStarted();
               }
 
+              // Once the user starts editing again, treat it as typed.
+              if (pendingTranscript) {
+                setPendingTranscript(false);
+              }
               setInputValue(value);
             }}
             onChipSelect={(prompt) => {
@@ -1608,11 +1777,26 @@ export function SinglePageGenieApp({
                 trackQuickChipTapped(chip.label, chip.prompt);
               }
 
+              setPendingTranscript(false);
               setInputValue(prompt);
               void handleQuery(prompt, "chip");
             }}
             onOrbTap={startListening}
-            onSubmit={() => void handleQuery(inputValue, "typed")}
+            onSubmit={() => {
+              setPendingTranscript(false);
+              void handleQuery(inputValue, "typed");
+            }}
+            onConfirmTranscript={() => {
+              const value = inputValue.trim();
+              setPendingTranscript(false);
+              if (value) {
+                void handleQuery(value, "voice");
+              }
+            }}
+            onCancelTranscript={() => {
+              setPendingTranscript(false);
+              setInputValue("");
+            }}
           />
           </section>
         ) : null}
@@ -1640,7 +1824,7 @@ export function SinglePageGenieApp({
                 className="pointer-events-none absolute left-[48%] top-1/2 z-0 h-auto w-[88%] max-w-none -translate-x-1/2 -translate-y-1/2 object-contain opacity-95"
               />
               <Image
-                src="/genie-pic2.png"
+                src="/icons/Social-Genie-Home-Screen.png"
                 alt="Genie listening"
                 width={420}
                 height={680}
@@ -1684,7 +1868,7 @@ export function SinglePageGenieApp({
                 className="pointer-events-none absolute left-[48%] top-1/2 z-0 h-auto w-[88%] max-w-none -translate-x-1/2 -translate-y-1/2 object-contain opacity-95"
               />
               <Image
-                src="/genie-pic2.png"
+                src="/icons/Social-Genie-Home-Screen.png"
                 alt="Genie thinking"
                 width={420}
                 height={680}
@@ -1757,15 +1941,19 @@ export function SinglePageGenieApp({
               </div>
             ) : null}
             <GenieBubble copy="I found a few spots that match your vibe." compact />
-            {response?.decisive.map((venue, index) => (
-              <ResultCard
-                key={venue.id}
-                venue={venue}
-                index={index}
-                onOpen={() => selectVenue(venue, index, "decision")}
-                onSave={() => handleSaveVenue(venue)}
-              />
-            ))}
+            {/* Decisive cards. Force the section to fill the viewport so the */}
+            {/* "See More Nearby" prompt always lands below the initial fold. */}
+            <div className="flex min-h-[calc(100dvh-12rem)] flex-col gap-3">
+              {response?.decisive.map((venue, index) => (
+                <ResultCard
+                  key={venue.id}
+                  venue={venue}
+                  index={index}
+                  onOpen={() => selectVenue(venue, index, "decision")}
+                  onSave={() => handleSaveVenue(venue)}
+                />
+              ))}
+            </div>
             <button
               type="button"
               onClick={() => {
@@ -1777,7 +1965,7 @@ export function SinglePageGenieApp({
                 });
                 navigateTo("more");
               }}
-              className="mt-1 flex w-full items-center justify-center gap-2 py-3 text-[1rem] font-medium text-gray-800 dark:text-white"
+              className="mt-2 flex w-full items-center justify-center gap-2 py-3 text-[1rem] font-medium text-gray-800 dark:text-white"
             >
               <span>See More Nearby</span>
               <span aria-hidden="true">→</span>
@@ -1895,9 +2083,14 @@ export function SinglePageGenieApp({
                   className="flex h-10 w-10 items-center justify-center text-white"
                   aria-label="Go back"
                 >
-                  <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2.2">
-                    <path d="M19 12H6m0 0 5-5m-5 5 5 5" />
-                  </svg>
+                  <Image
+                    src="/icons/Back.png"
+                    alt=""
+                    aria-hidden="true"
+                    width={24}
+                    height={24}
+                    className="h-6 w-6 object-contain invert"
+                  />
                 </button>
                 <div className="flex items-center gap-2">
                   <button
@@ -1906,15 +2099,18 @@ export function SinglePageGenieApp({
                     className="flex h-10 w-10 items-center justify-center rounded-full border border-white/40 bg-black/30 text-white backdrop-blur-sm"
                     aria-label="Save"
                   >
-                    <svg
-                      viewBox="0 0 24 24"
-                      className="h-5 w-5"
-                      fill={savedVenueIds.includes(getVenueId(selectedVenue)) ? "#ff4f4f" : "none"}
-                      stroke={savedVenueIds.includes(getVenueId(selectedVenue)) ? "#ff4f4f" : "currentColor"}
-                      strokeWidth="1.8"
-                    >
-                      <path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.5-7 10-7 10Z" />
-                    </svg>
+                    <Image
+                      src={
+                        savedVenueIds.includes(getVenueId(selectedVenue))
+                          ? "/icons/saved_filled.png"
+                          : "/icons/saved_oulined.png"
+                      }
+                      alt=""
+                      aria-hidden="true"
+                      width={20}
+                      height={20}
+                      className="h-5 w-5 object-contain"
+                    />
                   </button>
                   <button
                     type="button"
@@ -1959,14 +2155,15 @@ export function SinglePageGenieApp({
                 {selectedVenue.google_rating ? (
                   <span className="flex items-center gap-1">
                     {[1, 2, 3, 4, 5].map((n) => (
-                      <svg
+                      <Image
                         key={n}
-                        viewBox="0 0 20 20"
-                        className={`h-4 w-4 ${n <= Math.round(selectedVenue.google_rating ?? 0) ? "text-amber-400" : "text-gray-400 dark:text-white/25"}`}
-                        fill="currentColor"
-                      >
-                        <path d="M10 1.5 12.6 7l6.1.6-4.6 4.2 1.3 6-5.4-3.2L4.6 18l1.3-6L1.3 7.6 7.4 7z" />
-                      </svg>
+                        src="/icons/star-shine_svg.png"
+                        alt=""
+                        aria-hidden="true"
+                        width={16}
+                        height={16}
+                        className={`h-4 w-4 object-contain ${n <= Math.round(selectedVenue.google_rating ?? 0) ? "opacity-100" : "opacity-30"}`}
+                      />
                     ))}
                     <span className="ml-1 font-medium">
                       {selectedVenue.google_rating.toFixed(1)}
@@ -1999,33 +2196,35 @@ export function SinglePageGenieApp({
               </div>
 
               <div className="grid grid-cols-3 gap-2">
-                {detailActions.slice(0, 3).map((action) => (
-                  <button
-                    key={action.id}
-                    type="button"
-                    onClick={action.onClick}
-                    className="flex items-center justify-center gap-1.5 rounded-[14px] border border-gray-200 bg-white px-2 py-2.5 text-[0.8rem] font-medium text-gray-800 dark:border-white/20 dark:bg-black/30 dark:text-white"
-                  >
-                    {action.id.includes("call") || action.label.toLowerCase().includes("call") ? (
-                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.86 19.86 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.86 19.86 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.86.33 1.7.63 2.5a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.58-1.2a2 2 0 0 1 2.11-.45c.8.3 1.64.51 2.5.63A2 2 0 0 1 22 16.92z" />
-                      </svg>
-                    ) : action.label.toLowerCase().includes("reserv") ? (
-                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="3" y="4" width="18" height="18" rx="2" />
-                        <path d="M16 2v4M8 2v4M3 10h18" />
-                      </svg>
-                    ) : (
-                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="18" cy="5" r="3" />
-                        <circle cx="6" cy="12" r="3" />
-                        <circle cx="18" cy="19" r="3" />
-                        <path d="m8.59 13.51 6.83 3.98M15.41 6.51 8.59 10.49" />
-                      </svg>
-                    )}
-                    {action.label}
-                  </button>
-                ))}
+                {detailActions.slice(0, 3).map((action) => {
+                  const isCall =
+                    action.id.includes("call") ||
+                    action.label.toLowerCase().includes("call");
+                  const isReserve = action.label.toLowerCase().includes("reserv");
+                  const iconSrc = isCall
+                    ? "/icons/phoneIcon.png"
+                    : isReserve
+                      ? "/icons/calendarIcon.png"
+                      : "/icons/shareIcon.png";
+                  return (
+                    <button
+                      key={action.id}
+                      type="button"
+                      onClick={action.onClick}
+                      className="flex items-center justify-center gap-1.5 rounded-[14px] border border-gray-200 bg-white px-2 py-2.5 text-[0.8rem] font-medium text-gray-800 dark:border-white/20 dark:bg-black/30 dark:text-white"
+                    >
+                      <Image
+                        src={iconSrc}
+                        alt=""
+                        aria-hidden="true"
+                        width={16}
+                        height={16}
+                        className="h-4 w-4 object-contain"
+                      />
+                      {action.label}
+                    </button>
+                  );
+                })}
               </div>
 
               {/* V.I.Bee offer preview for this venue */}
@@ -2089,7 +2288,7 @@ export function SinglePageGenieApp({
                       window.open(nativeMapsUrl, "_blank", "noopener,noreferrer");
                     }
                   }}
-                  className="relative block h-40 w-full overflow-hidden rounded-[18px] border border-gray-200 text-left dark:border-white/10"
+                  className="relative block h-44 w-full overflow-hidden rounded-[18px] border border-gray-200 text-left dark:border-white/10"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
@@ -2099,7 +2298,47 @@ export function SinglePageGenieApp({
                     className="h-full w-full object-cover"
                   />
                 </button>
-              ) : null}
+              ) : (() => {
+                // Fallback: keyless Google Maps embed so a map always shows.
+                const query =
+                  selectedVenue.address?.trim() ||
+                  [selectedVenue.venue_name, selectedVenue.city]
+                    .filter(Boolean)
+                    .join(", ") ||
+                  selectedVenue.city ||
+                  "Houston, TX";
+                const embedSrc = `https://www.google.com/maps?q=${encodeURIComponent(query)}&output=embed`;
+                return (
+                  <div className="relative h-44 w-full overflow-hidden rounded-[18px] border border-gray-200 dark:border-white/10">
+                    <iframe
+                      title={`Map for ${selectedVenue.venue_name}`}
+                      src={embedSrc}
+                      loading="lazy"
+                      referrerPolicy="no-referrer-when-downgrade"
+                      className="absolute inset-0 h-full w-full border-0"
+                      allowFullScreen
+                    />
+                    {nativeMapsUrl ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          trackEvent(analyticsEvents.mapOpen, {
+                            venueId: getVenueId(selectedVenue),
+                          });
+                          trackEvent(analyticsEvents.vendorMapTap, {
+                            venueId: getVenueId(selectedVenue),
+                          });
+                          logVendorInteraction("map_click", Number(selectedVenue.id));
+                          window.open(nativeMapsUrl, "_blank", "noopener,noreferrer");
+                        }}
+                        className="absolute bottom-2 right-2 rounded-full bg-white/95 px-3 py-1 text-[0.72rem] font-semibold text-gray-800 shadow-sm hover:bg-white dark:bg-black/70 dark:text-white"
+                      >
+                        Open in Maps
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })()}
 
               <p className="text-center text-[0.95rem] font-medium text-gray-900 dark:text-white">
                 {selectedVenue.address || "Houston, Texas"}
@@ -2163,9 +2402,14 @@ export function SinglePageGenieApp({
                 aria-label="Go back"
                 className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 dark:border-white/12 dark:bg-black/24 dark:text-white/82"
               >
-                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M19 12H6m0 0 5-5m-5 5 5 5" />
-                </svg>
+                <Image
+                  src="/icons/Back.png"
+                  alt=""
+                  aria-hidden="true"
+                  width={20}
+                  height={20}
+                  className="h-5 w-5 object-contain"
+                />
               </button>
               <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
                 Saved Spots
@@ -2201,9 +2445,14 @@ export function SinglePageGenieApp({
                         className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-black/35 backdrop-blur-sm"
                         aria-label="Unsave"
                       >
-                        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="#ff4f4f" stroke="#ff4f4f" strokeWidth="1.5">
-                          <path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.5-7 10-7 10Z" />
-                        </svg>
+                        <Image
+                          src="/icons/saved_filled.png"
+                          alt=""
+                          aria-hidden="true"
+                          width={14}
+                          height={14}
+                          className="h-3.5 w-3.5 object-contain"
+                        />
                       </button>
                       {/* Name + location overlay */}
                       <div className="absolute bottom-0 left-0 right-0 px-3 pb-3">
@@ -2270,9 +2519,14 @@ export function SinglePageGenieApp({
                   aria-label="Go back"
                   className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 dark:border-white/12 dark:bg-black/24 dark:text-white/82"
                 >
-                  <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M19 12H6m0 0 5-5m-5 5 5 5" />
-                  </svg>
+                  <Image
+                    src="/icons/Back.png"
+                    alt=""
+                    aria-hidden="true"
+                    width={20}
+                    height={20}
+                    className="h-5 w-5 object-contain"
+                  />
                 </button>
                 <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
                   V.I.Bee Offers
@@ -2344,11 +2598,12 @@ export function SinglePageGenieApp({
                         key={offer.id}
                         type="button"
                         onClick={() => {
-                          if (canRedeem) {
-                            void handleRedeemOffer(offer);
-                          } else {
+                          if (!canRedeem) {
                             navigateTo("account");
+                            return;
                           }
+                          setSelectedOfferId(offer.id);
+                          navigateTo("offer-detail");
                         }}
                         className="flex w-full items-center gap-3 rounded-[20px] border border-red-200/40 bg-white p-3 text-left shadow-sm transition hover:border-red-300 dark:border-white/10 dark:bg-black/30 dark:hover:border-[#ff7b7b]"
                       >
@@ -2376,15 +2631,14 @@ export function SinglePageGenieApp({
                             </p>
                           ) : null}
                         </div>
-                        <svg
-                          viewBox="0 0 24 24"
-                          className="h-5 w-5 flex-none text-gray-400 dark:text-white/45"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                        >
-                          <path d="m9 6 6 6-6 6" />
-                        </svg>
+                        <Image
+                          src="/icons/right-arrow_svg.png"
+                          alt=""
+                          aria-hidden="true"
+                          width={20}
+                          height={20}
+                          className="h-5 w-5 flex-none object-contain opacity-60 dark:opacity-70"
+                        />
                       </button>
                     );
                   })}
@@ -2411,6 +2665,163 @@ export function SinglePageGenieApp({
           );
         })() : null}
 
+        {/* ── OFFER DETAIL (pre-redemption) ── */}
+        {activeScreen === "offer-detail" ? (() => {
+          const offer = offers.find((o) => o.id === selectedOfferId) ?? null;
+          if (!offer) {
+            return (
+              <section className="pb-8">
+                <div className="mb-4 flex items-center">
+                  <button
+                    type="button"
+                    onClick={() => goBack("offers")}
+                    aria-label="Go back"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 dark:border-white/12 dark:bg-black/24 dark:text-white/82"
+                  >
+                    <Image
+                      src="/icons/Back.png"
+                      alt=""
+                      aria-hidden="true"
+                      width={20}
+                      height={20}
+                      className="h-5 w-5 object-contain"
+                    />
+                  </button>
+                  <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
+                    Offer Detail
+                  </h2>
+                </div>
+                <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-5 text-sm text-white/72">
+                  Offer not available. Pick another from V.I.Bee Offers.
+                </div>
+              </section>
+            );
+          }
+          const offerTypeLabels: Record<string, string> = {
+            happy_hour: "Happy Hour",
+            perk: "Perk",
+            brunch: "Brunch",
+            late_night: "Late Night",
+          };
+          const label =
+            offerTypeLabels[offer.offer_type] ||
+            offer.offer_type.replaceAll("_", " ");
+          const knownVenues: GenieVenue[] = [
+            ...(response?.decisive ?? []),
+            ...(response?.more_nearby ?? []),
+            ...savedVenues,
+          ];
+          const matchedVenue = knownVenues.find(
+            (v) => Number(v.id) === offer.vendor_id
+          );
+          const venueName =
+            offer.venue_name || matchedVenue?.venue_name || `Venue #${offer.vendor_id}`;
+          const venueImage =
+            offer.venue_image || matchedVenue?.image || "/sample-venue-1.jpeg";
+          const isMember = account?.membership === "vibee";
+          const redeeming = redeemingOfferId === offer.id;
+
+          return (
+            <section className="pb-8">
+              <div className="mb-4 flex items-center">
+                <button
+                  type="button"
+                  onClick={() => goBack("offers")}
+                  aria-label="Go back"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 dark:border-white/12 dark:bg-black/24 dark:text-white/82"
+                >
+                  <Image
+                    src="/icons/Back.png"
+                    alt=""
+                    aria-hidden="true"
+                    width={20}
+                    height={20}
+                    className="h-5 w-5 object-contain"
+                  />
+                </button>
+                <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
+                  Offer Detail
+                </h2>
+              </div>
+
+              {/* Hero image */}
+              <div className="relative mb-4 h-44 w-full overflow-hidden rounded-[20px]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={venueImage}
+                  alt={venueName}
+                  className="h-full w-full object-cover"
+                />
+                <div className="absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,transparent,rgba(0,0,0,0.85))] px-4 pb-3 pt-10">
+                  <p className="text-[1.25rem] font-bold text-white">{venueName}</p>
+                  <span className="mt-1 inline-flex rounded-full bg-[#e8900a] px-2.5 py-0.5 text-[0.66rem] font-bold uppercase tracking-wide text-white">
+                    {label}
+                  </span>
+                </div>
+              </div>
+
+              {/* Offer details */}
+              <div className="space-y-4 rounded-[20px] border border-red-200/40 bg-white p-4 dark:border-white/10 dark:bg-black/30">
+                <div>
+                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-white/55">
+                    Offer
+                  </p>
+                  <p className="mt-1 text-[1.4rem] font-bold text-red-500 dark:text-[#ff9d7d]">
+                    {offer.discount_value || offer.title}
+                  </p>
+                  {offer.title && offer.discount_value ? (
+                    <p className="mt-1 text-[0.95rem] font-medium text-gray-800 dark:text-white/85">
+                      {offer.title}
+                    </p>
+                  ) : null}
+                </div>
+
+                {offer.description ? (
+                  <div>
+                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-white/55">
+                      Description
+                    </p>
+                    <p className="mt-1 text-[0.9rem] leading-6 text-gray-700 dark:text-white/80">
+                      {offer.description}
+                    </p>
+                  </div>
+                ) : null}
+
+                {offer.redeem_instructions ? (
+                  <div>
+                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-white/55">
+                      How to Redeem
+                    </p>
+                    <p className="mt-1 text-[0.9rem] leading-6 text-gray-700 dark:text-white/80">
+                      {offer.redeem_instructions}
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+
+              {/* Redeem CTA */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isMember) {
+                    navigateTo("account");
+                    return;
+                  }
+                  void handleRedeemOffer(offer);
+                }}
+                disabled={redeeming}
+                className="mt-5 w-full rounded-[18px] border border-red-500 bg-red-600 py-4 text-sm font-semibold text-white disabled:opacity-60 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+              >
+                {redeeming
+                  ? "Redeeming..."
+                  : isMember
+                    ? "Redeem Offer"
+                    : "Upgrade to Redeem"}
+              </button>
+            </section>
+          );
+        })() : null}
+
         {/* ── OFFER ACTIVATED (QR) ── */}
         {activeScreen === "offer-activated" && activeRedemption ? (
           <section className="pb-8">
@@ -2418,13 +2829,18 @@ export function SinglePageGenieApp({
             <div className="mb-4 flex items-center">
               <button
                 type="button"
-                onClick={() => goBack("offers")}
+                onClick={() => goBack("offer-detail")}
                 aria-label="Go back"
                 className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 dark:border-white/12 dark:bg-black/24 dark:text-white/82"
               >
-                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M19 12H6m0 0 5-5m-5 5 5 5" />
-                </svg>
+                <Image
+                  src="/icons/Back.png"
+                  alt=""
+                  aria-hidden="true"
+                  width={20}
+                  height={20}
+                  className="h-5 w-5 object-contain"
+                />
               </button>
               <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
                 Offer Activated
@@ -2446,9 +2862,23 @@ export function SinglePageGenieApp({
                   {activeRedemption.venue_name || `Venue #${activeRedemption.vendor_id}`}
                 </p>
                 {activeRedemption.venue_rating ? (
-                  <p className="mt-0.5 truncate text-[0.78rem] text-gray-500 dark:text-white/60">
-                    <span className="text-amber-400">{"★".repeat(Math.round(activeRedemption.venue_rating))}</span>
-                    {` ${activeRedemption.venue_rating.toFixed(1)}`}
+                  <p className="mt-0.5 flex items-center truncate text-[0.78rem] text-gray-500 dark:text-white/60">
+                    <span className="mr-1 inline-flex items-center gap-0.5">
+                      {Array.from({
+                        length: Math.round(activeRedemption.venue_rating),
+                      }).map((_, i) => (
+                        <Image
+                          key={i}
+                          src="/icons/star-shine_svg.png"
+                          alt=""
+                          aria-hidden="true"
+                          width={12}
+                          height={12}
+                          className="h-3 w-3 object-contain"
+                        />
+                      ))}
+                    </span>
+                    {`${activeRedemption.venue_rating.toFixed(1)}`}
                     {activeRedemption.venue_review_count
                       ? ` (${activeRedemption.venue_review_count} Reviews)`
                       : ""}
@@ -2530,9 +2960,14 @@ export function SinglePageGenieApp({
                 aria-label="Go back"
                 className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 dark:border-white/12 dark:bg-black/24 dark:text-white/82"
               >
-                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M19 12H6m0 0 5-5m-5 5 5 5" />
-                </svg>
+                <Image
+                  src="/icons/Back.png"
+                  alt=""
+                  aria-hidden="true"
+                  width={20}
+                  height={20}
+                  className="h-5 w-5 object-contain"
+                />
               </button>
               <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
                 Offer Activated
@@ -2582,9 +3017,14 @@ export function SinglePageGenieApp({
                   aria-label="Go back"
                   className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 dark:border-white/12 dark:bg-black/24 dark:text-white/82"
                 >
-                  <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M19 12H6m0 0 5-5m-5 5 5 5" />
-                  </svg>
+                  <Image
+                    src="/icons/Back.png"
+                    alt=""
+                    aria-hidden="true"
+                    width={20}
+                    height={20}
+                    className="h-5 w-5 object-contain"
+                  />
                 </button>
                 <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
                   Recent Redemptions
@@ -2673,8 +3113,27 @@ export function SinglePageGenieApp({
                             </p>
                           </div>
                           <span
-                            className={`flex-none rounded-[10px] border px-2.5 py-1 text-[0.72rem] font-semibold ${badgeClasses}`}
+                            className={`inline-flex flex-none items-center gap-1 rounded-[10px] border px-2.5 py-1 text-[0.72rem] font-semibold ${badgeClasses}`}
                           >
+                            {status === "verified" ? (
+                              <Image
+                                src="/icons/checked_green.png"
+                                alt=""
+                                aria-hidden="true"
+                                width={12}
+                                height={12}
+                                className="h-3 w-3 object-contain"
+                              />
+                            ) : status === "expired" ? (
+                              <Image
+                                src="/icons/exclamationMark.png"
+                                alt=""
+                                aria-hidden="true"
+                                width={12}
+                                height={12}
+                                className="h-3 w-3 object-contain"
+                              />
+                            ) : null}
                             {badgeLabel}
                           </span>
                         </div>
@@ -2720,9 +3179,14 @@ export function SinglePageGenieApp({
                     className="text-gray-800 dark:text-white"
                     aria-label="Go back"
                   >
-                    <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M19 12H6m0 0 5-5m-5 5 5 5" />
-                    </svg>
+                    <Image
+                      src="/icons/Back.png"
+                      alt=""
+                      aria-hidden="true"
+                      width={24}
+                      height={24}
+                      className="h-6 w-6 object-contain"
+                    />
                   </button>
                   <h2 className="flex-1 pr-6 text-center text-[1.35rem] font-semibold text-gray-900 dark:text-white">
                     Social Preferences
@@ -2748,66 +3212,77 @@ export function SinglePageGenieApp({
                         const value = socialProfileDraft[key];
                         return sum + (Array.isArray(value) ? value.length : 0);
                       }, 0);
-                      return (
-                        <>
-                          <div className="grid grid-cols-2 gap-3">
-                            {categories.map((field) => {
-                              const isActive = activeTagCategory === field;
-                              const isMusic = field === "music_tags";
-                              return (
-                                <button
-                                  key={field}
-                                  type="button"
-                                  onClick={() => setActiveTagCategory(field)}
-                                  className={`relative overflow-hidden rounded-[18px] border bg-white text-left shadow-[0_6px_18px_rgba(0,0,0,0.08)] transition dark:bg-black/30 ${
-                                    isActive
-                                      ? "border-red-500 ring-2 ring-red-500/40 dark:border-[#ff7b7b]"
-                                      : "border-gray-100 dark:border-white/10"
-                                  }`}
-                                >
-                                  <div className="relative h-28 w-full overflow-hidden">
-                                    {isMusic ? (
-                                      <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(145deg,#1a1033,#3a1a5a)]">
-                                        <svg viewBox="0 0 24 24" className="h-12 w-12">
-                                          <defs>
-                                            <linearGradient id="musicGrad" x1="0" y1="0" x2="1" y2="1">
-                                              <stop offset="0%" stopColor="#f472b6" />
-                                              <stop offset="100%" stopColor="#8b5cf6" />
-                                            </linearGradient>
-                                          </defs>
-                                          <path d="M9 18V5l12-2v13" fill="none" stroke="url(#musicGrad)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                          <circle cx="6" cy="18" r="3" fill="url(#musicGrad)" />
-                                          <circle cx="18" cy="16" r="3" fill="url(#musicGrad)" />
-                                        </svg>
-                                      </div>
-                                    ) : (
-                                      <Image
-                                        src={categoryImage[field]}
-                                        alt={socialTagLabels[field]}
-                                        fill
-                                        className="object-cover"
-                                        sizes="(max-width: 768px) 45vw, 200px"
-                                      />
-                                    )}
-                                  </div>
-                                  <p className="px-3 py-2 text-center text-[14px] font-medium text-gray-900 dark:text-white">
-                                    {socialTagLabels[field]}
-                                  </p>
-                                </button>
-                              );
-                            })}
-                          </div>
 
-                          <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+                      // Group categories into rows of 2 so we can inject the
+                      // active category's horizontally-scrolling tag strip
+                      // immediately below its row.
+                      const rows: Array<typeof categories> = [];
+                      for (let i = 0; i < categories.length; i += 2) {
+                        rows.push(categories.slice(i, i + 2));
+                      }
+
+                      const renderCard = (field: keyof typeof socialTagOptions) => {
+                        const isActive = activeTagCategory === field;
+                        const isMusic = field === "music_tags";
+                        return (
+                          <button
+                            key={field}
+                            type="button"
+                            onClick={() =>
+                              setActiveTagCategory((prev) => (prev === field ? prev : field))
+                            }
+                            className={`relative overflow-hidden rounded-[18px] border bg-white text-left shadow-[0_6px_18px_rgba(0,0,0,0.08)] transition dark:bg-black/30 ${
+                              isActive
+                                ? "border-red-500 ring-2 ring-red-500/40 dark:border-[#ff7b7b]"
+                                : "border-gray-100 dark:border-white/10"
+                            }`}
+                          >
+                            <div className="relative h-28 w-full overflow-hidden">
+                              {isMusic ? (
+                                <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(145deg,#1a1033,#3a1a5a)]">
+                                  <svg viewBox="0 0 24 24" className="h-12 w-12">
+                                    <defs>
+                                      <linearGradient id="musicGrad" x1="0" y1="0" x2="1" y2="1">
+                                        <stop offset="0%" stopColor="#f472b6" />
+                                        <stop offset="100%" stopColor="#8b5cf6" />
+                                      </linearGradient>
+                                    </defs>
+                                    <path d="M9 18V5l12-2v13" fill="none" stroke="url(#musicGrad)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                    <circle cx="6" cy="18" r="3" fill="url(#musicGrad)" />
+                                    <circle cx="18" cy="16" r="3" fill="url(#musicGrad)" />
+                                  </svg>
+                                </div>
+                              ) : (
+                                <Image
+                                  src={categoryImage[field]}
+                                  alt={socialTagLabels[field]}
+                                  fill
+                                  className="object-cover"
+                                  sizes="(max-width: 768px) 45vw, 200px"
+                                />
+                              )}
+                            </div>
+                            <p className="px-3 py-2 text-center text-[14px] font-medium text-gray-900 dark:text-white">
+                              {socialTagLabels[field]}
+                            </p>
+                          </button>
+                        );
+                      };
+
+                      const renderTagStrip = () => (
+                        <div className="-mx-4 mt-3 overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                          <div className="flex flex-nowrap items-center gap-2">
                             {socialTagOptions[activeTagCategory].map((option) => {
                               const fieldValue = socialProfileDraft[activeTagCategory];
-                              const selected = Array.isArray(fieldValue) ? fieldValue.includes(option) : false;
+                              const selected = Array.isArray(fieldValue)
+                                ? fieldValue.includes(option)
+                                : false;
                               return (
                                 <button
                                   key={`${activeTagCategory}-${option}`}
                                   type="button"
                                   onClick={() => toggleSocialTag(activeTagCategory, option)}
-                                  className={`rounded-full border px-4 py-1.5 text-[13px] font-medium transition ${
+                                  className={`shrink-0 whitespace-nowrap rounded-full border px-4 py-1.5 text-[13px] font-medium transition ${
                                     selected
                                       ? "border-red-500 bg-red-600 text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
                                       : "border-gray-300 bg-transparent text-gray-700 hover:border-red-300 hover:text-red-600 dark:border-white/25 dark:text-white/85 dark:hover:border-white/55"
@@ -2815,6 +3290,24 @@ export function SinglePageGenieApp({
                                 >
                                   {option}
                                 </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+
+                      return (
+                        <>
+                          <div className="space-y-3">
+                            {rows.map((row, rowIndex) => {
+                              const rowContainsActive = row.includes(activeTagCategory);
+                              return (
+                                <div key={`pref-row-${rowIndex}`}>
+                                  <div className="grid grid-cols-2 gap-3">
+                                    {row.map(renderCard)}
+                                  </div>
+                                  {rowContainsActive ? renderTagStrip() : null}
+                                </div>
                               );
                             })}
                           </div>
@@ -3010,12 +3503,22 @@ export function SinglePageGenieApp({
                           ) : null}
                         </div>
                         <span
-                          className={`ml-3 flex-none rounded-full px-2.5 py-1 text-[0.65rem] font-bold ${
+                          className={`ml-3 inline-flex flex-none items-center gap-1 rounded-full px-2.5 py-1 text-[0.65rem] font-bold ${
                             isVerified
                               ? "bg-green-500/20 text-green-400"
                               : "bg-white/10 text-white/55"
                           }`}
                         >
+                          {isVerified ? (
+                            <Image
+                              src="/icons/checked_green.png"
+                              alt=""
+                              aria-hidden="true"
+                              width={12}
+                              height={12}
+                              className="h-3 w-3 object-contain"
+                            />
+                          ) : null}
                           {isVerified ? "Verified" : "Pending"}
                         </span>
                       </div>
@@ -3060,9 +3563,14 @@ export function SinglePageGenieApp({
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
                         <div className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm">
-                          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="#ff4f4f" stroke="#ff4f4f" strokeWidth="1.5">
-                            <path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.5-7 10-7 10Z" />
-                          </svg>
+                          <Image
+                            src="/icons/saved_filled.png"
+                            alt=""
+                            aria-hidden="true"
+                            width={14}
+                            height={14}
+                            className="h-3.5 w-3.5 object-contain"
+                          />
                         </div>
                       </div>
                       <div className="px-2.5 py-2">
@@ -3146,9 +3654,14 @@ export function SinglePageGenieApp({
                 aria-label="Go back"
                 className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 dark:border-white/12 dark:bg-black/24 dark:text-white/82"
               >
-                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M19 12H6m0 0 5-5m-5 5 5 5" />
-                </svg>
+                <Image
+                  src="/icons/Back.png"
+                  alt=""
+                  aria-hidden="true"
+                  width={20}
+                  height={20}
+                  className="h-5 w-5 object-contain"
+                />
               </button>
               <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
                 Contact
@@ -3240,7 +3753,8 @@ export function SinglePageGenieApp({
                     value={contactForm[key]}
                     onChange={(e) => setContactForm((prev) => ({ ...prev, [key]: e.target.value }))}
                     placeholder={placeholder}
-                    className="w-full rounded-[14px] border border-white/15 bg-white/8 px-4 py-3.5 text-sm text-white placeholder:text-white/35 focus:border-white/30 focus:outline-none dark:bg-black/25"
+                    style={{ fontSize: "16px" }}
+                    className="w-full rounded-[14px] border border-white/15 bg-white/8 px-4 py-3.5 text-white placeholder:text-white/35 focus:border-white/30 focus:outline-none dark:bg-black/25"
                   />
                 ))}
                 <textarea
@@ -3248,7 +3762,8 @@ export function SinglePageGenieApp({
                   onChange={(e) => setContactForm((prev) => ({ ...prev, description: e.target.value }))}
                   placeholder="Short Description"
                   rows={4}
-                  className="w-full resize-none rounded-[14px] border border-white/15 bg-white/8 px-4 py-3.5 text-sm text-white placeholder:text-white/35 focus:border-white/30 focus:outline-none dark:bg-black/25"
+                  style={{ fontSize: "16px" }}
+                  className="w-full resize-none rounded-[14px] border border-white/15 bg-white/8 px-4 py-3.5 text-white placeholder:text-white/35 focus:border-white/30 focus:outline-none dark:bg-black/25"
                 />
                 {contactError ? (
                   <p className="text-center text-sm text-red-300">
@@ -3281,9 +3796,14 @@ export function SinglePageGenieApp({
                   aria-label="Go back"
                   className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 dark:border-white/12 dark:bg-black/24 dark:text-white/82"
                 >
-                  <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M19 12H6m0 0 5-5m-5 5 5 5" />
-                  </svg>
+                  <Image
+                    src="/icons/Back.png"
+                    alt=""
+                    aria-hidden="true"
+                    width={20}
+                    height={20}
+                    className="h-5 w-5 object-contain"
+                  />
                 </button>
                 <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
                   Membership
@@ -3361,9 +3881,14 @@ export function SinglePageGenieApp({
                       <ul className="mt-4 space-y-2">
                         {(config.vibeeBenefits ?? ["Exclusive event access", "Early invites & giveaways", "Hidden gems & VIP deals"]).map((benefit) => (
                           <li key={benefit} className="flex items-center gap-2 text-[0.85rem] text-white/80">
-                            <svg viewBox="0 0 24 24" className="h-4 w-4 flex-none text-red-400" fill="none" stroke="currentColor" strokeWidth="2.5">
-                              <path d="M20 6 9 17l-5-5" />
-                            </svg>
+                            <Image
+                              src="/icons/checked_green.png"
+                              alt=""
+                              aria-hidden="true"
+                              width={16}
+                              height={16}
+                              className="h-4 w-4 flex-none object-contain"
+                            />
                             {benefit}
                           </li>
                         ))}

@@ -8,22 +8,42 @@ export const runtimeConfig: RuntimeConfig = {
     {
       id: "happy-hour",
       label: "Happy Hour",
-      prompt: "Find me a happy hour in Houston",
+      prompt: "Happy Hour near me",
     },
     {
       id: "brunch",
       label: "Brunch",
-      prompt: "Find me a brunch spot in Houston",
+      prompt: "Brunch spots near me",
     },
     {
       id: "dinner",
       label: "Dinner",
-      prompt: "Find me a dinner spot in Houston",
+      prompt: "Dinner spots near me",
     },
     {
-      id: "more",
-      label: "...",
-      prompt: "Find me something fun to do in Houston tonight",
+      id: "rooftop",
+      label: "Rooftop",
+      prompt: "Rooftop bars near me",
+    },
+    {
+      id: "patio",
+      label: "Patio",
+      prompt: "Patios near me",
+    },
+    {
+      id: "late-night",
+      label: "Late Night",
+      prompt: "Late night spots near me",
+    },
+    {
+      id: "live-music",
+      label: "Live Music",
+      prompt: "Live music venues near me",
+    },
+    {
+      id: "date-night",
+      label: "Date Night",
+      prompt: "Date night spots near me",
     },
   ],
   signupPromptSuppressAfter: 3,

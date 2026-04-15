@@ -15,20 +15,14 @@ type GenieOrbProps = {
 
 function MicGlyph() {
   return (
-    <svg
+    <Image
+      src="/icons/micIcon.png"
+      alt=""
       aria-hidden="true"
-      className="h-7 w-7 text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.4)]"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 15a3 3 0 0 0 3-3V7a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Z" />
-      <path d="M19 11a7 7 0 0 1-14 0" />
-      <path d="M12 18v3" />
-    </svg>
+      width={32}
+      height={32}
+      className="h-7 w-7 object-contain drop-shadow-[0_0_12px_rgba(255,255,255,0.4)]"
+    />
   );
 }
 
@@ -76,7 +70,7 @@ export function GenieOrb({
         priority
       />
       <span className="relative z-10 flex items-center justify-center">
-        {mode === "idle" ? <MicGlyph /> : <WaveGlyph animated />}
+        {mode === "listening" ? <WaveGlyph animated /> : <MicGlyph />}
       </span>
     </span>
   );
