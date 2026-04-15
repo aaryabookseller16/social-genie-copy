@@ -35,7 +35,12 @@ type DrawerMenuProps = {
 
 function isActiveItem(id: DrawerMenuActionId, activeScreen: FlowAnchor) {
   if (id === "membership") return activeScreen === "membership";
-  if (id === "offers") return activeScreen === "offers" || activeScreen === "offer-activated";
+  if (id === "offers")
+    return (
+      activeScreen === "offers" ||
+      activeScreen === "offer-detail" ||
+      activeScreen === "offer-activated"
+    );
   if (id === "redemptions") return activeScreen === "redemptions";
   if (id === "profile") return activeScreen === "profile";
   if (id === "dashboard") return activeScreen === "dashboard";

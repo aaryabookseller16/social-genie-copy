@@ -14,6 +14,7 @@ export type FlowAnchor =
   | "detail"
   | "saved"
   | "offers"
+  | "offer-detail"
   | "offer-activated"
   | "redemptions"
   | "preferences"
@@ -167,7 +168,7 @@ export function BottomDock({
 }) {
   return (
     <div className="pointer-events-auto fixed bottom-0 left-1/2 z-50 w-[min(100vw,28rem)] -translate-x-1/2">
-      <div className="relative flex items-end justify-between border-t border-red-200 bg-white/95 px-10 pb-[calc(env(safe-area-inset-bottom,0px)+12px)] pt-3 backdrop-blur-2xl dark:border-white/15 dark:bg-black/30">
+      <div className="relative flex items-center justify-between border-t border-red-200 bg-white/95 px-10 pb-[calc(env(safe-area-inset-bottom,0px)+8px)] pt-2 backdrop-blur-2xl dark:border-white/15 dark:bg-black/30">
         <button
           type="button"
           onClick={onHome}
@@ -190,14 +191,14 @@ export function BottomDock({
         <button
           type="button"
           onClick={onCenter}
-          className="relative -mt-7 flex h-[72px] w-[72px] items-center justify-center"
+          className="relative -mt-3 flex h-[60px] w-[60px] items-center justify-center"
           aria-label="Start voice search"
         >
           <Image
             src="/Ellipse 120.png"
             alt=""
             fill
-            sizes="72px"
+            sizes="60px"
             className="object-contain"
           />
         </button>
@@ -209,7 +210,7 @@ export function BottomDock({
           aria-label="Search"
         >
           <Image
-            src="/search_icon.png"
+            src="/icons/searchIcon.png"
             alt=""
             width={20}
             height={20}

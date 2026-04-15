@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState } from "react";
 
 import { type ConsumerAccount } from "@/app/lib/localState";
@@ -18,15 +19,14 @@ type ProfileSectionProps = {
 
 function BackArrow() {
   return (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-5 w-5"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M19 12H6m0 0 5-5m-5 5 5 5" />
-    </svg>
+    <Image
+      src="/icons/Back.png"
+      alt=""
+      aria-hidden="true"
+      width={20}
+      height={20}
+      className="h-5 w-5 object-contain"
+    />
   );
 }
 
@@ -72,7 +72,8 @@ function StyledInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-[16px] border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
+        style={{ fontSize: "16px" }}
+        className="w-full rounded-[16px] border border-gray-200 bg-gray-50 px-4 py-3 text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
       />
     </label>
   );
@@ -205,9 +206,17 @@ export function ProfileSection({
         <button
           type="button"
           onClick={() => setEditing(true)}
-          className="rounded-full border border-red-200 bg-transparent px-4 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-50 dark:border-white/20 dark:text-white/82 dark:hover:bg-white/10"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-red-200 bg-transparent transition hover:bg-red-50 dark:border-white/20 dark:hover:bg-white/10"
+          aria-label="Edit profile"
         >
-          Edit
+          <Image
+            src="/icons/Edit.png"
+            alt=""
+            aria-hidden="true"
+            width={18}
+            height={18}
+            className="h-[18px] w-[18px] object-contain"
+          />
         </button>
       </div>
 
