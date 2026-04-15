@@ -70,10 +70,12 @@ import {
   registerPushToken,
   redeemVibeeOffer,
   saveVenueForUser,
+  submitContactForm,
   syncSavedVenueIds,
   trackSocialSignal,
   toConsumerAccount,
   updateSocialProfile,
+  updateUserProfile,
   unsaveVenueForUser,
 } from "@/app/lib/publicApiClient";
 import { getRuntimeConfig } from "@/app/lib/runtimeConfig";
@@ -191,6 +193,18 @@ function formatTimestamp(value?: number | null) {
   return new Date(timestamp).toLocaleString();
 }
 
+function formatDate(value?: number | null) {
+  if (!value || !Number.isFinite(value)) {
+    return "";
+  }
+  const timestamp = value < 1_000_000_000_000 ? value * 1000 : value;
+  return new Date(timestamp).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 type SinglePageGenieAppProps = {
   initialScreen?: FlowAnchor;
   initialVenueId?: string | null;
@@ -240,11 +254,27 @@ export function SinglePageGenieApp({
   const [activeRedemption, setActiveRedemption] = useState<{
     offer_id: number;
     offer_title: string;
+    offer_type?: string;
+    offer_description?: string;
+    offer_terms?: string;
+    discount_value?: string;
+    vendor_id: number;
+    venue_name?: string;
+    venue_image?: string;
+    venue_rating?: number;
+    venue_review_count?: number;
+    venue_neighborhood?: string;
     verify_url: string;
     redeemed_at: number;
     redemption_token: string;
   } | null>(null);
   const [redeemingOfferId, setRedeemingOfferId] = useState<number | null>(null);
+  const [offersFilter, setOffersFilter] = useState<
+    "all" | "happy_hour" | "perk" | "brunch" | "late_night"
+  >("all");
+  const [redemptionsFilter, setRedemptionsFilter] = useState<
+    "all" | "verified" | "pending" | "expired"
+  >("all");
   const [socialProfile, setSocialProfile] = useState<SocialProfile | null>(null);
   const [socialLoading, setSocialLoading] = useState(false);
   const [socialSaving, setSocialSaving] = useState(false);
@@ -269,6 +299,7 @@ export function SinglePageGenieApp({
   });
   const [contactSending, setContactSending] = useState(false);
   const [contactSent, setContactSent] = useState(false);
+  const [contactError, setContactError] = useState<string | null>(null);
   const [queryCount, setQueryCount] = useState(0);
   const [browseCount, setBrowseCount] = useState(0);
   const [hasOpenedMoreNearby, setHasOpenedMoreNearby] = useState(false);
@@ -782,9 +813,23 @@ export function SinglePageGenieApp({
 
       try {
         const redemption = await redeemVibeeOffer(offer.id);
+        const venueMatch = selectedVenue && Number(selectedVenue.id) === offer.vendor_id
+          ? selectedVenue
+          : null;
         setActiveRedemption({
           offer_id: offer.id,
           offer_title: redemption.offer_title,
+          offer_type: offer.offer_type,
+          offer_description: offer.description,
+          offer_terms: offer.redeem_instructions,
+          discount_value: offer.discount_value,
+          vendor_id: offer.vendor_id,
+          venue_name: venueMatch?.venue_name,
+          venue_image: venueMatch?.image ?? undefined,
+          venue_rating: venueMatch?.google_rating ?? undefined,
+          venue_review_count: venueMatch?.google_user_ratings_total ?? undefined,
+          venue_neighborhood:
+            venueMatch?.area_neighborhood || venueMatch?.city || undefined,
           verify_url: redemption.verify_url,
           redeemed_at: redemption.redeemed_at,
           redemption_token: redemption.redemption_token,
@@ -801,7 +846,8 @@ export function SinglePageGenieApp({
           setRedemptions(refreshed.redemptions);
         }
 
-        setStatusMessage("Offer redeemed. Show this QR code at the venue.");
+        setStatusMessage(null);
+        navigateTo("offer-activated");
       } catch (error) {
         const message =
           error instanceof Error
@@ -812,7 +858,7 @@ export function SinglePageGenieApp({
         setRedeemingOfferId(null);
       }
     },
-    [account, config.cityLabel, navigateTo]
+    [account, config.cityLabel, navigateTo, selectedVenue]
   );
 
   const toggleSocialTag = useCallback(
@@ -935,6 +981,8 @@ export function SinglePageGenieApp({
   useEffect(() => {
     if (
       activeScreen === "offers" ||
+      activeScreen === "redemptions" ||
+      activeScreen === "offer-activated" ||
       activeScreen === "dashboard" ||
       activeScreen === "membership"
     ) {
@@ -990,6 +1038,32 @@ export function SinglePageGenieApp({
     window.addEventListener("beforeinstallprompt", handler);
     return () => window.removeEventListener("beforeinstallprompt", handler);
   }, []);
+
+  // Deep-link: `?screen=offers|redemptions|dashboard|saved|vendor|profile|membership`
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const screen = url.searchParams.get("screen");
+    if (!screen) return;
+    const allowed: ReadonlyArray<FlowAnchor> = [
+      "offers",
+      "redemptions",
+      "dashboard",
+      "saved",
+      "vendor",
+      "profile",
+      "membership",
+      "preferences",
+    ];
+    if (allowed.includes(screen as FlowAnchor)) {
+      navigateTo(screen as FlowAnchor);
+    }
+    url.searchParams.delete("screen");
+    window.history.replaceState(
+      {},
+      "",
+      `${url.pathname}${url.search}${url.hash}`
+    );
+  }, [navigateTo]);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -1312,6 +1386,12 @@ export function SinglePageGenieApp({
         case "membership":
           navigateTo("membership");
           break;
+        case "offers":
+          navigateTo("offers");
+          break;
+        case "redemptions":
+          navigateTo("redemptions");
+          break;
         case "how-genie-works":
           setIsDrawerOpen(false);
           window.open(
@@ -1376,7 +1456,13 @@ export function SinglePageGenieApp({
         goBack("home");
         break;
       case "offers":
-        goBack("account");
+        goBack("home");
+        break;
+      case "offer-activated":
+        goBack("offers");
+        break;
+      case "redemptions":
+        goBack("home");
         break;
       case "preferences":
         goBack("account");
@@ -1420,6 +1506,9 @@ export function SinglePageGenieApp({
     activeScreen !== "dashboard" &&
     activeScreen !== "contact" &&
     activeScreen !== "membership" &&
+    activeScreen !== "offers" &&
+    activeScreen !== "offer-activated" &&
+    activeScreen !== "redemptions" &&
     activeScreen !== "saved";
 
   const shouldShowFooter =
@@ -1939,6 +2028,45 @@ export function SinglePageGenieApp({
                 ))}
               </div>
 
+              {/* V.I.Bee offer preview for this venue */}
+              {(() => {
+                const venueOffer = offers.find(
+                  (o) => o.vendor_id === Number(selectedVenue.id)
+                );
+                if (!venueOffer) return null;
+                const offerTypeLabels: Record<string, string> = {
+                  happy_hour: "Happy Hour",
+                  perk: "Perk",
+                  brunch: "Brunch",
+                  late_night: "Late Night",
+                };
+                const label =
+                  offerTypeLabels[venueOffer.offer_type] ||
+                  venueOffer.offer_type.replaceAll("_", " ");
+                return (
+                  <div className="rounded-[18px] border border-red-300/60 bg-white p-4 dark:border-[#8c2b2b] dark:bg-black/35">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-white/55">
+                          Offer
+                        </p>
+                        <p className="mt-1 text-[1.05rem] font-bold text-red-500 dark:text-[#ff9d7d]">
+                          {venueOffer.discount_value || venueOffer.title}
+                        </p>
+                      </div>
+                      <span className="flex-none rounded-full bg-[#e8900a] px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-wide text-white">
+                        {label}
+                      </span>
+                    </div>
+                    {venueOffer.description ? (
+                      <p className="mt-2 text-[0.85rem] leading-5 text-gray-600 dark:text-white/72">
+                        {venueOffer.description}
+                      </p>
+                    ) : null}
+                  </div>
+                );
+              })()}
+
               <div>
                 <h3 className="text-[1.1rem] font-semibold text-gray-900 dark:text-white">About</h3>
                 <p className="mt-1 text-[0.88rem] leading-6 text-gray-600 dark:text-white/75">
@@ -1987,6 +2115,40 @@ export function SinglePageGenieApp({
                   </span>
                 ))}
               </div>
+
+              {/* Redeem Offer CTA — only for V.I.Bee members with a venue offer */}
+              {(() => {
+                const venueOffer = offers.find(
+                  (o) => o.vendor_id === Number(selectedVenue.id)
+                );
+                if (!venueOffer) return null;
+                const isMember = account?.membership === "vibee";
+                const redeeming = redeemingOfferId === venueOffer.id;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!account) {
+                        navigateTo("account");
+                        return;
+                      }
+                      if (!isMember) {
+                        navigateTo("account");
+                        return;
+                      }
+                      void handleRedeemOffer(venueOffer);
+                    }}
+                    disabled={redeeming}
+                    className="mt-2 w-full rounded-[18px] border border-red-500 bg-red-600 py-3.5 text-sm font-semibold text-white disabled:opacity-60 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                  >
+                    {redeeming
+                      ? "Redeeming..."
+                      : isMember
+                        ? "Redeem Offer"
+                        : "Upgrade to Redeem"}
+                  </button>
+                );
+              })()}
             </div>
           </section>
         ) : null}
@@ -2075,163 +2237,461 @@ export function SinglePageGenieApp({
           </section>
         ) : null}
 
-        {activeScreen === "offers" ? (
-          <SectionShell
-            sectionRef={offersRef}
-            title="V.I.Bee Offers"
-            subtitle="Redeem member perks and show the QR code when you are at the venue."
-          >
-            {!account ? (
-              <div className="rounded-[24px] border border-gray-100 bg-gray-50 px-4 py-5 text-sm leading-6 text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
-                Sign in to view and redeem V.I.Bee offers.
-              </div>
-            ) : account.membership !== "vibee" ? (
-              <div className="rounded-[24px] border border-gray-100 bg-gray-50 px-4 py-5 text-sm leading-6 text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
-                <p>
-                  Your account is on the free tier. Upgrade to V.I.Bee to unlock
-                  offers and redemption QR codes.
-                </p>
+        {/* ── V.I.BEE OFFERS ── */}
+        {activeScreen === "offers" ? (() => {
+          const offerTypeLabels: Record<string, string> = {
+            happy_hour: "Happy Hour",
+            perk: "Perk",
+            brunch: "Brunch",
+            late_night: "Late Night",
+          };
+          const filterOptions: Array<{
+            id: typeof offersFilter;
+            label: string;
+          }> = [
+            { id: "all", label: "All" },
+            { id: "happy_hour", label: "Happy Hour" },
+            { id: "perk", label: "Perk" },
+            { id: "brunch", label: "Brunch" },
+            { id: "late_night", label: "Late Night" },
+          ];
+          const filtered =
+            offersFilter === "all"
+              ? offers
+              : offers.filter((o) => o.offer_type === offersFilter);
+          const canRedeem = account?.membership === "vibee";
+          return (
+            <section ref={offersRef} className="pb-24">
+              {/* Header */}
+              <div className="mb-4 flex items-center">
                 <button
                   type="button"
-                  onClick={() => navigateTo("account")}
-                  className="mt-3 rounded-[16px] border border-red-500 bg-red-600 px-4 py-2 text-sm font-semibold text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                  onClick={() => goBack("home")}
+                  aria-label="Go back"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 dark:border-white/12 dark:bg-black/24 dark:text-white/82"
                 >
-                  Open membership
+                  <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M19 12H6m0 0 5-5m-5 5 5 5" />
+                  </svg>
                 </button>
+                <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
+                  V.I.Bee Offers
+                </h2>
               </div>
-            ) : (
-              <div className="space-y-4">
-                {offersLoading ? (
-                  <div className="rounded-[20px] border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
-                    Loading your active offers...
-                  </div>
-                ) : null}
+              <p className="mb-4 text-center text-sm text-gray-500 dark:text-white/60">
+                Exclusive deals for members only
+              </p>
 
-                {offersError ? (
-                  <div className="rounded-[20px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-[#8c2b2b] dark:bg-[#220909] dark:text-[#ff9f9f]">
-                    {offersError}
-                  </div>
-                ) : null}
-
-                {activeRedemption ? (
-                  <div className="rounded-[24px] border border-red-200 bg-red-50/60 p-4 dark:border-white/12 dark:bg-black/20">
-                    <p className="text-xs uppercase tracking-[0.2em] text-gray-500 dark:text-white/55">
-                      Active QR
-                    </p>
-                    <h3 className="mt-2 text-lg font-semibold text-gray-900 dark:text-white">
-                      {activeRedemption.offer_title}
-                    </h3>
-                    <p className="mt-1 text-sm text-gray-600 dark:text-white/72">
-                      Redeemed at {formatTimestamp(activeRedemption.redeemed_at)}
-                    </p>
-                    <div className="mt-3 inline-flex overflow-hidden rounded-[18px] border border-gray-200 bg-white p-2 dark:border-white/12 dark:bg-black/24">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={buildQrImageUrl(activeRedemption.verify_url)}
-                        alt={`QR code for ${activeRedemption.offer_title}`}
-                        className="h-[180px] w-[180px] object-cover"
-                      />
-                    </div>
-                    <p className="mt-3 text-xs text-gray-500 dark:text-white/55">
-                      Staff can scan this code at{" "}
-                      <span className="font-semibold text-gray-700 dark:text-white/82">
-                        /verify/{activeRedemption.redemption_token}
-                      </span>
-                    </p>
-                  </div>
-                ) : null}
-
-                {offers.length ? (
-                  <div className="space-y-3">
-                    {offers.map((offer) => (
-                      <div
-                        key={offer.id}
-                        className="rounded-[20px] border border-gray-100 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-black/20"
+              {/* Filter chips */}
+              <div className="-mx-4 mb-4 overflow-x-auto">
+                <div className="flex gap-2 px-4">
+                  {filterOptions.map((opt) => {
+                    const active = offersFilter === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setOffersFilter(opt.id)}
+                        className={`whitespace-nowrap rounded-full border px-4 py-1.5 text-[0.82rem] font-semibold transition ${
+                          active
+                            ? "border-red-500 bg-red-600 text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                            : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-white/15 dark:bg-black/24 dark:text-white/72 dark:hover:bg-white/8"
+                        }`}
                       >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-xs uppercase tracking-[0.2em] text-gray-400 dark:text-white/45">
-                              {offer.offer_type.replaceAll("_", " ")}
-                            </p>
-                            <h3 className="mt-1 text-lg font-semibold text-gray-900 dark:text-white">
-                              {offer.title}
-                            </h3>
-                          </div>
-                          {offer.discount_value ? (
-                            <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-600 dark:border-[#8c2b2b] dark:bg-[#220909] dark:text-[#ff9f9f]">
-                              {offer.discount_value}
-                            </span>
-                          ) : null}
-                        </div>
-                        {offer.description ? (
-                          <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-white/72">
-                            {offer.description}
-                          </p>
-                        ) : null}
-                        {offer.redeem_instructions ? (
-                          <p className="mt-2 text-xs text-gray-500 dark:text-white/55">
-                            {offer.redeem_instructions}
-                          </p>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={() => void handleRedeemOffer(offer)}
-                          disabled={redeemingOfferId === offer.id}
-                          className="mt-3 rounded-[16px] border border-red-500 bg-red-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
-                        >
-                          {redeemingOfferId === offer.id ? "Redeeming..." : "Redeem offer"}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : !offersLoading ? (
-                  <div className="rounded-[20px] border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
-                    No active offers are available right now. Check back soon.
-                  </div>
-                ) : null}
-
-                <div className="rounded-[20px] border border-gray-100 bg-gray-50 p-4 dark:border-white/10 dark:bg-black/20">
-                  <h3 className="text-base font-semibold text-gray-900 dark:text-white">
-                    Redemption History
-                  </h3>
-                  {redemptionsLoading ? (
-                    <p className="mt-2 text-sm text-gray-600 dark:text-white/72">
-                      Loading redemption history...
-                    </p>
-                  ) : redemptions.length ? (
-                    <ul className="mt-3 space-y-2">
-                      {redemptions.map((redemption) => {
-                        const matchedOffer = offers.find(
-                          (offer) => offer.id === redemption.offer_id
-                        );
-                        return (
-                          <li
-                            key={redemption.id}
-                            className="rounded-[14px] border border-gray-200 bg-white px-3 py-2 text-sm dark:border-white/12 dark:bg-black/24"
-                          >
-                            <p className="font-medium text-gray-800 dark:text-white/82">
-                              {matchedOffer?.title || `Offer #${redemption.offer_id}`}
-                            </p>
-                            <p className="mt-1 text-xs text-gray-500 dark:text-white/55">
-                              Redeemed {formatTimestamp(redemption.redeemed_at)}
-                              {redemption.verified_at
-                                ? ` • Verified ${formatTimestamp(redemption.verified_at)}`
-                                : ""}
-                            </p>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  ) : (
-                    <p className="mt-2 text-sm text-gray-600 dark:text-white/72">
-                      You have not redeemed any offers yet.
-                    </p>
-                  )}
+                        {opt.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
-            )}
-          </SectionShell>
+
+              {/* States */}
+              {!account ? (
+                <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-5 text-sm text-white/72">
+                  Sign in to view V.I.Bee offers.
+                </div>
+              ) : offersLoading ? (
+                <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-5 text-sm text-white/72">
+                  Loading offers...
+                </div>
+              ) : offersError ? (
+                <div className="rounded-[20px] border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                  {offersError}
+                </div>
+              ) : filtered.length ? (
+                <div className="space-y-3">
+                  {filtered.map((offer) => {
+                    const label = offerTypeLabels[offer.offer_type] ||
+                      offer.offer_type.replaceAll("_", " ");
+                    const knownVenues: GenieVenue[] = [
+                      ...(response?.decisive ?? []),
+                      ...(response?.more_nearby ?? []),
+                      ...savedVenues,
+                    ];
+                    const matchedVenue = knownVenues.find(
+                      (v) => Number(v.id) === offer.vendor_id
+                    );
+                    const venueName =
+                      offer.venue_name ||
+                      matchedVenue?.venue_name ||
+                      `Venue #${offer.vendor_id}`;
+                    const venueImage =
+                      offer.venue_image ||
+                      matchedVenue?.image ||
+                      "/sample-venue-1.jpeg";
+                    return (
+                      <button
+                        key={offer.id}
+                        type="button"
+                        onClick={() => {
+                          if (canRedeem) {
+                            void handleRedeemOffer(offer);
+                          } else {
+                            navigateTo("account");
+                          }
+                        }}
+                        className="flex w-full items-center gap-3 rounded-[20px] border border-red-200/40 bg-white p-3 text-left shadow-sm transition hover:border-red-300 dark:border-white/10 dark:bg-black/30 dark:hover:border-[#ff7b7b]"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={venueImage}
+                          alt={venueName}
+                          className="h-[4.5rem] w-[4.5rem] flex-none rounded-[14px] object-cover"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[1rem] font-semibold text-gray-900 dark:text-white">
+                            {venueName}
+                          </p>
+                          <span className="mt-1 inline-flex rounded-full bg-[#e8900a] px-2.5 py-0.5 text-[0.66rem] font-bold uppercase tracking-wide text-white">
+                            {label}
+                          </span>
+                          {offer.discount_value ? (
+                            <p className="mt-1 truncate text-[0.82rem] font-semibold text-red-500 dark:text-[#ff9d7d]">
+                              {offer.discount_value}
+                            </p>
+                          ) : null}
+                          {offer.description ? (
+                            <p className="mt-0.5 line-clamp-2 text-[0.78rem] leading-5 text-gray-600 dark:text-white/65">
+                              {offer.description}
+                            </p>
+                          ) : null}
+                        </div>
+                        <svg
+                          viewBox="0 0 24 24"
+                          className="h-5 w-5 flex-none text-gray-400 dark:text-white/45"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
+                          <path d="m9 6 6 6-6 6" />
+                        </svg>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-5 text-sm text-white/72">
+                  No offers in this category right now. Check back soon.
+                </div>
+              )}
+
+              {/* Upgrade CTA for non-members */}
+              {account && !canRedeem ? (
+                <div className="fixed bottom-0 left-1/2 z-40 w-[min(100vw,28rem)] -translate-x-1/2 px-4 pb-[calc(env(safe-area-inset-bottom,0px)+12px)] pt-3">
+                  <button
+                    type="button"
+                    onClick={() => navigateTo("account")}
+                    className="w-full rounded-[18px] border border-red-500 bg-red-600 py-3.5 text-sm font-semibold text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                  >
+                    Upgrade to Redeem - $2.99/mo
+                  </button>
+                </div>
+              ) : null}
+            </section>
+          );
+        })() : null}
+
+        {/* ── OFFER ACTIVATED (QR) ── */}
+        {activeScreen === "offer-activated" && activeRedemption ? (
+          <section className="pb-8">
+            {/* Header */}
+            <div className="mb-4 flex items-center">
+              <button
+                type="button"
+                onClick={() => goBack("offers")}
+                aria-label="Go back"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 dark:border-white/12 dark:bg-black/24 dark:text-white/82"
+              >
+                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M19 12H6m0 0 5-5m-5 5 5 5" />
+                </svg>
+              </button>
+              <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
+                Offer Activated
+              </h2>
+            </div>
+
+            {/* Venue card */}
+            <div className="mb-5 flex items-center gap-3 rounded-[20px] border border-red-200/40 bg-white p-3 dark:border-white/10 dark:bg-black/30">
+              {activeRedemption.venue_image ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={activeRedemption.venue_image}
+                  alt={activeRedemption.venue_name || "Venue"}
+                  className="h-[3.5rem] w-[3.5rem] flex-none rounded-[12px] object-cover"
+                />
+              ) : null}
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[1rem] font-semibold text-gray-900 dark:text-white">
+                  {activeRedemption.venue_name || `Venue #${activeRedemption.vendor_id}`}
+                </p>
+                {activeRedemption.venue_rating ? (
+                  <p className="mt-0.5 truncate text-[0.78rem] text-gray-500 dark:text-white/60">
+                    <span className="text-amber-400">{"★".repeat(Math.round(activeRedemption.venue_rating))}</span>
+                    {` ${activeRedemption.venue_rating.toFixed(1)}`}
+                    {activeRedemption.venue_review_count
+                      ? ` (${activeRedemption.venue_review_count} Reviews)`
+                      : ""}
+                    {activeRedemption.venue_neighborhood
+                      ? ` · ${activeRedemption.venue_neighborhood}`
+                      : ""}
+                  </p>
+                ) : activeRedemption.venue_neighborhood ? (
+                  <p className="mt-0.5 truncate text-[0.78rem] text-gray-500 dark:text-white/60">
+                    {activeRedemption.venue_neighborhood}
+                  </p>
+                ) : null}
+                {activeRedemption.discount_value ? (
+                  <p className="mt-1 truncate text-[0.82rem] font-semibold text-red-500 dark:text-[#ff9d7d]">
+                    {activeRedemption.discount_value}
+                  </p>
+                ) : null}
+                <p className="mt-1 text-[0.7rem] text-gray-400 dark:text-white/45">
+                  Redeemed at {formatTimestamp(activeRedemption.redeemed_at)}
+                </p>
+              </div>
+            </div>
+
+            {/* QR code */}
+            <div className="mx-auto mb-4 w-full max-w-[18rem] rounded-[24px] bg-white p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={buildQrImageUrl(activeRedemption.verify_url, 360)}
+                alt={`QR code for ${activeRedemption.offer_title}`}
+                className="h-auto w-full object-contain"
+              />
+            </div>
+
+            <p className="mb-6 text-center text-sm font-medium text-gray-700 dark:text-white/80">
+              Show this to your server
+            </p>
+
+            {/* Terms */}
+            <div className="rounded-[20px] border border-white/10 bg-black/20 p-4 dark:border-white/10">
+              <p className="mb-2 text-[0.82rem] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-white/60">
+                Terms of offer
+              </p>
+              <ul className="space-y-1.5 text-[0.85rem] leading-5 text-gray-700 dark:text-white/72">
+                {activeRedemption.offer_terms ? (
+                  activeRedemption.offer_terms
+                    .split(/\n|•/)
+                    .map((line) => line.trim())
+                    .filter(Boolean)
+                    .map((line, i) => (
+                      <li key={i} className="flex gap-2">
+                        <span className="flex-none">•</span>
+                        <span>{line}</span>
+                      </li>
+                    ))
+                ) : (
+                  <>
+                    <li className="flex gap-2">
+                      <span className="flex-none">•</span>
+                      <span>Offer valid for the next 24 hours from activation.</span>
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="flex-none">•</span>
+                      <span>Cannot be combined with other offers or promotions.</span>
+                    </li>
+                  </>
+                )}
+              </ul>
+            </div>
+          </section>
         ) : null}
+
+        {/* ── OFFER ACTIVATED FALLBACK (no active redemption) ── */}
+        {activeScreen === "offer-activated" && !activeRedemption ? (
+          <section className="pb-8">
+            <div className="mb-4 flex items-center">
+              <button
+                type="button"
+                onClick={() => navigateTo("offers")}
+                aria-label="Go back"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 dark:border-white/12 dark:bg-black/24 dark:text-white/82"
+              >
+                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M19 12H6m0 0 5-5m-5 5 5 5" />
+                </svg>
+              </button>
+              <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
+                Offer Activated
+              </h2>
+            </div>
+            <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-5 text-sm text-white/72">
+              No active redemption. Open an offer from V.I.Bee Offers to generate a QR code.
+            </div>
+          </section>
+        ) : null}
+
+        {/* ── RECENT REDEMPTIONS ── */}
+        {activeScreen === "redemptions" ? (() => {
+          const now = Date.now();
+          const EXPIRY_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days default
+          const classify = (
+            r: VibeeRedemption
+          ): "verified" | "pending" | "expired" => {
+            if (r.verified_at) return "verified";
+            const expiresAt = r.expires_at ?? r.redeemed_at + EXPIRY_WINDOW_MS;
+            if (now > expiresAt) return "expired";
+            return "pending";
+          };
+          const filterOptions: Array<{
+            id: typeof redemptionsFilter;
+            label: string;
+          }> = [
+            { id: "all", label: "All" },
+            { id: "verified", label: "Verified" },
+            { id: "pending", label: "Pending" },
+            { id: "expired", label: "Expired" },
+          ];
+          const sorted = [...redemptions].sort(
+            (a, b) => b.redeemed_at - a.redeemed_at
+          );
+          const filtered =
+            redemptionsFilter === "all"
+              ? sorted
+              : sorted.filter((r) => classify(r) === redemptionsFilter);
+          return (
+            <section className="pb-8">
+              {/* Header */}
+              <div className="mb-4 flex items-center">
+                <button
+                  type="button"
+                  onClick={() => goBack("home")}
+                  aria-label="Go back"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 dark:border-white/12 dark:bg-black/24 dark:text-white/82"
+                >
+                  <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M19 12H6m0 0 5-5m-5 5 5 5" />
+                  </svg>
+                </button>
+                <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
+                  Recent Redemptions
+                </h2>
+              </div>
+
+              {/* Status tabs */}
+              <div className="-mx-4 mb-4 overflow-x-auto">
+                <div className="flex gap-2 px-4">
+                  {filterOptions.map((opt) => {
+                    const active = redemptionsFilter === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setRedemptionsFilter(opt.id)}
+                        className={`whitespace-nowrap rounded-full border px-4 py-1.5 text-[0.82rem] font-semibold transition ${
+                          active
+                            ? "border-red-500 bg-red-600 text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                            : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-white/15 dark:bg-black/24 dark:text-white/72 dark:hover:bg-white/8"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {!account ? (
+                <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-5 text-sm text-white/72">
+                  Sign in to view your redemption history.
+                </div>
+              ) : redemptionsLoading ? (
+                <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-5 text-sm text-white/72">
+                  Loading redemption history...
+                </div>
+              ) : filtered.length ? (
+                <div className="space-y-2.5">
+                  {filtered.map((redemption) => {
+                    const matchedOffer = offers.find(
+                      (o) => o.id === redemption.offer_id
+                    );
+                    const status = classify(redemption);
+                    const title =
+                      redemption.offer_title ||
+                      matchedOffer?.title ||
+                      `Offer #${redemption.offer_id}`;
+                    const venueName =
+                      redemption.venue_name ||
+                      matchedOffer?.venue_name ||
+                      "";
+                    const badgeClasses =
+                      status === "verified"
+                        ? "border-green-500/40 bg-green-500/20 text-green-300"
+                        : status === "expired"
+                          ? "border-red-500/40 bg-transparent text-red-300"
+                          : "border-amber-400/40 bg-amber-400/15 text-amber-200";
+                    const badgeLabel =
+                      status === "verified"
+                        ? "Verified"
+                        : status === "expired"
+                          ? "Expired"
+                          : "Pending";
+                    return (
+                      <div
+                        key={redemption.id}
+                        className={`rounded-[18px] border p-3.5 ${
+                          status === "expired"
+                            ? "border-white/8 bg-black/25 opacity-70 dark:border-white/8"
+                            : "border-red-200/30 bg-white dark:border-white/10 dark:bg-black/30"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-[0.98rem] font-semibold text-gray-900 dark:text-white">
+                              {title}
+                              {venueName ? (
+                                <span className="ml-1.5 text-[0.82rem] font-normal text-gray-500 dark:text-white/60">
+                                  {venueName}
+                                </span>
+                              ) : null}
+                            </p>
+                            <p className="mt-1 text-[0.78rem] text-gray-500 dark:text-white/55">
+                              {formatDate(redemption.redeemed_at)}
+                            </p>
+                          </div>
+                          <span
+                            className={`flex-none rounded-[10px] border px-2.5 py-1 text-[0.72rem] font-semibold ${badgeClasses}`}
+                          >
+                            {badgeLabel}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-5 text-sm text-white/72">
+                  {redemptionsFilter === "all"
+                    ? "You have not redeemed any offers yet."
+                    : `No ${redemptionsFilter} redemptions.`}
+                </div>
+              )}
+            </section>
+          );
+        })() : null}
 
         {activeScreen === "preferences" ? (
           <section ref={preferencesRef} className="relative flex flex-1 flex-col pb-4">
@@ -2654,12 +3114,18 @@ export function SinglePageGenieApp({
                 onBack={() => goBack("home")}
                 onSave={async (data) => {
                   if (!account) return;
-                  const updated = {
-                    ...account,
-                    firstName: data.firstName,
-                    lastName: data.lastName,
+                  const { user } = await updateUserProfile({
+                    first_name: data.firstName,
+                    last_name: data.lastName,
                     email: data.email,
                     phone: data.phone,
+                  });
+                  const updated = {
+                    ...account,
+                    firstName: user.first_name,
+                    lastName: user.last_name,
+                    email: user.email,
+                    phone: user.phone ?? "",
                   };
                   setAccount(updated);
                   const { writeConsumerAccount } = await import("@/app/lib/localState");
@@ -2727,7 +3193,7 @@ export function SinglePageGenieApp({
                 <p className="mt-1 text-sm text-white/65">We&apos;ll get back to you shortly.</p>
                 <button
                   type="button"
-                  onClick={() => { setContactSent(false); setContactForm({ firstName: "", lastName: "", email: "", subject: "", description: "" }); }}
+                  onClick={() => { setContactSent(false); setContactError(null); setContactForm({ firstName: "", lastName: "", email: "", subject: "", description: "" }); }}
                   className="mt-4 rounded-[14px] border border-white/20 bg-white/10 px-5 py-2 text-sm font-semibold text-white"
                 >
                   Send another
@@ -2737,10 +3203,26 @@ export function SinglePageGenieApp({
               <form
                 onSubmit={async (e) => {
                   e.preventDefault();
+                  setContactError(null);
                   setContactSending(true);
-                  await new Promise((r) => setTimeout(r, 800));
-                  setContactSending(false);
-                  setContactSent(true);
+                  try {
+                    await submitContactForm({
+                      first_name: contactForm.firstName,
+                      last_name: contactForm.lastName,
+                      email: contactForm.email,
+                      subject: contactForm.subject,
+                      description: contactForm.description,
+                    });
+                    setContactSent(true);
+                  } catch (err) {
+                    setContactError(
+                      err instanceof Error
+                        ? err.message
+                        : "Could not send your message. Please try again."
+                    );
+                  } finally {
+                    setContactSending(false);
+                  }
                 }}
                 className="space-y-3"
               >
@@ -2768,6 +3250,11 @@ export function SinglePageGenieApp({
                   rows={4}
                   className="w-full resize-none rounded-[14px] border border-white/15 bg-white/8 px-4 py-3.5 text-sm text-white placeholder:text-white/35 focus:border-white/30 focus:outline-none dark:bg-black/25"
                 />
+                {contactError ? (
+                  <p className="text-center text-sm text-red-300">
+                    {contactError}
+                  </p>
+                ) : null}
                 <button
                   type="submit"
                   disabled={contactSending}

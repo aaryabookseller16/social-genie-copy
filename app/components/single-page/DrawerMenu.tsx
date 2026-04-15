@@ -12,6 +12,8 @@ export type DrawerMenuActionId =
   | "preferences"
   | "saved"
   | "membership"
+  | "offers"
+  | "redemptions"
   | "how-genie-works"
   | "vendor"
   | "help-faq"
@@ -32,7 +34,9 @@ type DrawerMenuProps = {
 };
 
 function isActiveItem(id: DrawerMenuActionId, activeScreen: FlowAnchor) {
-  if (id === "membership") return activeScreen === "offers";
+  if (id === "membership") return activeScreen === "membership";
+  if (id === "offers") return activeScreen === "offers" || activeScreen === "offer-activated";
+  if (id === "redemptions") return activeScreen === "redemptions";
   if (id === "profile") return activeScreen === "profile";
   if (id === "dashboard") return activeScreen === "dashboard";
   if (id === "preferences") return activeScreen === "preferences";
@@ -103,6 +107,8 @@ export function DrawerMenu({
     { id: "preferences", label: "Social Preferences" },
     { id: "saved", label: "Saved Spots" },
     { id: "membership", label: "Membership" },
+    { id: "offers", label: "V.I.Bee Offers" },
+    { id: "redemptions", label: "My Redemptions" },
     { id: "how-genie-works", label: "How Genie Works" },
     { id: "vendor", label: "Claim your business" },
   ];

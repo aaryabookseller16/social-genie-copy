@@ -69,6 +69,14 @@ export type VibeeOffer = {
   redemption_count?: number;
   redemption_limit?: number;
   vibee_only?: boolean;
+  // Optional venue context — populated by Xano when available,
+  // used for offer cards and venue detail linking.
+  venue_name?: string;
+  venue_image?: string;
+  venue_neighborhood?: string;
+  venue_rating?: number;
+  venue_review_count?: number;
+  expires_at?: number | null;
 };
 
 export type VibeeRedemption = {
@@ -79,6 +87,11 @@ export type VibeeRedemption = {
   redeemed_at: number;
   verified_by_staff?: boolean;
   verified_at?: number | null;
+  // Optional denormalised context from the backend.
+  offer_title?: string;
+  offer_type?: string;
+  venue_name?: string;
+  expires_at?: number | null;
 };
 
 export type VerifyRedemptionResult = {
@@ -250,6 +263,33 @@ export async function fetchCurrentUser() {
   return apiJson<{ user: PublicApiUser }>("/api/auth/me");
 }
 
+export async function updateUserProfile(payload: {
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  phone?: string;
+}) {
+  return apiJson<{ user: PublicApiUser }>("/api/auth/update-profile", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function submitContactForm(payload: {
+  first_name?: string;
+  last_name?: string;
+  email: string;
+  subject?: string;
+  description: string;
+}) {
+  // Auth header is attached automatically if the user is signed in;
+  // anonymous submissions are still accepted by the API route.
+  return apiJson<{ success: boolean; message?: string }>("/api/contact", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 /* ------------------------------------------------------------------ */
 /*  Subscription                                                       */
 /* ------------------------------------------------------------------ */
@@ -277,7 +317,8 @@ export async function createSubscriptionCheckout(payload: {
   success_url?: string;
   cancel_url?: string;
 }) {
-  const appBase = "https://genie.socialbevy.com";
+  // Server route handles default success_url / cancel_url — client only forwards
+  // overrides when the caller provides them explicitly.
   if (payload.vendor_id) {
     return apiJson<{
       checkout_url: string;
@@ -290,8 +331,8 @@ export async function createSubscriptionCheckout(payload: {
         vendor_id: payload.vendor_id,
         plan_type: payload.plan_type,
         boost_tier: payload.boost_tier,
-        success_url: payload.success_url ?? `${appBase}/?checkout=success`,
-        cancel_url: payload.cancel_url ?? "https://genie.socialbevy.com/vendor",
+        success_url: payload.success_url,
+        cancel_url: payload.cancel_url,
       }),
     });
   }
@@ -301,8 +342,8 @@ export async function createSubscriptionCheckout(payload: {
     method: "POST",
     body: JSON.stringify({
       external_user_id: payload.external_user_id || externalUserId || undefined,
-      success_url: payload.success_url ?? `${appBase}/?checkout=success`,
-      cancel_url: payload.cancel_url ?? "https://genie.socialbevy.com/account",
+      success_url: payload.success_url,
+      cancel_url: payload.cancel_url,
     }),
   });
 }
