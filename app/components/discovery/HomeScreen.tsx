@@ -111,15 +111,23 @@ export function HomeScreen({
             Ask Genie
           </label>
           <div className="group relative">
-            <span className="pointer-events-none absolute inset-0 rounded-full border border-gray-300 bg-white transition group-focus-within:border-red-400 dark:border-white/40 dark:bg-transparent dark:group-focus-within:border-white/70" />
+            <span className="pointer-events-none absolute inset-0 rounded-full border border-[#E70703]/50 bg-transparent transition group-focus-within:border-[#E70703] dark:border-white/40 dark:bg-transparent dark:group-focus-within:border-white/70" />
             <span className="pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2">
+              <Image
+                src="/search_red.png"
+                alt=""
+                aria-hidden="true"
+                width={20}
+                height={20}
+                className="h-5 w-5 object-contain dark:hidden"
+              />
               <Image
                 src="/icons/searchIcon.png"
                 alt=""
                 aria-hidden="true"
                 width={20}
                 height={20}
-                className="h-5 w-5 object-contain opacity-70 dark:opacity-90"
+                className="hidden h-5 w-5 object-contain opacity-90 dark:block"
               />
             </span>
             <input
@@ -129,7 +137,7 @@ export function HomeScreen({
               placeholder={pendingTranscript ? "Did Genie hear you right?" : "Ask Genie"}
               autoComplete="off"
               style={{ fontSize: "16px" }}
-              className="relative z-10 w-full rounded-full bg-transparent py-2.5 pl-12 pr-5 text-gray-900 placeholder:text-gray-400 focus:outline-none dark:text-white dark:placeholder:text-white/50"
+              className="relative z-10 w-full rounded-full bg-transparent py-2.5 pl-12 pr-5 text-[#E70703] placeholder:text-[#E70703]/70 focus:outline-none dark:text-white dark:placeholder:text-white/50"
             />
           </div>
           {pendingTranscript ? (
