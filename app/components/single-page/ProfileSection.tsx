@@ -1,8 +1,8 @@
 "use client";
 
-import Image from "next/image";
 import { useEffect, useState } from "react";
 
+import { BackIcon } from "@/app/components/single-page/ui";
 import { type ConsumerAccount } from "@/app/lib/localState";
 
 type ProfileSectionProps = {
@@ -15,36 +15,114 @@ type ProfileSectionProps = {
     email: string;
     phone: string;
   }) => Promise<void>;
+  onDeleteAccount?: () => Promise<void> | void;
 };
 
 function BackArrow() {
-  return (
-    <Image
-      src="/icons/Back.png"
-      alt=""
-      aria-hidden="true"
-      width={20}
-      height={20}
-      className="h-5 w-5 object-contain"
-    />
-  );
+  return <BackIcon size={20} />;
 }
 
-function ProfileRow({
+function InfoRow({
   label,
   value,
+  withDivider,
 }: {
   label: string;
   value: string | null | undefined;
+  withDivider?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between rounded-[18px] border border-gray-100 bg-white px-4 py-3.5 dark:border-white/10 dark:bg-black/20">
-      <span className="text-sm font-medium text-gray-500 dark:text-white/55">
+    <div
+      className={`flex items-center justify-between px-4 py-3.5 ${
+        withDivider ? "border-t border-red-200/60 dark:border-white/10" : ""
+      }`}
+    >
+      <span className="text-[15px] text-gray-900 dark:text-white/75">
         {label}
       </span>
-      <span className="text-sm font-semibold text-gray-900 dark:text-white">
+      <span className="text-[15px] font-medium text-gray-900 dark:text-white">
         {value || "—"}
       </span>
+    </div>
+  );
+}
+
+function DeleteAccountSheet({
+  open,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onConfirm: () => Promise<void> | void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+
+  if (!open) return null;
+
+  const handleConfirm = async () => {
+    setConfirming(true);
+    try {
+      await onConfirm();
+    } finally {
+      setConfirming(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-80 flex flex-col justify-end"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Delete account confirmation"
+    >
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={onClose}
+        className="absolute inset-0 bg-black/45 backdrop-blur-sm"
+      />
+      <div className="relative mx-auto w-full max-w-md rounded-t-[28px] bg-white bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat px-5 pb-10 pt-3 shadow-[0_-18px_40px_rgba(0,0,0,0.18)] dark:bg-black dark:bg-[url('/bg.png')] dark:shadow-[0_-18px_40px_rgba(0,0,0,0.5)]">
+        <div className="pointer-events-none absolute inset-0 hidden rounded-t-[28px] bg-black/45 dark:block" />
+        <div className="relative">
+          <div className="mx-auto h-1 w-12 rounded-full bg-black/25 dark:bg-white/30" />
+          <div className="mt-5 flex items-start justify-between gap-3">
+            <h3 className="text-[1.5rem] font-semibold text-gray-900 dark:text-white">
+              Delete Account
+            </h3>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-black/15 text-gray-800 transition hover:bg-black/25 dark:bg-white/15 dark:text-white dark:hover:bg-white/25"
+            >
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                <path d="M6 6l12 12M18 6L6 18" />
+              </svg>
+            </button>
+          </div>
+          <p className="mt-4 text-[15px] leading-relaxed text-gray-700 dark:text-white/75">
+            It&apos;s hard to see you going. Are you sure you want to delete your account?
+          </p>
+          <div className="mt-6 flex flex-col gap-3">
+            <button
+              type="button"
+              onClick={() => void handleConfirm()}
+              disabled={confirming}
+              className="w-full rounded-[20px] border border-red-500 bg-red-600 px-4 py-3.5 text-[15px] font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+            >
+              {confirming ? "Deleting..." : "Yes, delete my account"}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full rounded-[20px] bg-black/10 px-4 py-3.5 text-[15px] font-semibold text-gray-900 transition hover:bg-black/15 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -84,6 +162,7 @@ export function ProfileSection({
   account,
   onBack,
   onSave,
+  onDeleteAccount,
 }: ProfileSectionProps) {
   const [editing, setEditing] = useState(false);
   const [firstName, setFirstName] = useState("");
@@ -92,6 +171,7 @@ export function ProfileSection({
   const [phone, setPhone] = useState("");
   const [saving, setSaving] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [deleteSheetOpen, setDeleteSheetOpen] = useState(false);
 
   useEffect(() => {
     if (visible && account) {
@@ -104,6 +184,7 @@ export function ProfileSection({
     if (!visible) {
       setEditing(false);
       setStatusMsg(null);
+      setDeleteSheetOpen(false);
     }
   }, [visible, account]);
 
@@ -188,15 +269,18 @@ export function ProfileSection({
     );
   }
 
+  const fullName =
+    [account?.firstName, account?.lastName].filter(Boolean).join(" ") || "";
+
   return (
-    <section className="flex flex-1 flex-col pb-4">
+    <section className="relative flex min-h-[calc(100dvh-4rem)] flex-1 flex-col pb-4">
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <button
           type="button"
           onClick={onBack}
           aria-label="Go back"
-          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 dark:border-white/12 dark:bg-black/24 dark:text-white/82"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-full text-red-600 dark:border dark:border-white/12 dark:bg-black/24 dark:text-white/82"
         >
           <BackArrow />
         </button>
@@ -206,52 +290,41 @@ export function ProfileSection({
         <button
           type="button"
           onClick={() => setEditing(true)}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-red-200 bg-transparent transition hover:bg-red-50 dark:border-white/20 dark:hover:bg-white/10"
+          className="text-[15px] font-semibold text-red-600 transition hover:text-red-700 dark:text-[#ff7b7b] dark:hover:text-[#ffa0a0]"
           aria-label="Edit profile"
         >
-          <Image
-            src="/icons/Edit.png"
-            alt=""
-            aria-hidden="true"
-            width={18}
-            height={18}
-            className="h-[18px] w-[18px] object-contain"
-          />
+          Edit
         </button>
       </div>
 
-      {/* Avatar placeholder */}
-      <div className="mb-6 flex flex-col items-center gap-2">
-        <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-red-200 bg-red-50 text-[2rem] font-bold text-red-600 dark:border-white/20 dark:bg-black/30 dark:text-white">
-          {(account?.firstName?.[0] ?? "?").toUpperCase()}
-        </div>
-        <p className="text-base font-semibold text-gray-900 dark:text-white">
-          {[account?.firstName, account?.lastName].filter(Boolean).join(" ") || "Guest"}
-        </p>
-        <span className="rounded-full border border-red-200 bg-red-50 px-3 py-0.5 text-xs font-medium text-red-600 capitalize dark:border-white/15 dark:bg-black/20 dark:text-[#ff9d7d]">
-          {account?.membership ?? "free"}
-        </span>
+      {/* Info card */}
+      <div className="overflow-hidden rounded-[18px] border border-red-300 bg-transparent dark:border-white/12 dark:bg-black/20">
+        <InfoRow label="Name" value={fullName} />
+        <InfoRow label="Email" value={account?.email} withDivider />
+        <InfoRow label="Phone" value={account?.phone} withDivider />
       </div>
 
-      {/* Info rows */}
-      <div className="space-y-3">
-        <ProfileRow
-          label="First Name"
-          value={account?.firstName}
-        />
-        <ProfileRow
-          label="Last Name"
-          value={account?.lastName}
-        />
-        <ProfileRow
-          label="Email"
-          value={account?.email}
-        />
-        <ProfileRow
-          label="Phone"
-          value={account?.phone}
-        />
+      {/* Delete my account — anchored to bottom */}
+      <div className="mt-auto pt-10 text-center">
+        <button
+          type="button"
+          onClick={() => setDeleteSheetOpen(true)}
+          className="text-[14px] text-gray-500 underline-offset-2 transition hover:text-gray-700 hover:underline dark:text-white/55 dark:hover:text-white/75"
+        >
+          Delete my account
+        </button>
       </div>
+
+      <DeleteAccountSheet
+        open={deleteSheetOpen}
+        onClose={() => setDeleteSheetOpen(false)}
+        onConfirm={async () => {
+          if (onDeleteAccount) {
+            await onDeleteAccount();
+          }
+          setDeleteSheetOpen(false);
+        }}
+      />
     </section>
   );
 }

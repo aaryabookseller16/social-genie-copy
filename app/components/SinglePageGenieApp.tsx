@@ -13,6 +13,7 @@ import { VendorSection } from "@/app/components/single-page/VendorSection";
 import {
   BottomDock,
   GenieBubble,
+  BackIcon,
   ResultCard,
   SectionShell,
   type FlowAnchor,
@@ -1655,7 +1656,7 @@ export function SinglePageGenieApp({
     activeScreen === "saved" ? "saved" : activeScreen === "home" ? "home" : "decision";
 
   return (
-    <main className={`relative flex h-dvh flex-col overflow-x-hidden ${activeScreen === "home" || activeScreen === "listening" || activeScreen === "thinking" ? "overflow-y-hidden" : "overflow-y-auto"} bg-white px-4 pb-3 pt-3 dark:bg-[url('/bg.png')] dark:bg-cover dark:bg-center sm:px-6 sm:pb-4 sm:pt-5`}>
+    <main className={`relative flex h-dvh flex-col overflow-x-hidden ${activeScreen === "home" || activeScreen === "listening" || activeScreen === "thinking" ? "overflow-y-hidden" : "overflow-y-auto"} bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat px-4 pb-3 pt-3 dark:bg-[url('/bg.png')] dark:bg-cover dark:bg-center sm:px-6 sm:pb-4 sm:pt-5`}>
       <div className="pointer-events-none fixed inset-0 z-0 hidden bg-black/50 dark:block" />
       <DrawerMenu
         visible={isDrawerOpen}
@@ -1735,22 +1736,17 @@ export function SinglePageGenieApp({
         ) : null}
 
         {shouldShowTopBar ? (
-          <div className="flex items-center justify-between">
-            <button
-              type="button"
-              onClick={handleTopBack}
-              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 shadow-sm dark:border-white/12 dark:bg-black/24 dark:text-white/82 dark:shadow-[0_20px_50px_rgba(0,0,0,0.36)]"
-              aria-label="Go back"
-            >
-              <Image
-                src="/icons/Back.png"
-                alt=""
-                aria-hidden="true"
-                width={20}
-                height={20}
-                className="h-5 w-5 object-contain"
-              />
-            </button>
+          <div className={`flex items-center ${activeScreen === "thinking" || activeScreen === "listening" ? "justify-end" : "justify-between"}`}>
+            {activeScreen !== "thinking" && activeScreen !== "listening" ? (
+              <button
+                type="button"
+                onClick={handleTopBack}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-full text-red-600 dark:border dark:border-white/12 dark:bg-black/24 dark:text-white/82 dark:shadow-[0_20px_50px_rgba(0,0,0,0.36)]"
+                aria-label="Go back"
+              >
+                <BackIcon size={20} />
+              </button>
+            ) : null}
 
             <button
               type="button"
@@ -2078,7 +2074,7 @@ export function SinglePageGenieApp({
         ) : null}
 
         {activeScreen === "detail" && selectedVenue ? (
-          <section ref={detailRef} className="-mx-4 pb-24 sm:-mx-6">
+          <section ref={detailRef} className="-mx-4 -mt-3 pb-24 sm:-mx-6 sm:-mt-5">
             <div className="relative h-[22rem] w-full overflow-hidden">
               <Image
                 src={selectedVenue.image || "/sample-venue-1.jpeg"}
@@ -2092,42 +2088,32 @@ export function SinglePageGenieApp({
                 <button
                   type="button"
                   onClick={handleTopBack}
-                  className="flex h-10 w-10 items-center justify-center rounded-full border border-white/40 bg-black/40 text-white backdrop-blur-sm"
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-red-600 shadow-sm dark:border dark:border-white/40 dark:bg-black/40 dark:text-white dark:backdrop-blur-sm"
                   aria-label="Go back"
                 >
-                  <Image
-                    src="/icons/Back.png"
-                    alt=""
-                    aria-hidden="true"
-                    width={24}
-                    height={24}
-                    className="h-6 w-6 object-contain"
-                  />
+                  <BackIcon size={24} className="h-6 w-6 object-contain" />
                 </button>
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => handleSaveVenue(selectedVenue)}
-                    className="flex h-10 w-10 items-center justify-center rounded-full border border-white/40 bg-black/30 text-white backdrop-blur-sm"
+                    className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-red-600 shadow-sm dark:border dark:border-white/40 dark:bg-black/30 dark:text-white dark:backdrop-blur-sm"
                     aria-label="Save"
                   >
-                    <Image
-                      src={
-                        savedVenueIds.includes(getVenueId(selectedVenue))
-                          ? "/icons/saved_filled.png"
-                          : "/icons/saved_oulined.png"
-                      }
-                      alt=""
-                      aria-hidden="true"
-                      width={20}
-                      height={20}
-                      className="h-5 w-5 object-contain"
-                    />
+                    {savedVenueIds.includes(getVenueId(selectedVenue)) ? (
+                      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" aria-hidden="true">
+                        <path d="M12 21s-7-4.35-7-10a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 5.65-7 10-7 10-1 .65-3 .65-4 0z" />
+                      </svg>
+                    ) : (
+                      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                      </svg>
+                    )}
                   </button>
                   <button
                     type="button"
                     onClick={() => setIsDrawerOpen(true)}
-                    className="flex h-10 w-10 items-center justify-center rounded-full border border-white/40 bg-black/30 text-white backdrop-blur-sm"
+                    className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-red-600 shadow-sm dark:border dark:border-white/40 dark:bg-black/30 dark:text-white dark:backdrop-blur-sm"
                     aria-label="Menu"
                   >
                     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -2144,10 +2130,10 @@ export function SinglePageGenieApp({
                   {selectedVenue.venue_name}
                 </h2>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span className="rounded-full bg-white px-3 py-1 text-[0.72rem] font-semibold text-gray-900">
+                  <span className="rounded-full bg-red-600 px-3 py-1 text-[0.72rem] font-semibold text-white dark:bg-white dark:text-gray-900">
                     {getVenueStatus(selectedVenue, 0)}
                   </span>
-                  <span className="text-[0.8rem] text-white/85">
+                  <span className="rounded-full border border-red-300 bg-transparent px-3 py-1 text-[0.72rem] font-medium text-red-500 dark:border-transparent dark:text-white/85">
                     {[
                       selectedVenue.energy_level,
                       selectedVenue.price_band === "$$" ? "Mid-Range" : selectedVenue.price_band,
@@ -2214,49 +2200,64 @@ export function SinglePageGenieApp({
 
               <div className="flex flex-wrap items-center gap-2 text-[0.82rem]">
                 {getOpenUntil(selectedVenue) ? (
-                  <span className="rounded-full border border-gray-300 bg-white px-3 py-1 text-[0.72rem] font-semibold text-gray-900 dark:border-white/30 dark:bg-white/10 dark:text-white/85">
+                  <span className="rounded-full border border-red-300 bg-transparent px-3 py-1 text-[0.72rem] font-semibold text-red-600 dark:border-white/30 dark:bg-white/10 dark:text-white/85">
                     {getOpenUntil(selectedVenue)}
                   </span>
                 ) : selectedVenue.is_open_now ? (
-                  <span className="rounded-full border border-gray-300 bg-white px-3 py-1 text-[0.72rem] font-semibold text-gray-900 dark:border-white/30 dark:bg-white/10 dark:text-white/85">Open now</span>
+                  <span className="rounded-full border border-red-300 bg-transparent px-3 py-1 text-[0.72rem] font-semibold text-red-600 dark:border-white/30 dark:bg-white/10 dark:text-white/85">Open now</span>
                 ) : null}
                 {selectedVenue.is_official_vendor ? (
-                  <span className="rounded-full border border-gray-300 bg-transparent px-3 py-0.5 text-[0.72rem] text-gray-700 dark:border-white/30 dark:text-white/80">
+                  <span className="rounded-full border border-red-300 bg-transparent px-3 py-0.5 text-[0.72rem] text-red-600 dark:border-white/30 dark:text-white/80">
                     Official Vendor
                   </span>
                 ) : null}
               </div>
 
-              <div className="grid grid-cols-3 gap-2">
-                {detailActions.slice(0, 3).map((action) => {
+              <div className="grid grid-cols-[1fr_1.45fr_1fr] gap-2">
+                {detailActions.slice(0, 3).map((action, index) => {
                   const isCall =
                     action.id.includes("call") ||
                     action.label.toLowerCase().includes("call");
-                  const isReserve = action.label.toLowerCase().includes("reserv");
-                  const isWebsite = action.id === "website";
-                  const iconSrc = isCall
+                  const isReserve = index === 1;
+                  const label = isCall ? "Call" : isReserve ? "Reservations" : "Share";
+                  const lightIconSrc = isCall
+                    ? "/icons/phone-red.png"
+                    : isReserve
+                      ? "/icons/calendarIcon.png"
+                      : "/icons/share-red.png";
+                  const darkIconSrc = isCall
                     ? "/icons/phoneIcon.png"
                     : isReserve
                       ? "/icons/calendarIcon.png"
-                      : isWebsite
-                        ? "/icons/shareIcon.png"
-                        : "/icons/shareIcon.png";
+                      : "/icons/shareIcon.png";
                   return (
                     <button
                       key={action.id}
                       type="button"
                       onClick={action.onClick}
-                      className="flex items-center justify-center gap-1.5 rounded-[14px] border border-gray-200 bg-white px-2 py-2.5 text-[0.8rem] font-medium text-gray-800 dark:border-white/20 dark:bg-black/30 dark:text-white"
+                      className={`flex items-center justify-center gap-1.5 rounded-full border font-medium transition ${
+                        isReserve
+                          ? "border-red-500 bg-red-600 px-2 py-3 text-[0.85rem] text-white hover:bg-red-700 dark:border-white/20 dark:bg-black/30 dark:text-white"
+                          : "border-red-400 bg-transparent px-2 py-2.5 text-[0.8rem] text-red-600 hover:bg-red-50 dark:border-white/20 dark:bg-black/30 dark:text-white"
+                      }`}
                     >
                       <Image
-                        src={iconSrc}
+                        src={lightIconSrc}
                         alt=""
                         aria-hidden="true"
                         width={16}
                         height={16}
-                        className="h-4 w-4 object-contain"
+                        className={`${isReserve ? "h-[18px] w-[18px]" : "h-4 w-4"} object-contain dark:hidden`}
                       />
-                      {action.label}
+                      <Image
+                        src={darkIconSrc}
+                        alt=""
+                        aria-hidden="true"
+                        width={16}
+                        height={16}
+                        className={`hidden ${isReserve ? "h-[18px] w-[18px]" : "h-4 w-4"} object-contain dark:block`}
+                      />
+                      {label}
                     </button>
                   );
                 })}
@@ -2383,7 +2384,7 @@ export function SinglePageGenieApp({
                 {buildVenueTags(selectedVenue).map((tag) => (
                   <span
                     key={`${selectedVenue.id}-${tag}`}
-                    className="rounded-full border border-gray-300 bg-transparent px-3 py-1 text-[0.78rem] font-medium text-gray-700 dark:border-white/30 dark:text-white/85"
+                    className="rounded-full border border-red-400 bg-transparent px-3 py-1 text-[0.78rem] font-medium text-red-600 dark:border-white/30 dark:text-white/85"
                   >
                     {tag}
                   </span>
@@ -2435,16 +2436,9 @@ export function SinglePageGenieApp({
                 type="button"
                 onClick={() => goBack("home")}
                 aria-label="Go back"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 dark:border-white/12 dark:bg-black/24 dark:text-white/82"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-red-600 dark:border dark:border-white/12 dark:bg-black/24 dark:text-white/82"
               >
-                <Image
-                  src="/icons/Back.png"
-                  alt=""
-                  aria-hidden="true"
-                  width={20}
-                  height={20}
-                  className="h-5 w-5 object-contain"
-                />
+                <BackIcon size={20} />
               </button>
               <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
                 Saved Spots
@@ -2552,16 +2546,9 @@ export function SinglePageGenieApp({
                   type="button"
                   onClick={() => goBack("home")}
                   aria-label="Go back"
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 dark:border-white/12 dark:bg-black/24 dark:text-white/82"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full text-red-600 dark:border dark:border-white/12 dark:bg-black/24 dark:text-white/82"
                 >
-                  <Image
-                    src="/icons/Back.png"
-                    alt=""
-                    aria-hidden="true"
-                    width={20}
-                    height={20}
-                    className="h-5 w-5 object-contain"
-                  />
+                  <BackIcon size={20} />
                 </button>
                 <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
                   V.I.Bee Offers
@@ -2711,16 +2698,9 @@ export function SinglePageGenieApp({
                     type="button"
                     onClick={() => goBack("offers")}
                     aria-label="Go back"
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 dark:border-white/12 dark:bg-black/24 dark:text-white/82"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full text-red-600 dark:border dark:border-white/12 dark:bg-black/24 dark:text-white/82"
                   >
-                    <Image
-                      src="/icons/Back.png"
-                      alt=""
-                      aria-hidden="true"
-                      width={20}
-                      height={20}
-                      className="h-5 w-5 object-contain"
-                    />
+                    <BackIcon size={20} />
                   </button>
                   <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
                     Offer Detail
@@ -2763,16 +2743,9 @@ export function SinglePageGenieApp({
                   type="button"
                   onClick={() => goBack("offers")}
                   aria-label="Go back"
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 dark:border-white/12 dark:bg-black/24 dark:text-white/82"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full text-red-600 dark:border dark:border-white/12 dark:bg-black/24 dark:text-white/82"
                 >
-                  <Image
-                    src="/icons/Back.png"
-                    alt=""
-                    aria-hidden="true"
-                    width={20}
-                    height={20}
-                    className="h-5 w-5 object-contain"
-                  />
+                  <BackIcon size={20} />
                 </button>
                 <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
                   Offer Detail
@@ -2866,16 +2839,9 @@ export function SinglePageGenieApp({
                 type="button"
                 onClick={() => goBack("offer-detail")}
                 aria-label="Go back"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 dark:border-white/12 dark:bg-black/24 dark:text-white/82"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-red-600 dark:border dark:border-white/12 dark:bg-black/24 dark:text-white/82"
               >
-                <Image
-                  src="/icons/Back.png"
-                  alt=""
-                  aria-hidden="true"
-                  width={20}
-                  height={20}
-                  className="h-5 w-5 object-contain"
-                />
+                <BackIcon size={20} />
               </button>
               <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
                 Offer Activated
@@ -2993,16 +2959,9 @@ export function SinglePageGenieApp({
                 type="button"
                 onClick={() => navigateTo("offers")}
                 aria-label="Go back"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 dark:border-white/12 dark:bg-black/24 dark:text-white/82"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-red-600 dark:border dark:border-white/12 dark:bg-black/24 dark:text-white/82"
               >
-                <Image
-                  src="/icons/Back.png"
-                  alt=""
-                  aria-hidden="true"
-                  width={20}
-                  height={20}
-                  className="h-5 w-5 object-contain"
-                />
+                <BackIcon size={20} />
               </button>
               <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
                 Offer Activated
@@ -3050,16 +3009,9 @@ export function SinglePageGenieApp({
                   type="button"
                   onClick={() => goBack("home")}
                   aria-label="Go back"
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 dark:border-white/12 dark:bg-black/24 dark:text-white/82"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full text-red-600 dark:border dark:border-white/12 dark:bg-black/24 dark:text-white/82"
                 >
-                  <Image
-                    src="/icons/Back.png"
-                    alt=""
-                    aria-hidden="true"
-                    width={20}
-                    height={20}
-                    className="h-5 w-5 object-contain"
-                  />
+                  <BackIcon size={20} />
                 </button>
                 <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
                   Recent Redemptions
@@ -3207,23 +3159,8 @@ export function SinglePageGenieApp({
               </div>
             ) : (
               <>
-                <div className="mb-5 flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => navigateTo("home")}
-                    className="text-gray-800 dark:text-white"
-                    aria-label="Go back"
-                  >
-                    <Image
-                      src="/icons/Back.png"
-                      alt=""
-                      aria-hidden="true"
-                      width={24}
-                      height={24}
-                      className="h-6 w-6 object-contain"
-                    />
-                  </button>
-                  <h2 className="flex-1 pr-6 text-center text-[1.35rem] font-semibold text-gray-900 dark:text-white">
+                <div className="mb-5">
+                  <h2 className="text-center text-[1.35rem] font-semibold text-gray-900 dark:text-white">
                     Social Preferences
                   </h2>
                 </div>
@@ -3690,16 +3627,9 @@ export function SinglePageGenieApp({
                 type="button"
                 onClick={() => goBack("home")}
                 aria-label="Go back"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 dark:border-white/12 dark:bg-black/24 dark:text-white/82"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-red-600 dark:border dark:border-white/12 dark:bg-black/24 dark:text-white/82"
               >
-                <Image
-                  src="/icons/Back.png"
-                  alt=""
-                  aria-hidden="true"
-                  width={20}
-                  height={20}
-                  className="h-5 w-5 object-contain"
-                />
+                <BackIcon size={20} />
               </button>
               <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
                 Contact
@@ -3832,16 +3762,9 @@ export function SinglePageGenieApp({
                   type="button"
                   onClick={() => goBack("home")}
                   aria-label="Go back"
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 dark:border-white/12 dark:bg-black/24 dark:text-white/82"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full text-red-600 dark:border dark:border-white/12 dark:bg-black/24 dark:text-white/82"
                 >
-                  <Image
-                    src="/icons/Back.png"
-                    alt=""
-                    aria-hidden="true"
-                    width={20}
-                    height={20}
-                    className="h-5 w-5 object-contain"
-                  />
+                  <BackIcon size={20} />
                 </button>
                 <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
                   Membership

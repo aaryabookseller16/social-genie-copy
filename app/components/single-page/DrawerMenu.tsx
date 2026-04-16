@@ -66,13 +66,15 @@ function ToggleSwitch({
       onClick={onToggle}
       className={`relative inline-flex h-[26px] w-[46px] flex-none items-center rounded-full border-2 transition-colors duration-200 focus:outline-none ${
         enabled
-          ? "border-red-500 bg-red-600"
-          : "border-white/25 bg-white/15"
+          ? "border-red-500 bg-red-600 dark:border-red-500 dark:bg-red-600"
+          : "border-red-400 bg-transparent dark:border-white/25 dark:bg-white/15"
       }`}
     >
       <span
-        className={`inline-block h-[18px] w-[18px] transform rounded-full bg-white shadow transition-transform duration-200 ${
-          enabled ? "translate-x-[20px]" : "translate-x-[2px]"
+        className={`inline-block h-[18px] w-[18px] transform rounded-full shadow transition-transform duration-200 ${
+          enabled
+            ? "translate-x-[20px] bg-white"
+            : "translate-x-[2px] bg-red-500 dark:bg-white"
         }`}
       />
     </button>
@@ -136,22 +138,21 @@ export function DrawerMenu({
       <button
         type="button"
         aria-label="Close navigation menu"
-        className="absolute inset-0 bg-black/50 backdrop-blur-[2px]"
+        className="absolute inset-0 bg-black/20 backdrop-blur-[2px] dark:bg-black/50"
         onClick={onClose}
       />
 
       {/* Drawer panel */}
       <div
-        className="relative flex h-full w-[15.5rem] max-w-[86vw] flex-col overflow-hidden bg-cover bg-center shadow-[24px_0_60px_rgba(0,0,0,0.5)]"
-        style={{ backgroundImage: "url(/bg.png)" }}
+        className="relative flex h-full w-[16rem] max-w-[86vw] flex-col overflow-hidden bg-white bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat shadow-[24px_0_60px_rgba(0,0,0,0.18)] dark:bg-black dark:bg-[url('/bg.png')] dark:shadow-[24px_0_60px_rgba(0,0,0,0.5)]"
       >
-        {/* Dark overlay for readability */}
-        <div className="pointer-events-none absolute inset-0 bg-black/55" />
+        {/* Dark overlay for readability — dark mode only */}
+        <div className="pointer-events-none absolute inset-0 hidden bg-black/55 dark:block" />
 
         {/* Scrollable content */}
-        <div className="relative flex h-full flex-col overflow-y-auto px-5 pb-6 pt-8">
+        <div className="relative flex h-full flex-col overflow-y-auto px-5 pb-6 pt-10">
           {/* Primary nav */}
-          <nav className="flex flex-col">
+          <nav className="flex flex-col gap-1">
             {primaryItems.map((item) => {
               const active = isActiveItem(item.id, activeScreen);
               return (
@@ -159,10 +160,10 @@ export function DrawerMenu({
                   key={item.id}
                   type="button"
                   onClick={() => onNavigate(item.id)}
-                  className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-left text-[0.92rem] font-medium leading-5 transition ${
+                  className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-left text-[1rem] font-medium leading-5 transition ${
                     active
-                      ? "bg-white/12 text-white"
-                      : "text-white/75 hover:bg-white/8 hover:text-white"
+                      ? "bg-black/5 text-gray-900 dark:bg-white/12 dark:text-white"
+                      : "text-gray-900 hover:bg-black/5 dark:text-white/75 dark:hover:bg-white/8 dark:hover:text-white"
                   }`}
                 >
                   {item.label}
@@ -172,11 +173,11 @@ export function DrawerMenu({
           </nav>
 
           {/* Divider */}
-          <div className="my-2.5 h-px bg-white/15" />
+          <div className="my-3 h-px bg-black/10 dark:bg-white/15" />
 
           {/* Notifications toggle */}
           <div className="flex items-center justify-between px-3 py-1.5">
-            <span className="text-[0.92rem] font-medium text-white/75">
+            <span className="text-[1rem] font-medium text-gray-900 dark:text-white/75">
               Notifications
             </span>
             <ToggleSwitch
@@ -189,22 +190,22 @@ export function DrawerMenu({
           <button
             type="button"
             onClick={() => setTheme(isDark ? "light" : "dark")}
-            className="whitespace-nowrap rounded-lg px-3 py-1.5 text-left text-[0.92rem] font-medium text-white/75 transition hover:bg-white/8 hover:text-white"
+            className="whitespace-nowrap rounded-lg px-3 py-1.5 text-left text-[1rem] font-medium text-gray-900 transition hover:bg-black/5 dark:text-white/75 dark:hover:bg-white/8 dark:hover:text-white"
           >
             {`Switch to ${isDark ? "light" : "dark"} mode`}
           </button>
 
           {/* Divider */}
-          <div className="my-2.5 h-px bg-white/15" />
+          <div className="my-3 h-px bg-black/10 dark:bg-white/15" />
 
           {/* Secondary nav */}
-          <nav className="flex flex-col">
+          <nav className="flex flex-col gap-1">
             {secondaryItems.map((item) => (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => onNavigate(item.id)}
-                className="whitespace-nowrap rounded-lg px-3 py-1.5 text-left text-[0.92rem] font-medium text-white/75 transition hover:bg-white/8 hover:text-white"
+                className="whitespace-nowrap rounded-lg px-3 py-1.5 text-left text-[1rem] font-medium text-gray-900 transition hover:bg-black/5 dark:text-white/75 dark:hover:bg-white/8 dark:hover:text-white"
               >
                 {item.label}
               </button>
@@ -215,13 +216,13 @@ export function DrawerMenu({
           <div className="flex-1" />
 
           {/* Divider */}
-          <div className="mb-2 mt-3 h-px bg-white/15" />
+          <div className="mb-2 mt-3 h-px bg-black/10 dark:bg-white/15" />
 
           {isLoggedIn ? (
             <button
               type="button"
               onClick={onLogout}
-              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-[0.92rem] font-semibold text-red-400 transition hover:bg-white/8 hover:text-red-300"
+              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-[1rem] font-medium text-gray-500 transition hover:bg-black/5 dark:font-semibold dark:text-red-400 dark:hover:bg-white/8 dark:hover:text-red-300"
             >
               <svg viewBox="0 0 24 24" className="h-4 w-4 flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
@@ -234,7 +235,7 @@ export function DrawerMenu({
             <button
               type="button"
               onClick={onLogin}
-              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-[0.92rem] font-semibold text-white/80 transition hover:bg-white/8 hover:text-white"
+              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-[1rem] font-semibold text-gray-900 transition hover:bg-black/5 dark:text-white/80 dark:hover:bg-white/8 dark:hover:text-white"
             >
               <svg viewBox="0 0 24 24" className="h-4 w-4 flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
