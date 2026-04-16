@@ -258,12 +258,12 @@ export function AccountSection({
     return (
       <section
         ref={sectionRef}
-        className="relative flex min-h-screen flex-col overflow-hidden bg-white px-5 pb-10 pt-14 dark:bg-transparent"
+        className="relative flex min-h-[calc(100dvh-1.5rem)] flex-col overflow-hidden bg-transparent px-1 pb-6 pt-10"
       >
         <button
           type="button"
           onClick={() => setMode(null)}
-          className="absolute left-5 top-14 text-gray-600 dark:text-white/82"
+          className="absolute left-1 top-10 text-gray-600 dark:text-white/82"
           aria-label="Go back"
         >
           <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2">
@@ -275,7 +275,7 @@ export function AccountSection({
           <h2 className="mt-2 text-center text-[1.85rem] font-semibold leading-tight text-gray-900 dark:text-white">
             Welcome back
           </h2>
-          <p className="mx-auto mt-3 max-w-[26ch] text-center text-[15px] leading-relaxed text-gray-500 dark:text-white/70">
+          <p className="mx-auto mt-3 max-w-[28ch] text-center text-[16px] leading-relaxed text-gray-700 dark:text-white/70">
             Enter your email and I&apos;ll send you a magic link to get back into your account.
           </p>
 
@@ -287,14 +287,14 @@ export function AccountSection({
               placeholder="Your Email"
               autoComplete="email"
               style={{ fontSize: "16px" }}
-            className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3.5 text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
+            className="w-full rounded-2xl border border-gray-300 bg-transparent px-4 py-3.5 text-gray-900 placeholder:text-gray-500 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
             />
             <ActionButton type="submit" className="w-full" disabled={isSubmitting}>
               {isSubmitting ? "Sending..." : "Send my link"}
             </ActionButton>
           </form>
 
-          <p className="mx-auto mt-4 max-w-[32ch] text-center text-[12px] leading-relaxed text-gray-400 dark:text-white/50">
+          <p className="mx-auto mt-4 max-w-[32ch] text-center text-[14px] leading-relaxed text-gray-700 dark:text-white/50">
             We&apos;ll send you a one-tap magic link so you can sign in easily. No password needed.
           </p>
 
@@ -305,12 +305,14 @@ export function AccountSection({
           )}
         </div>
 
-        <div className="mt-auto pt-8 text-center">
-          <p className="text-[13px] text-gray-500 dark:text-white/55">Don&apos;t have an account?</p>
+        <div className="mt-auto pt-8">
+          <p className="text-center text-[14px] text-gray-700 dark:text-white/55">
+            Don&apos;t have an account?
+          </p>
           <button
             type="button"
             onClick={openFreeSignup}
-            className="mt-1 text-[15px] font-semibold text-gray-900 dark:text-white"
+            className="mt-3 w-full rounded-2xl bg-black/10 px-4 py-3.5 text-[18px] font-semibold text-red-600 transition hover:bg-black/15 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
           >
             Create a free account
           </button>
@@ -325,12 +327,12 @@ export function AccountSection({
     return (
       <section
         ref={sectionRef}
-        className="relative flex min-h-screen flex-col overflow-hidden bg-white px-5 pb-10 pt-14 dark:bg-transparent"
+        className="relative flex min-h-[calc(100dvh-1.5rem)] flex-col overflow-hidden bg-transparent px-1 pb-6 pt-10"
       >
         <button
           type="button"
           onClick={() => setMode(null)}
-          className="absolute left-5 top-14 text-gray-600 dark:text-white/82"
+          className="absolute left-1 top-10 text-gray-600 dark:text-white/82"
           aria-label="Go back"
         >
           <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2">
@@ -344,7 +346,7 @@ export function AccountSection({
               ? "Create your Free Account"
               : "Create your V.I.Bee Membership"}
           </h2>
-          <p className="mt-2 text-center text-[15px] text-gray-500 dark:text-white/60">
+          <p className="mt-2 text-center text-[16px] text-gray-700 dark:text-white/60">
             Takes just 30 seconds
           </p>
 
@@ -360,7 +362,7 @@ export function AccountSection({
             }
             placeholder="First Name"
             style={{ fontSize: "16px" }}
-            className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3.5 text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
+            className="w-full rounded-2xl border border-gray-300 bg-transparent px-4 py-3.5 text-gray-900 placeholder:text-gray-500 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
           />
           <input
             type="text"
@@ -370,7 +372,7 @@ export function AccountSection({
             }
             placeholder="Last Name"
             style={{ fontSize: "16px" }}
-            className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3.5 text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
+            className="w-full rounded-2xl border border-gray-300 bg-transparent px-4 py-3.5 text-gray-900 placeholder:text-gray-500 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
           />
           <input
             type="email"
@@ -380,7 +382,7 @@ export function AccountSection({
             }
             placeholder="Email"
             style={{ fontSize: "16px" }}
-            className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3.5 text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
+            className="w-full rounded-2xl border border-gray-300 bg-transparent px-4 py-3.5 text-gray-900 placeholder:text-gray-500 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
           />
           <input
             type="tel"
@@ -390,21 +392,21 @@ export function AccountSection({
             }
             placeholder="Phone (optional)"
             style={{ fontSize: "16px" }}
-            className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3.5 text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
+            className="w-full rounded-2xl border border-gray-300 bg-transparent px-4 py-3.5 text-gray-900 placeholder:text-gray-500 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
           />
 
-          <p className="pt-1 text-center text-[12px] text-gray-500 dark:text-white/55">
+          <p className="pt-1 text-[13px] text-gray-700 dark:text-white/55">
             For updates and confirmations
           </p>
 
-          <label className="flex cursor-pointer items-center justify-center gap-2 pt-1 text-[13px] leading-relaxed text-gray-500 dark:text-white/60">
+          <label className="flex cursor-pointer items-center gap-2 pt-1 text-[14px] leading-relaxed text-gray-800 dark:text-white/60">
             <input
               type="checkbox"
               checked={form.consent}
               onChange={(e) =>
                 setForm((c) => ({ ...c, consent: e.target.checked }))
               }
-              className="h-4 w-4 flex-none rounded border-gray-300 accent-red-600"
+              className="h-5 w-5 flex-none appearance-none rounded-full border-2 border-red-500 bg-white checked:border-red-600 checked:bg-red-600 checked:bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><path fill=%22none%22 stroke=%22white%22 stroke-width=%222.4%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22 d=%22m3.25 8.5 2.5 2.5 6-6%22/></svg>')] checked:bg-center checked:bg-no-repeat focus:outline-none focus:ring-2 focus:ring-red-500/30"
             />
             <span>
               I agree to the <span className="text-red-600 underline">Terms</span> and{" "}
@@ -413,10 +415,11 @@ export function AccountSection({
           </label>
 
           {mode === "vibee" && (
-            <div className="flex items-center gap-3 py-1 text-center text-[13px] text-gray-500 dark:text-white/60">
-              <span className="h-px flex-1 bg-gray-200 dark:bg-white/15" />
-              <span>V.I.Bee Member - {config.vibeeMonthlyPrice}</span>
-              <span className="h-px flex-1 bg-gray-200 dark:bg-white/15" />
+            <div className="pt-2">
+              <div className="h-px w-full bg-gray-400/60 dark:bg-white/15" />
+              <p className="pt-3 text-center text-[15px] font-semibold text-red-600 dark:text-white/75">
+                V.I. Bee Member - {config.vibeeMonthlyPrice}
+              </p>
             </div>
           )}
 
@@ -425,15 +428,17 @@ export function AccountSection({
               ? "Please wait..."
               : mode === "free"
                 ? "Ask Genie"
-                : "Continue to Secure Checkout"}
+                : "Continue to secure checkout"}
           </ActionButton>
 
           {mode === "vibee" && (
             <>
-              <p className="text-center text-[12px] leading-relaxed text-gray-500 dark:text-white/55">
-                Powered by Stripe - Cancel anytime
+              <p className="text-center text-[13px] leading-relaxed text-red-600 dark:text-white/55">
+                Powered by{" "}
+                <span className="text-gray-800 dark:text-white/70">Stripe</span>{" "}
+                - Cancel anytime
               </p>
-              <p className="text-center text-[12px] leading-relaxed text-gray-400 dark:text-white/45">
+              <p className="text-center text-[12px] leading-relaxed text-gray-600 dark:text-white/45">
                 Renews monthly until cancelled.{" "}
                 <span className="underline">Terms</span>{" "}
                 <span className="underline">Privacy</span>
@@ -442,11 +447,11 @@ export function AccountSection({
           )}
 
           {mode === "free" && (
-            <p className="text-center text-[12px] text-gray-400 dark:text-white/45">
+            <p className="text-center text-[13px] text-gray-700 dark:text-white/45">
               By signing up, you agree to our{" "}
               <span className="text-red-600 underline dark:text-[#ff7b7b]">Terms</span>{" "}
               and{" "}
-              <span className="text-red-600 underline dark:text-[#ff7b7b]">Privacy Policy</span>.
+              <span className="text-red-600 underline dark:text-[#ff7b7b]">Privacy Policy.</span>
             </p>
           )}
 
@@ -458,12 +463,14 @@ export function AccountSection({
           </form>
         </div>
 
-        <div className="mt-auto pt-8 text-center">
-          <p className="text-[13px] text-gray-500 dark:text-white/55">Already have an account?</p>
+        <div className="mt-auto pt-8">
+          <p className="text-center text-[14px] text-gray-700 dark:text-white/55">
+            Already have an account?
+          </p>
           <button
             type="button"
             onClick={openLogin}
-            className="mt-1 text-[15px] font-semibold text-gray-900 dark:text-white"
+            className="mt-3 w-full rounded-2xl bg-black/10 px-4 py-3.5 text-[18px] font-semibold text-red-600 transition hover:bg-black/15 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
           >
             Login
           </button>
@@ -475,12 +482,12 @@ export function AccountSection({
   return (
     <section
       ref={sectionRef}
-      className="relative min-h-screen overflow-hidden bg-white px-4 pb-32 pt-8 dark:bg-transparent sm:px-5"
+      className="relative min-h-[calc(100dvh-1.5rem)] overflow-hidden bg-transparent px-1 pb-6 pt-4 sm:px-2"
     >
       {!account ? (
         <>
           <div className="relative mx-auto w-full max-w-[23rem]">
-            <div className="rounded-[22px] border border-red-100 bg-red-50/40 px-3 py-2.5 dark:border-white/20 dark:bg-black/25 dark:backdrop-blur-sm">
+            <div className="rounded-[22px] border border-red-400 bg-transparent px-3 py-2.5 dark:border-white/20 dark:bg-black/25 dark:backdrop-blur-sm">
               <div className="flex items-center gap-3">
                 <div className="relative h-[82px] w-[82px] flex-none overflow-hidden rounded-full border-2 border-red-400 shadow-[0_0_16px_rgba(220,38,38,0.35)]">
                   <Image
@@ -518,7 +525,7 @@ export function AccountSection({
               <button
                 type="button"
                 onClick={openFreeSignup}
-                className="w-full rounded-[22px] border border-gray-100 bg-white px-4 py-3.5 text-left shadow-[0_2px_16px_rgba(0,0,0,0.05)] transition hover:shadow-md dark:border-white/20 dark:bg-black/25 dark:shadow-none dark:backdrop-blur-sm dark:hover:bg-black/35"
+                className="w-full rounded-[22px] border border-red-400 bg-transparent px-4 py-3.5 text-left transition hover:bg-white/30 dark:border-white/20 dark:bg-black/25 dark:backdrop-blur-sm dark:hover:bg-black/35"
               >
                 <div className="flex items-start gap-3">
                   <div className="mt-0.5 flex h-14 w-14 flex-none items-center justify-center rounded-xl border-2 border-red-500 dark:border-0 dark:bg-transparent dark:p-0">
@@ -549,7 +556,7 @@ export function AccountSection({
               <button
                 type="button"
                 onClick={openVibeeSignup}
-                className="w-full rounded-[22px] border border-gray-100 bg-white px-4 py-3.5 text-left shadow-[0_2px_16px_rgba(0,0,0,0.05)] transition hover:shadow-md dark:border-white/20 dark:bg-black/25 dark:shadow-none dark:backdrop-blur-sm dark:hover:bg-black/35"
+                className="w-full rounded-[22px] border border-red-400 bg-transparent px-4 py-3.5 text-left transition hover:bg-white/30 dark:border-white/20 dark:bg-black/25 dark:backdrop-blur-sm dark:hover:bg-black/35"
               >
                 <div className="flex items-start gap-3">
                   <div className="mt-0.5 flex h-14 w-14 flex-none items-center justify-center rounded-xl border-2 border-red-500 dark:border-0 dark:bg-transparent dark:p-0">
@@ -580,7 +587,7 @@ export function AccountSection({
                 </div>
               </button>
 
-              <p className="pt-1 text-center text-[15px] text-red-600 font-medium dark:text-[#ff7b7b]">
+              <p className="pt-1 text-center text-[17px] font-semibold text-gray-900 dark:text-[#ff7b7b]">
                 Are you a venue or event host?
               </p>
 
@@ -619,16 +626,17 @@ export function AccountSection({
                 </svg>
               </button>
 
-              <p className="pt-1 text-center text-[12px] leading-relaxed text-gray-400 dark:text-white/40">
+              <p className="pt-1 text-center text-[13px] leading-relaxed text-gray-600 dark:text-white/40">
                 By signing up, you agree to our{" "}
-                <span className="underline underline-offset-2">Privacy Policy</span>{" "}
-                and <span className="underline underline-offset-2">Terms</span>
+                <span className="text-red-600 underline underline-offset-2 dark:text-[#ff7b7b]">Privacy Policy</span>{" "}
+                and{" "}
+                <span className="text-red-600 underline underline-offset-2 dark:text-[#ff7b7b]">Terms</span>
                 <br />
                 Already signed up?{" "}
                 <button
                   type="button"
                   onClick={openLogin}
-                  className="text-red-600 underline underline-offset-2"
+                  className="text-red-600 underline underline-offset-2 dark:text-[#ff7b7b]"
                 >
                   Login
                 </button>

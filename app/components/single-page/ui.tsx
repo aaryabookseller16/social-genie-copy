@@ -25,6 +25,35 @@ export type FlowAnchor =
   | "contact"
   | "membership";
 
+export function BackIcon({
+  size = 20,
+  className = "h-5 w-5 object-contain",
+}: {
+  size?: number;
+  className?: string;
+}) {
+  return (
+    <>
+      <Image
+        src="/icons/Back-red.png"
+        alt=""
+        aria-hidden="true"
+        width={size}
+        height={size}
+        className={`${className} dark:hidden`}
+      />
+      <Image
+        src="/icons/Back.png"
+        alt=""
+        aria-hidden="true"
+        width={size}
+        height={size}
+        className={`hidden ${className} dark:block`}
+      />
+    </>
+  );
+}
+
 export function SectionShell({
   sectionRef,
   title,
