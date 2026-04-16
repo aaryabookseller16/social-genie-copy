@@ -135,18 +135,19 @@ export function GenieBubble({
   compact?: boolean;
 }) {
   return (
-    <div className="flex items-start gap-3 rounded-[22px] border border-red-200 bg-[rgba(255,250,250,0.92)] p-3 dark:border-white/10 dark:bg-black/16">
-      <div className="relative h-14 w-14 flex-none overflow-hidden rounded-[18px] border border-red-100 bg-white dark:border-white/10 dark:bg-[#230404]">
+    <div className="relative flex items-center gap-3 rounded-[22px] border border-red-200 bg-[rgba(255,250,250,0.92)] py-3 pl-16 pr-4 dark:border-white/10 dark:bg-black/16">
+      <div className="absolute -left-2 -bottom-1 -top-2 w-19">
         <Image
-          src="/genie-profile-pic.png"
+          src="/icons/top_bar_genie.png"
           alt="Genie"
-          fill
-          className="object-cover"
+          width={80}
+          height={100}
+          className="h-full w-full object-contain object-bottom drop-shadow-[0_4px_12px_rgba(0,0,0,0.3)]"
         />
       </div>
       <p
-        className={`leading-6 text-gray-800 dark:text-white/82 ${
-          compact ? "text-[0.98rem]" : "text-base"
+        className={`leading-5 text-gray-800 dark:text-white/82 ${
+          compact ? "text-[0.9rem]" : "text-[0.95rem]"
         }`}
       >
         {copy}
@@ -336,34 +337,30 @@ export function ResultCard({
       onClick={onOpen}
       className="w-full overflow-hidden rounded-[20px] border border-red-200 bg-white text-left shadow-[0_8px_24px_rgba(0,0,0,0.06)] transition hover:shadow-[0_10px_26px_rgba(0,0,0,0.1)] dark:border-[#6a1d1d] dark:bg-black/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.4)] dark:hover:border-[#ff7b7b]"
     >
-      <div className="flex gap-3 p-3">
-        <div className="relative h-[7.5rem] w-[7.5rem] flex-none overflow-hidden rounded-[16px]">
+      <div className="flex gap-3 p-2.5">
+        <div className="relative h-[5.5rem] w-[5.5rem] flex-none overflow-hidden rounded-[14px]">
           <Image
             src={venue.image || "/sample-venue-1.jpeg"}
             alt={venue.venue_name || "Venue"}
             fill
             className="object-cover"
-            sizes="120px"
+            sizes="88px"
           />
         </div>
 
         <div className="min-w-0 flex-1 py-0.5">
-          <p className="truncate text-[1.1rem] font-semibold leading-tight text-gray-900 dark:text-white">
+          <p className="truncate text-[1rem] font-semibold leading-tight text-gray-900 dark:text-white">
             {venue.venue_name}
           </p>
-          <p className="mt-1 truncate text-[0.78rem] text-gray-500 dark:text-white/60">
+          <p className="mt-0.5 truncate text-[0.75rem] text-gray-500 dark:text-white/60">
             {getVenueHeadlineShort(venue)} - {getVenueDistance(venue, index)}
           </p>
 
-          <p className="mt-1.5 truncate text-[0.82rem] font-medium text-red-500 dark:text-[#ff9d7d]">
+          <p className="mt-1 truncate text-[0.8rem] font-medium text-red-500 dark:text-[#ff9d7d]">
             {getVenueTagline(venue)}
           </p>
 
-          <p className="mt-1 line-clamp-2 text-[0.8rem] leading-5 text-gray-600 dark:text-white/72">
-            {getVenueDescription(venue)}
-          </p>
-
-          <p className="mt-2 flex items-center gap-1.5 text-[0.8rem] font-medium text-amber-500 dark:text-amber-300">
+          <p className="mt-1 flex items-center gap-1.5 text-[0.78rem] font-medium text-amber-500 dark:text-amber-300">
             <span className={`inline-block h-2 w-2 rounded-full ${statusColor}`} />
             {statusText}
           </p>

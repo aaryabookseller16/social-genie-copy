@@ -165,11 +165,11 @@ function buildStaticMapUrl(venue: GenieVenue) {
 }
 
 const socialTagOptions = {
+  music_tags: ["R&B / Soul", "Hip-Hop / Rap", "AfroBeats", "House", "Top 40"],
+  bevy_bites_tags: ["Soul Food", "Seafood", "Signature Cocktails", "Tacos", "Wine"],
   experiences_tags: ["Brunch", "Happy Hour", "Day Party", "Dinner", "Late Night"],
   atmosphere_tags: ["Rooftop", "Patio", "Live DJ", "Lounge", "Sports Bar"],
-  bevy_bites_tags: ["Soul Food", "Seafood", "Signature Cocktails", "Tacos", "Wine"],
   community_tags: ["Black-Owned", "LGBTQ+ Friendly", "Free Parking", "Date Night"],
-  music_tags: ["R&B / Soul", "Hip-Hop / Rap", "AfroBeats", "House", "Top 40"],
 } as const;
 
 const socialPreferenceOptions = {
@@ -788,16 +788,15 @@ export function SinglePageGenieApp({
   };
 
   const handleShareVenue = async (venue: GenieVenue) => {
-    const text = `${venue.venue_name} - ${venue.address ?? venue.area_neighborhood ?? "Houston"}`;
-    const url =
-      venue.google_maps_url ||
-      venue.website_url ||
-      `https://genie.socialbevy.com/#venue-${getVenueId(venue)}`;
+    const venueId = getVenueId(venue);
+    const text = `Check out ${venue.venue_name} on Genie by Social Bevy`;
+    const origin = typeof window !== "undefined" ? window.location.origin : "https://genie.socialbevy.com";
+    const url = `${origin}/venue/${venueId}`;
 
     try {
       if (navigator.share) {
         await navigator.share({
-          title: venue.venue_name,
+          title: `${venue.venue_name} — Genie by Social Bevy`,
           text,
           url,
         });
@@ -808,7 +807,7 @@ export function SinglePageGenieApp({
       console.error("Share failed", error);
     }
 
-    trackShare(getVenueId(venue));
+    trackShare(venueId);
   };
 
   const handleRedeemOffer = useCallback(
@@ -1361,11 +1360,11 @@ export function SinglePageGenieApp({
       : null;
   const socialProfileDraft: SocialProfile = socialProfile ?? {};
   const socialTagLabels: Record<keyof typeof socialTagOptions, string> = {
+    music_tags: "Music",
+    bevy_bites_tags: "Bevy Bites",
     experiences_tags: "Experiences",
     atmosphere_tags: "Atmosphere",
-    bevy_bites_tags: "Bevy Bites",
     community_tags: "Community",
-    music_tags: "Music",
   };
   const socialPreferenceLabels: Record<
     keyof typeof socialPreferenceOptions,
@@ -1432,7 +1431,26 @@ export function SinglePageGenieApp({
                 },
               },
             ]
-          : []),
+          : selectedVenue.website_url
+            ? [
+                {
+                  id: "website",
+                  label: "Website",
+                  variant: "secondary" as const,
+                  onClick: () => {
+                    trackEvent(analyticsEvents.vendorWebsiteTap, {
+                      venueId: getVenueId(selectedVenue),
+                    });
+                    logVendorInteraction("website_click", Number(selectedVenue.id));
+                    window.open(
+                      selectedVenue.website_url!,
+                      "_blank",
+                      "noopener,noreferrer"
+                    );
+                  },
+                },
+              ]
+            : []),
         {
           id: "share",
           label: "Share",
@@ -1857,22 +1875,22 @@ export function SinglePageGenieApp({
               {response?.normalized_intent || lastQuery || "Your next spot in Houston"}
             </p>
 
-            {/* Girl + Orb */}
-            <div className="relative mt-1 min-h-0 w-full max-w-[20rem] flex-1">
+            {/* Girl + Orb — same size as HomeScreen */}
+            <div className="relative mt-1 min-h-0 w-full flex-1 max-h-[48vh]">
               <Image
                 src="/orb.png"
                 alt=""
                 aria-hidden="true"
-                width={500}
-                height={500}
-                className="pointer-events-none absolute left-[48%] top-1/2 z-0 h-auto w-[88%] max-w-none -translate-x-1/2 -translate-y-1/2 object-contain opacity-95"
+                width={520}
+                height={520}
+                className="pointer-events-none absolute left-[47%] top-1/2 z-0 h-auto w-full max-w-none -translate-x-1/2 -translate-y-1/2 object-contain opacity-95 animate-orbPulse"
               />
               <Image
                 src="/icons/Social-Genie-Home-Screen.png"
                 alt="Genie thinking"
-                width={420}
-                height={680}
-                className="relative z-10 mx-auto h-full w-auto max-w-[55%] object-contain drop-shadow-[0_20px_40px_rgba(0,0,0,0.4)]"
+                width={520}
+                height={820}
+                className="relative z-10 mx-auto h-full w-auto max-w-[60%] object-contain drop-shadow-[0_20px_40px_rgba(0,0,0,0.4)]"
               />
             </div>
 
@@ -1880,11 +1898,6 @@ export function SinglePageGenieApp({
             <p className="mt-1 shrink-0 text-[1.1rem] font-semibold text-gray-900 dark:text-white">
               {isThinking ? "Say less... I got you!" : response?.reply || statusMessage}
             </p>
-
-            {/* Orb mic */}
-            <div className="mt-2 shrink-0">
-              <GenieOrb mode="thinking" size={64} />
-            </div>
 
             {/* Non-structured responses */}
             {nonStructuredResponse ? (
@@ -1925,7 +1938,7 @@ export function SinglePageGenieApp({
         ) : null}
 
         {activeScreen === "decision" && showResultSections ? (
-          <section ref={decisionRef} className="space-y-3 pb-24">
+          <section ref={decisionRef} className="space-y-2 pb-24">
             {response?.show_intake_prompt ? (
               <div className="rounded-[22px] border border-red-200 bg-red-50/60 p-4 dark:border-white/12 dark:bg-black/20">
                 <p className="text-sm leading-6 text-gray-700 dark:text-white/82">
@@ -1941,9 +1954,8 @@ export function SinglePageGenieApp({
               </div>
             ) : null}
             <GenieBubble copy="I found a few spots that match your vibe." compact />
-            {/* Decisive cards. Force the section to fill the viewport so the */}
-            {/* "See More Nearby" prompt always lands below the initial fold. */}
-            <div className="flex min-h-[calc(100dvh-12rem)] flex-col gap-3">
+            {/* Decisive cards */}
+            <div className="flex flex-col gap-2">
               {response?.decisive.map((venue, index) => (
                 <ResultCard
                   key={venue.id}
@@ -2080,7 +2092,7 @@ export function SinglePageGenieApp({
                 <button
                   type="button"
                   onClick={handleTopBack}
-                  className="flex h-10 w-10 items-center justify-center text-white"
+                  className="flex h-10 w-10 items-center justify-center rounded-full border border-white/40 bg-black/40 text-white backdrop-blur-sm"
                   aria-label="Go back"
                 >
                   <Image
@@ -2089,7 +2101,7 @@ export function SinglePageGenieApp({
                     aria-hidden="true"
                     width={24}
                     height={24}
-                    className="h-6 w-6 object-contain invert"
+                    className="h-6 w-6 object-contain"
                   />
                 </button>
                 <div className="flex items-center gap-2">
@@ -2152,41 +2164,61 @@ export function SinglePageGenieApp({
 
             <div className="space-y-4 px-5 pb-5 pt-4">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.82rem] text-gray-700 dark:text-white/80">
-                {selectedVenue.google_rating ? (
-                  <span className="flex items-center gap-1">
-                    {[1, 2, 3, 4, 5].map((n) => (
-                      <Image
-                        key={n}
-                        src="/icons/star-shine_svg.png"
-                        alt=""
-                        aria-hidden="true"
-                        width={16}
-                        height={16}
-                        className={`h-4 w-4 object-contain ${n <= Math.round(selectedVenue.google_rating ?? 0) ? "opacity-100" : "opacity-30"}`}
-                      />
-                    ))}
+                <span className="flex items-center gap-1">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <span
+                      key={n}
+                      className={`text-[1.1rem] ${n <= Math.round(selectedVenue.google_rating ?? 0) ? "text-yellow-400" : "text-gray-300 dark:text-white/25"}`}
+                    >
+                      ★
+                    </span>
+                  ))}
+                  {selectedVenue.google_rating ? (
                     <span className="ml-1 font-medium">
                       {selectedVenue.google_rating.toFixed(1)}
                     </span>
-                    {selectedVenue.google_user_ratings_total ? (
-                      <span className="text-gray-500 dark:text-white/55">
-                        ({selectedVenue.google_user_ratings_total} Reviews)
-                      </span>
-                    ) : null}
-                  </span>
-                ) : null}
+                  ) : null}
+                  {selectedVenue.google_user_ratings_total ? (
+                    <span className="text-gray-500 dark:text-white/55">
+                      ({selectedVenue.google_user_ratings_total} Reviews)
+                    </span>
+                  ) : null}
+                </span>
                 <span className="text-gray-500 dark:text-white/55">
                   - {getVenueHeadlineShort(selectedVenue)} - {getVenueDistance(selectedVenue, 1)}
                 </span>
               </div>
 
+              {/* Genie's Review Intelligence */}
+              {selectedVenue.vibe_notes ? (
+                <div className="flex items-start gap-3 rounded-[18px] border border-red-200/40 bg-white/5 px-4 py-3 dark:border-white/10 dark:bg-black/25">
+                  <div className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center overflow-hidden rounded-full">
+                    <Image
+                      src="/icons/Social-Genie-Home-Screen.png"
+                      alt="Genie"
+                      width={32}
+                      height={32}
+                      className="h-8 w-8 object-cover"
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-red-500 dark:text-[#ff9d7d]">
+                      Genie&apos;s Take
+                    </p>
+                    <p className="mt-1 text-[0.85rem] leading-5 text-gray-700 dark:text-white/80">
+                      {selectedVenue.vibe_notes}
+                    </p>
+                  </div>
+                </div>
+              ) : null}
+
               <div className="flex flex-wrap items-center gap-2 text-[0.82rem]">
                 {getOpenUntil(selectedVenue) ? (
-                  <span className="text-gray-800 dark:text-white/85">
+                  <span className="rounded-full border border-gray-300 bg-white px-3 py-1 text-[0.72rem] font-semibold text-gray-900 dark:border-white/30 dark:bg-white/10 dark:text-white/85">
                     {getOpenUntil(selectedVenue)}
                   </span>
                 ) : selectedVenue.is_open_now ? (
-                  <span className="text-gray-800 dark:text-white/85">Open now</span>
+                  <span className="rounded-full border border-gray-300 bg-white px-3 py-1 text-[0.72rem] font-semibold text-gray-900 dark:border-white/30 dark:bg-white/10 dark:text-white/85">Open now</span>
                 ) : null}
                 {selectedVenue.is_official_vendor ? (
                   <span className="rounded-full border border-gray-300 bg-transparent px-3 py-0.5 text-[0.72rem] text-gray-700 dark:border-white/30 dark:text-white/80">
@@ -2201,11 +2233,14 @@ export function SinglePageGenieApp({
                     action.id.includes("call") ||
                     action.label.toLowerCase().includes("call");
                   const isReserve = action.label.toLowerCase().includes("reserv");
+                  const isWebsite = action.id === "website";
                   const iconSrc = isCall
                     ? "/icons/phoneIcon.png"
                     : isReserve
                       ? "/icons/calendarIcon.png"
-                      : "/icons/shareIcon.png";
+                      : isWebsite
+                        ? "/icons/shareIcon.png"
+                        : "/icons/shareIcon.png";
                   return (
                     <button
                       key={action.id}
@@ -3202,11 +3237,11 @@ export function SinglePageGenieApp({
                     {(() => {
                       const categories = Object.keys(socialTagOptions) as Array<keyof typeof socialTagOptions>;
                       const categoryImage: Record<keyof typeof socialTagOptions, string> = {
+                        music_tags: "",
+                        bevy_bites_tags: "/sample-venue-1.jpeg",
                         experiences_tags: "/sample-venue-1.jpeg",
                         atmosphere_tags: "/sample-venue-2.jpeg",
-                        bevy_bites_tags: "/sample-venue-1.jpeg",
                         community_tags: "/sample-venue-2.jpeg",
-                        music_tags: "",
                       };
                       const totalSelected = categories.reduce((sum, key) => {
                         const value = socialProfileDraft[key];
@@ -3427,9 +3462,14 @@ export function SinglePageGenieApp({
                   <div className="-mx-4 overflow-x-auto">
                     <div className="flex gap-3 px-4 pb-1">
                       {offers.slice(0, 6).map((offer) => (
-                        <div
+                        <button
                           key={offer.id}
-                          className="w-[9rem] flex-none rounded-[18px] border border-red-200/40 bg-[rgba(80,5,5,0.70)] p-3 dark:border-white/10 dark:bg-black/35"
+                          type="button"
+                          onClick={() => {
+                            setSelectedOfferId(offer.id);
+                            navigateTo("offer-detail");
+                          }}
+                          className="w-[9rem] flex-none rounded-[18px] border border-red-200/40 bg-[rgba(80,5,5,0.70)] p-3 text-left dark:border-white/10 dark:bg-black/35"
                         >
                           <p className="truncate text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-white/55">
                             {offer.offer_type?.replaceAll("_", " ") || "Offer"}
@@ -3442,14 +3482,12 @@ export function SinglePageGenieApp({
                               {offer.description}
                             </p>
                           ) : null}
-                          <button
-                            type="button"
-                            onClick={() => navigateTo("offers")}
-                            className="mt-2.5 w-full rounded-[10px] bg-[#e8900a] px-2 py-1.5 text-[0.65rem] font-bold text-white"
+                          <span
+                            className="mt-2.5 block w-full rounded-[10px] bg-[#e8900a] px-2 py-1.5 text-center text-[0.65rem] font-bold text-white"
                           >
-                            V.I.Bee Only
-                          </button>
-                        </div>
+                            View Offer
+                          </span>
+                        </button>
                       ))}
                     </div>
                   </div>

@@ -60,7 +60,7 @@ export function HomeScreen({
           Ask me anything, food, drinks or something to do.
         </p>
 
-        <div className="relative mt-1 min-h-0 w-full flex-1 max-h-[48vh]">
+        <div className="relative mt-1 min-h-0 w-full flex-1 max-h-[55vh]">
           <Image
             src="/orb.png"
             alt=""
@@ -68,7 +68,7 @@ export function HomeScreen({
             width={520}
             height={520}
             priority
-            className="pointer-events-none absolute left-1/2 top-1/2 z-0 h-auto w-full max-w-none -translate-x-1/2 -translate-y-1/2 object-contain opacity-95"
+            className="pointer-events-none absolute left-[47%] top-1/2 z-0 h-auto w-full max-w-none -translate-x-1/2 -translate-y-1/2 object-contain opacity-95"
           />
           <Image
             src="/icons/Social-Genie-Home-Screen.png"
@@ -80,14 +80,14 @@ export function HomeScreen({
           />
         </div>
 
-        <div className="mt-2 w-full shrink-0">
+        <div className="relative z-20 -mt-16 w-full shrink-0">
           <QuickChips
             chips={config.quickChips}
             onSelect={(chip) => onChipSelect(chip.prompt)}
           />
         </div>
 
-        <div className="mt-2 shrink-0">
+        <div className="relative z-20 mt-2 shrink-0">
           <GenieOrb
             mode={isSubmitting ? "thinking" : "idle"}
             onClick={onOrbTap}
@@ -97,7 +97,7 @@ export function HomeScreen({
         </div>
 
         <form
-          className="mt-2 w-full shrink-0 pb-2"
+          className="relative z-20 mt-2 w-full shrink-0 pb-2"
           onSubmit={(event) => {
             event.preventDefault();
             if (pendingTranscript) {

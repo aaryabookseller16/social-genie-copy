@@ -35,6 +35,7 @@ export const analyticsEvents = {
   vendorReservationTap: "vendor_reservation_tap",
   vendorMapTap: "vendor_map_tap",
   vendorShareTap: "vendor_share_tap",
+  vendorWebsiteTap: "vendor_website_tap",
   signupPromptTriggered: "signup_prompt_triggered",
   venueSaved: "venue_saved",
   venueShared: "venue_shared",
