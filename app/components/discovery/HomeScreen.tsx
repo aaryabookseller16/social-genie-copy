@@ -68,7 +68,7 @@ export function HomeScreen({
             width={520}
             height={520}
             priority
-            className="pointer-events-none absolute left-[47%] top-1/2 z-0 h-auto w-full max-w-none -translate-x-1/2 -translate-y-1/2 object-contain opacity-95"
+            className="pointer-events-none absolute left-[44%] top-1/2 z-0 h-auto w-full max-w-none -translate-x-1/2 -translate-y-1/2 object-contain opacity-95"
           />
           <Image
             src="/icons/Social-Genie-Home-Screen.png"
@@ -92,7 +92,7 @@ export function HomeScreen({
             mode={isSubmitting ? "thinking" : "idle"}
             onClick={onOrbTap}
             disabled={isSubmitting}
-            size={60}
+            size={84}
           />
         </div>
 
@@ -111,7 +111,7 @@ export function HomeScreen({
             Ask Genie
           </label>
           <div className="group relative">
-            <span className="pointer-events-none absolute inset-0 rounded-full border border-[#E70703]/50 bg-transparent transition group-focus-within:border-[#E70703] dark:border-white/40 dark:bg-transparent dark:group-focus-within:border-white/70" />
+            <span className="pointer-events-none absolute inset-0 rounded-full border border-[#E7070380] bg-transparent transition group-focus-within:border-[#E70703] dark:border-[#E7070380] dark:bg-transparent dark:group-focus-within:border-[#E70703]" />
             <span className="pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2">
               <Image
                 src="/search_red.png"

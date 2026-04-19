@@ -76,7 +76,6 @@ import {
   trackSocialSignal,
   toConsumerAccount,
   updateSocialProfile,
-  updateUserProfile,
   unsaveVenueForUser,
 } from "@/app/lib/publicApiClient";
 import { getRuntimeConfig } from "@/app/lib/runtimeConfig";
@@ -271,6 +270,7 @@ export function SinglePageGenieApp({
     redemption_token: string;
   } | null>(null);
   const [redeemingOfferId, setRedeemingOfferId] = useState<number | null>(null);
+  const [redemptionOutcome, setRedemptionOutcome] = useState<"success" | "expired" | "already_redeemed" | null>(null);
   const [offersFilter, setOffersFilter] = useState<
     "all" | "happy_hour" | "perk" | "brunch" | "late_night"
   >("all");
@@ -551,7 +551,12 @@ export function SinglePageGenieApp({
     }).catch(() => {});
 
     try {
-      const nextResponse = await callGenie(trimmed);
+      const nextResponse = await callGenie(trimmed, {
+        coords: userCoords
+          ? { lat: userCoords.latitude, lng: userCoords.longitude }
+          : null,
+        radiusMeters: 2500,
+      });
       setResponse(nextResponse);
       trackEvent(analyticsEvents.normalizedIntentReceived, {
         normalizedIntent: nextResponse.normalized_intent,
@@ -699,10 +704,18 @@ export function SinglePageGenieApp({
     });
     logVendorInteraction("profile_view", Number(venue.id));
     navigateTo("detail");
-    if (!account) {
-      window.setTimeout(() => maybeTriggerSignup("venue_tap"), 260);
-    }
   };
+
+  const gateDetailTap = useCallback(
+    (handler: () => void) => () => {
+      if (!account) {
+        maybeTriggerSignup("venue_tap");
+        return;
+      }
+      handler();
+    },
+    [account, maybeTriggerSignup]
+  );
 
   const handleSaveVenue = async (venue: GenieVenue) => {
     let token = readAuthToken();
@@ -845,6 +858,7 @@ export function SinglePageGenieApp({
           redeemed_at: redemption.redeemed_at,
           redemption_token: redemption.redemption_token,
         });
+        setRedemptionOutcome(null);
 
         void trackSocialSignal({
           signal_type: "offer_redeem",
@@ -864,7 +878,36 @@ export function SinglePageGenieApp({
           error instanceof Error
             ? error.message
             : "Could not redeem this offer right now.";
-        setStatusMessage(message);
+
+        const lowerMsg = message.toLowerCase();
+        if (lowerMsg.includes("already redeemed") || lowerMsg.includes("already been redeemed")) {
+          // Populate a minimal activeRedemption so the screen has context
+          const venueMatch = selectedVenue && Number(selectedVenue.id) === offer.vendor_id ? selectedVenue : null;
+          setActiveRedemption({
+            offer_id: offer.id,
+            offer_title: offer.title,
+            offer_type: offer.offer_type,
+            offer_description: offer.description,
+            offer_terms: offer.redeem_instructions,
+            discount_value: offer.discount_value,
+            vendor_id: offer.vendor_id,
+            venue_name: venueMatch?.venue_name ?? offer.venue_name,
+            venue_image: venueMatch?.image ?? offer.venue_image ?? undefined,
+            venue_rating: venueMatch?.google_rating ?? offer.venue_rating ?? undefined,
+            venue_review_count: venueMatch?.google_user_ratings_total ?? offer.venue_review_count ?? undefined,
+            venue_neighborhood: venueMatch?.area_neighborhood ?? venueMatch?.city ?? offer.venue_neighborhood ?? undefined,
+            verify_url: "",
+            redeemed_at: Date.now(),
+            redemption_token: "",
+          });
+          setRedemptionOutcome("already_redeemed");
+          navigateTo("offer-activated");
+        } else if (lowerMsg.includes("expired")) {
+          setRedemptionOutcome("expired");
+          navigateTo("offer-activated");
+        } else {
+          setStatusMessage(message);
+        }
       } finally {
         setRedeemingOfferId(null);
       }
@@ -1145,9 +1188,9 @@ export function SinglePageGenieApp({
     }
   }, []);
 
-  // Silence unused variable warnings — these are wired into future API calls.
+  // Silence unused variable warning — locationGranted is reserved for future
+  // UI states (e.g. showing a "using your location" indicator).
   void locationGranted;
-  void userCoords;
 
   // Deep-link: `?screen=offers|redemptions|dashboard|saved|vendor|profile|membership`
   useEffect(() => {
@@ -1591,6 +1634,7 @@ export function SinglePageGenieApp({
         goBack("offers");
         break;
       case "offer-activated":
+        setRedemptionOutcome(null);
         goBack("offer-detail");
         break;
       case "redemptions":
@@ -1672,7 +1716,7 @@ export function SinglePageGenieApp({
 
       <div className={`relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col gap-3 ${activeScreen === "home" || activeScreen === "listening" || activeScreen === "thinking" ? "min-h-0" : ""}`}>
         {!locationPromptDismissed && activeScreen === "home" ? (
-          <div className="flex items-start gap-3 rounded-[18px] border border-red-200 bg-white px-3 py-2.5 shadow-sm dark:border-white/15 dark:bg-black/30">
+          <div className="flex items-start gap-3 rounded-[18px] border border-[#E7070380] bg-transparent px-3 py-2.5 shadow-sm dark:border-white/15 dark:bg-black/30">
             <span className="mt-0.5 text-red-500 dark:text-[#ff9d7d]" aria-hidden="true">
               <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 1 1 18 0z" />
@@ -1990,7 +2034,7 @@ export function SinglePageGenieApp({
                   key={venue.id}
                   type="button"
                   onClick={() => selectVenue(venue, index, "more")}
-                  className="overflow-hidden rounded-[18px] border border-red-200 bg-white text-left shadow-[0_8px_24px_rgba(0,0,0,0.06)] dark:border-[#6a1d1d] dark:bg-black/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
+                  className="overflow-hidden rounded-[18px] border border-[#E7070380] bg-transparent text-left shadow-[0_8px_24px_rgba(0,0,0,0.06)] dark:border-[#6a1d1d] dark:bg-black/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
                 >
                   <div className="relative h-36 w-full">
                     <Image
@@ -2035,7 +2079,7 @@ export function SinglePageGenieApp({
                         key={venue.id}
                         type="button"
                         onClick={() => selectVenue(venue, index + 2, "more")}
-                        className="w-[9.5rem] flex-none overflow-hidden rounded-[18px] border border-red-200 bg-white text-left shadow-[0_8px_20px_rgba(0,0,0,0.05)] dark:border-[#6a1d1d] dark:bg-black/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
+                        className="w-[9.5rem] flex-none overflow-hidden rounded-[18px] border border-[#E7070380] bg-transparent text-left shadow-[0_8px_20px_rgba(0,0,0,0.05)] dark:border-[#6a1d1d] dark:bg-black/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
                       >
                         <div className="relative h-24 w-full">
                           <Image
@@ -2133,7 +2177,7 @@ export function SinglePageGenieApp({
                   <span className="rounded-full bg-red-600 px-3 py-1 text-[0.72rem] font-semibold text-white dark:bg-white dark:text-gray-900">
                     {getVenueStatus(selectedVenue, 0)}
                   </span>
-                  <span className="rounded-full border border-red-300 bg-transparent px-3 py-1 text-[0.72rem] font-medium text-red-500 dark:border-transparent dark:text-white/85">
+                  <span className="rounded-full border border-red-300 bg-transparent px-3 py-1 text-[0.72rem] font-medium text-red-500 dark:border-[#E7070380] dark:text-white/85">
                     {[
                       selectedVenue.energy_level,
                       selectedVenue.price_band === "$$" ? "Mid-Range" : selectedVenue.price_band,
@@ -2177,7 +2221,7 @@ export function SinglePageGenieApp({
 
               {/* Genie's Review Intelligence */}
               {selectedVenue.vibe_notes ? (
-                <div className="flex items-start gap-3 rounded-[18px] border border-red-200/40 bg-white/5 px-4 py-3 dark:border-white/10 dark:bg-black/25">
+                <div className="flex items-start gap-3 rounded-[18px] border border-[#E7070380] bg-transparent px-4 py-3 dark:border-[#E7070380] dark:bg-black/25">
                   <div className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center overflow-hidden rounded-full">
                     <Image
                       src="/icons/Social-Genie-Home-Screen.png"
@@ -2200,14 +2244,14 @@ export function SinglePageGenieApp({
 
               <div className="flex flex-wrap items-center gap-2 text-[0.82rem]">
                 {getOpenUntil(selectedVenue) ? (
-                  <span className="rounded-full border border-red-300 bg-transparent px-3 py-1 text-[0.72rem] font-semibold text-red-600 dark:border-white/30 dark:bg-white/10 dark:text-white/85">
+                  <span className="rounded-full border border-[#E7070380] bg-transparent px-3 py-1 text-[0.72rem] font-semibold text-red-600 dark:border-[#E7070380] dark:bg-white/10 dark:text-white/85">
                     {getOpenUntil(selectedVenue)}
                   </span>
                 ) : selectedVenue.is_open_now ? (
-                  <span className="rounded-full border border-red-300 bg-transparent px-3 py-1 text-[0.72rem] font-semibold text-red-600 dark:border-white/30 dark:bg-white/10 dark:text-white/85">Open now</span>
+                  <span className="rounded-full border border-[#E7070380] bg-transparent px-3 py-1 text-[0.72rem] font-semibold text-red-600 dark:border-[#E7070380] dark:bg-white/10 dark:text-white/85">Open now</span>
                 ) : null}
                 {selectedVenue.is_official_vendor ? (
-                  <span className="rounded-full border border-red-300 bg-transparent px-3 py-0.5 text-[0.72rem] text-red-600 dark:border-white/30 dark:text-white/80">
+                  <span className="rounded-full border border-[#E7070380] bg-transparent px-3 py-0.5 text-[0.72rem] text-red-600 dark:border-[#E7070380] dark:text-white/80">
                     Official Vendor
                   </span>
                 ) : null}
@@ -2234,11 +2278,11 @@ export function SinglePageGenieApp({
                     <button
                       key={action.id}
                       type="button"
-                      onClick={action.onClick}
+                      onClick={gateDetailTap(action.onClick)}
                       className={`flex items-center justify-center gap-1.5 rounded-full border font-medium transition ${
                         isReserve
-                          ? "border-red-500 bg-red-600 px-2 py-3 text-[0.85rem] text-white hover:bg-red-700 dark:border-white/20 dark:bg-black/30 dark:text-white"
-                          : "border-red-400 bg-transparent px-2 py-2.5 text-[0.8rem] text-red-600 hover:bg-red-50 dark:border-white/20 dark:bg-black/30 dark:text-white"
+                          ? "border-red-500 bg-red-600 px-2 py-3 text-[0.85rem] text-white hover:bg-red-700 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
+                          : "border-[#E7070380] bg-transparent px-2 py-2.5 text-[0.8rem] text-red-600 hover:bg-red-50 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
                       }`}
                     >
                       <Image
@@ -2279,7 +2323,7 @@ export function SinglePageGenieApp({
                   offerTypeLabels[venueOffer.offer_type] ||
                   venueOffer.offer_type.replaceAll("_", " ");
                 return (
-                  <div className="rounded-[18px] border border-red-300/60 bg-white p-4 dark:border-[#8c2b2b] dark:bg-black/35">
+                  <div className="rounded-[18px] border border-[#E7070380] bg-transparent p-4 dark:border-[#E7070380] dark:bg-black/35">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
                         <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-white/55">
@@ -2312,7 +2356,7 @@ export function SinglePageGenieApp({
               {mapPreviewUrl && !mapPreviewFailed ? (
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={gateDetailTap(() => {
                     if (nativeMapsUrl) {
                       trackEvent(analyticsEvents.mapOpen, {
                         venueId: getVenueId(selectedVenue),
@@ -2323,8 +2367,8 @@ export function SinglePageGenieApp({
                       logVendorInteraction("map_click", Number(selectedVenue.id));
                       window.open(nativeMapsUrl, "_blank", "noopener,noreferrer");
                     }
-                  }}
-                  className="relative block h-44 w-full overflow-hidden rounded-[18px] border border-gray-200 text-left dark:border-white/10"
+                  })}
+                  className="relative block h-44 w-full overflow-hidden rounded-[18px] border border-[#E7070380] text-left dark:border-[#E7070380]"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
@@ -2345,7 +2389,7 @@ export function SinglePageGenieApp({
                   "Houston, TX";
                 const embedSrc = `https://www.google.com/maps?q=${encodeURIComponent(query)}&output=embed`;
                 return (
-                  <div className="relative h-44 w-full overflow-hidden rounded-[18px] border border-gray-200 dark:border-white/10">
+                  <div className="relative h-44 w-full overflow-hidden rounded-[18px] border border-[#E7070380] dark:border-[#E7070380]">
                     <iframe
                       title={`Map for ${selectedVenue.venue_name}`}
                       src={embedSrc}
@@ -2357,7 +2401,7 @@ export function SinglePageGenieApp({
                     {nativeMapsUrl ? (
                       <button
                         type="button"
-                        onClick={() => {
+                        onClick={gateDetailTap(() => {
                           trackEvent(analyticsEvents.mapOpen, {
                             venueId: getVenueId(selectedVenue),
                           });
@@ -2366,7 +2410,7 @@ export function SinglePageGenieApp({
                           });
                           logVendorInteraction("map_click", Number(selectedVenue.id));
                           window.open(nativeMapsUrl, "_blank", "noopener,noreferrer");
-                        }}
+                        })}
                         className="absolute bottom-2 right-2 rounded-full bg-white/95 px-3 py-1 text-[0.72rem] font-semibold text-gray-800 shadow-sm hover:bg-white dark:bg-black/70 dark:text-white"
                       >
                         Open in Maps
@@ -2384,7 +2428,7 @@ export function SinglePageGenieApp({
                 {buildVenueTags(selectedVenue).map((tag) => (
                   <span
                     key={`${selectedVenue.id}-${tag}`}
-                    className="rounded-full border border-red-400 bg-transparent px-3 py-1 text-[0.78rem] font-medium text-red-600 dark:border-white/30 dark:text-white/85"
+                    className="rounded-full border border-[#E7070380] bg-transparent px-3 py-1 text-[0.78rem] font-medium text-red-600 dark:border-[#E7070380] dark:text-white/85"
                   >
                     {tag}
                   </span>
@@ -2583,11 +2627,11 @@ export function SinglePageGenieApp({
 
               {/* States */}
               {!account ? (
-                <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-5 text-sm text-white/72">
+                <div className="rounded-[20px] border border-[#E7070380] bg-black/20 px-4 py-5 text-sm text-white/72">
                   Sign in to view V.I.Bee offers.
                 </div>
               ) : offersLoading ? (
-                <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-5 text-sm text-white/72">
+                <div className="rounded-[20px] border border-[#E7070380] bg-black/20 px-4 py-5 text-sm text-white/72">
                   Loading offers...
                 </div>
               ) : offersError ? (
@@ -2627,7 +2671,7 @@ export function SinglePageGenieApp({
                           setSelectedOfferId(offer.id);
                           navigateTo("offer-detail");
                         }}
-                        className="flex w-full items-center gap-3 rounded-[20px] border border-red-200/40 bg-white p-3 text-left shadow-sm transition hover:border-red-300 dark:border-white/10 dark:bg-black/30 dark:hover:border-[#ff7b7b]"
+                        className="flex w-full items-center gap-3 rounded-[20px] border border-[#E7070380] bg-transparent p-3 text-left shadow-sm transition hover:border-red-300 dark:border-[#E7070380] dark:bg-black/30 dark:hover:border-[#ff7b7b]"
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
@@ -2653,20 +2697,30 @@ export function SinglePageGenieApp({
                             </p>
                           ) : null}
                         </div>
-                        <Image
-                          src="/icons/right-arrow_svg.png"
-                          alt=""
-                          aria-hidden="true"
-                          width={20}
-                          height={20}
-                          className="h-5 w-5 flex-none object-contain opacity-60 dark:opacity-70"
-                        />
+                        <div className="flex flex-none self-start items-start justify-center pt-1">
+                          <Image
+                            src="/icon-dropdown-white.png"
+                            alt=""
+                            aria-hidden="true"
+                            width={16}
+                            height={16}
+                            className="h-4 w-4 object-contain dark:hidden"
+                          />
+                          <Image
+                            src="/icon-dropdown-dark.png"
+                            alt=""
+                            aria-hidden="true"
+                            width={16}
+                            height={16}
+                            className="hidden h-4 w-4 object-contain dark:block"
+                          />
+                        </div>
                       </button>
                     );
                   })}
                 </div>
               ) : (
-                <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-5 text-sm text-white/72">
+                <div className="rounded-[20px] border border-[#E7070380] bg-black/20 px-4 py-5 text-sm text-white/72">
                   No offers in this category right now. Check back soon.
                 </div>
               )}
@@ -2736,242 +2790,343 @@ export function SinglePageGenieApp({
           const isMember = account?.membership === "vibee";
           const redeeming = redeemingOfferId === offer.id;
 
+          const rating = offer.venue_rating ?? matchedVenue?.google_rating ?? null;
+          const reviewCount = offer.venue_review_count ?? matchedVenue?.google_user_ratings_total ?? null;
+          const neighborhood = offer.venue_neighborhood ?? matchedVenue?.neighborhood_text ?? matchedVenue?.city ?? null;
+          const address = matchedVenue?.address ?? null;
+          const phone = matchedVenue?.phone ?? null;
+          const reservationUrl = matchedVenue?.reservation_url ?? null;
+          const isOpenNow = matchedVenue?.is_open_now ?? null;
+          const isOfficial = matchedVenue?.is_official_vendor ?? false;
+          const venueTags = matchedVenue ? buildVenueTags(matchedVenue).slice(0, 4) : [];
+          const staticMapUrl = matchedVenue ? buildStaticMapUrl(matchedVenue) : null;
+          const mapsUrl = matchedVenue ? buildNativeMapsUrl(matchedVenue) : null;
+
           return (
-            <section className="pb-8">
-              <div className="mb-4 flex items-center">
+            <section className="pb-32">
+              {/* Full-bleed hero */}
+              <div className="relative -mx-4 -mt-3 h-[42vh] min-h-[260px] overflow-hidden">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={venueImage} alt={venueName} className="h-full w-full object-cover" />
+                {/* gradient overlay */}
+                <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.28)_0%,transparent_40%,rgba(0,0,0,0.72)_100%)]" />
+                {/* back button */}
                 <button
                   type="button"
                   onClick={() => goBack("offers")}
                   aria-label="Go back"
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full text-red-600 dark:border dark:border-white/12 dark:bg-black/24 dark:text-white/82"
+                  className="absolute left-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur-sm"
                 >
                   <BackIcon size={20} />
                 </button>
-                <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
-                  Offer Detail
+              </div>
+
+              {/* Venue name + meta */}
+              <div className="mt-4">
+                <h2 className="text-[1.6rem] font-bold leading-tight text-gray-900 dark:text-white">
+                  {venueName}
                 </h2>
-              </div>
 
-              {/* Hero image */}
-              <div className="relative mb-4 h-44 w-full overflow-hidden rounded-[20px]">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={venueImage}
-                  alt={venueName}
-                  className="h-full w-full object-cover"
-                />
-                <div className="absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,transparent,rgba(0,0,0,0.85))] px-4 pb-3 pt-10">
-                  <p className="text-[1.25rem] font-bold text-white">{venueName}</p>
-                  <span className="mt-1 inline-flex rounded-full bg-[#e8900a] px-2.5 py-0.5 text-[0.66rem] font-bold uppercase tracking-wide text-white">
-                    {label}
-                  </span>
+                {/* Vibe tags */}
+                {venueTags.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {venueTags.map((tag, i) => (
+                      <span
+                        key={i}
+                        className={`rounded-full border px-3 py-0.5 text-[0.75rem] font-semibold ${i === 0 ? "border-white/30 bg-white/90 text-gray-900 dark:border-white/20 dark:bg-white/15 dark:text-white" : "border-white/20 bg-black/30 text-white backdrop-blur-sm dark:bg-white/10"}`}
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Rating + neighborhood */}
+                {(rating || neighborhood) && (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[0.82rem] text-gray-700 dark:text-white/75">
+                    {rating ? (
+                      <>
+                        {[1,2,3,4,5].map((n) => (
+                          <span key={n} className={`text-[0.9rem] ${n <= Math.round(rating) ? "text-yellow-400" : "text-gray-300 dark:text-white/25"}`}>★</span>
+                        ))}
+                        <span className="font-semibold text-gray-900 dark:text-white">{rating.toFixed(1)}</span>
+                        {reviewCount ? <span>({reviewCount.toLocaleString()} Reviews)</span> : null}
+                      </>
+                    ) : null}
+                    {neighborhood ? <><span className="text-gray-400 dark:text-white/30">·</span><span>{neighborhood}</span></> : null}
+                  </div>
+                )}
+
+                {/* Open status + Official badge */}
+                {(isOpenNow !== null || isOfficial) && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {isOpenNow !== null && (
+                      <span className="text-[0.82rem] font-medium text-gray-700 dark:text-white/70">
+                        {isOpenNow ? "Open now" : "Closed now"}
+                      </span>
+                    )}
+                    {isOfficial && (
+                      <span className="rounded-full border border-white/20 bg-black/30 px-3 py-0.5 text-[0.72rem] font-semibold text-white backdrop-blur-sm dark:bg-white/10">
+                        Official Vendor
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Action buttons */}
+                <div className="mt-3 flex gap-2">
+                  {phone && (
+                    <a
+                      href={`tel:${phone}`}
+                      className="flex flex-1 items-center justify-center gap-1.5 rounded-full border border-[#E7070380] bg-transparent py-2 text-[0.82rem] font-semibold text-gray-900 dark:border-white/20 dark:text-white"
+                    >
+                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="20" x="5" y="2" rx="2"/><line x1="12" x2="12.01" y1="18" y2="18"/></svg>
+                      Call
+                    </a>
+                  )}
+                  {reservationUrl && (
+                    <a
+                      href={reservationUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex flex-1 items-center justify-center gap-1.5 rounded-full border border-[#E7070380] bg-transparent py-2 text-[0.82rem] font-semibold text-gray-900 dark:border-white/20 dark:text-white"
+                    >
+                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="4" rx="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>
+                      Reservations
+                    </a>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (navigator.share) {
+                        void navigator.share({ title: venueName, text: offer.title, url: window.location.href });
+                      }
+                    }}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-full border border-[#E7070380] bg-transparent py-2 text-[0.82rem] font-semibold text-gray-900 dark:border-white/20 dark:text-white"
+                  >
+                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>
+                    Share
+                  </button>
                 </div>
               </div>
 
-              {/* Offer details */}
-              <div className="space-y-4 rounded-[20px] border border-red-200/40 bg-white p-4 dark:border-white/10 dark:bg-black/30">
-                <div>
-                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-white/55">
-                    Offer
-                  </p>
-                  <p className="mt-1 text-[1.4rem] font-bold text-red-500 dark:text-[#ff9d7d]">
-                    {offer.discount_value || offer.title}
-                  </p>
-                  {offer.title && offer.discount_value ? (
-                    <p className="mt-1 text-[0.95rem] font-medium text-gray-800 dark:text-white/85">
-                      {offer.title}
-                    </p>
-                  ) : null}
+              {/* Offer section */}
+              <div className="mt-5">
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-[1rem] font-semibold text-gray-900 dark:text-white">Offer</p>
+                  <span className="rounded-full bg-red-600 px-3 py-1 text-[0.72rem] font-bold text-white">{label}</span>
                 </div>
-
-                {offer.description ? (
-                  <div>
-                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-white/55">
-                      Description
-                    </p>
-                    <p className="mt-1 text-[0.9rem] leading-6 text-gray-700 dark:text-white/80">
-                      {offer.description}
-                    </p>
-                  </div>
-                ) : null}
-
-                {offer.redeem_instructions ? (
-                  <div>
-                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-white/55">
-                      How to Redeem
-                    </p>
-                    <p className="mt-1 text-[0.9rem] leading-6 text-gray-700 dark:text-white/80">
-                      {offer.redeem_instructions}
-                    </p>
-                  </div>
-                ) : null}
+                {offer.discount_value && (
+                  <p className="text-[1.15rem] font-bold text-[#e8900a]">{offer.discount_value}</p>
+                )}
+                {offer.title && (
+                  <p className="mt-1 text-[0.9rem] leading-6 text-gray-700 dark:text-white/80">{offer.title}</p>
+                )}
+                {offer.description && (
+                  <p className="mt-1 text-[0.9rem] leading-6 text-gray-600 dark:text-white/65">{offer.description}</p>
+                )}
+                {offer.redeem_instructions && (
+                  <p className="mt-2 text-[0.82rem] font-medium text-gray-500 dark:text-white/50">
+                    <span className="font-semibold text-gray-700 dark:text-white/70">How to redeem: </span>
+                    {offer.redeem_instructions}
+                  </p>
+                )}
               </div>
 
-              {/* Redeem CTA */}
-              <button
-                type="button"
-                onClick={() => {
-                  if (!isMember) {
-                    navigateTo("account");
-                    return;
-                  }
-                  void handleRedeemOffer(offer);
-                }}
-                disabled={redeeming}
-                className="mt-5 w-full rounded-[18px] border border-red-500 bg-red-600 py-4 text-sm font-semibold text-white disabled:opacity-60 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
-              >
-                {redeeming
-                  ? "Redeeming..."
-                  : isMember
-                    ? "Redeem Offer"
-                    : "Upgrade to Redeem"}
-              </button>
+              {/* Map */}
+              {(staticMapUrl || venueImage) && (
+                <div className="mt-5 overflow-hidden rounded-[20px]">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={staticMapUrl ?? venueImage}
+                    alt="Venue map"
+                    className="h-48 w-full object-cover"
+                  />
+                </div>
+              )}
+
+              {/* Address */}
+              {address && (
+                <p className="mt-3 text-center text-[0.88rem] font-medium text-gray-700 dark:text-white/70">
+                  {address}
+                </p>
+              )}
+
+              {/* Fixed Redeem CTA */}
+              <div className="fixed bottom-0 left-1/2 z-40 w-[min(100vw,28rem)] -translate-x-1/2 px-4 pb-[calc(env(safe-area-inset-bottom,0px)+14px)] pt-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isMember) { navigateTo("account"); return; }
+                    void handleRedeemOffer(offer);
+                  }}
+                  disabled={redeeming}
+                  className="w-full rounded-[18px] border border-red-500 bg-red-600 py-4 text-[1rem] font-bold text-white shadow-[0_8px_24px_rgba(231,7,7,0.4)] disabled:opacity-60 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                >
+                  {redeeming ? "Redeeming…" : isMember ? "Redeem Offer" : "Upgrade to Redeem"}
+                </button>
+              </div>
             </section>
           );
         })() : null}
 
-        {/* ── OFFER ACTIVATED (QR) ── */}
-        {activeScreen === "offer-activated" && activeRedemption ? (
-          <section className="pb-8">
-            {/* Header */}
-            <div className="mb-4 flex items-center">
-              <button
-                type="button"
-                onClick={() => goBack("offer-detail")}
-                aria-label="Go back"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-red-600 dark:border dark:border-white/12 dark:bg-black/24 dark:text-white/82"
-              >
-                <BackIcon size={20} />
-              </button>
-              <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
-                Offer Activated
-              </h2>
-            </div>
+        {/* ── OFFER ACTIVATED (QR + states) ── */}
+        {activeScreen === "offer-activated" ? (() => {
+          const ar = activeRedemption;
 
-            {/* Venue card */}
-            <div className="mb-5 flex items-center gap-3 rounded-[20px] border border-red-200/40 bg-white p-3 dark:border-white/10 dark:bg-black/30">
-              {activeRedemption.venue_image ? (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={activeRedemption.venue_image}
-                  alt={activeRedemption.venue_name || "Venue"}
-                  className="h-[3.5rem] w-[3.5rem] flex-none rounded-[12px] object-cover"
-                />
-              ) : null}
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[1rem] font-semibold text-gray-900 dark:text-white">
-                  {activeRedemption.venue_name || `Venue #${activeRedemption.vendor_id}`}
-                </p>
-                {activeRedemption.venue_rating ? (
-                  <p className="mt-0.5 flex items-center truncate text-[0.78rem] text-gray-500 dark:text-white/60">
-                    <span className="mr-1 inline-flex items-center gap-0.5">
-                      {Array.from({
-                        length: Math.round(activeRedemption.venue_rating),
-                      }).map((_, i) => (
-                        <Image
-                          key={i}
-                          src="/icons/star-shine_svg.png"
-                          alt=""
-                          aria-hidden="true"
-                          width={12}
-                          height={12}
-                          className="h-3 w-3 object-contain"
-                        />
-                      ))}
-                    </span>
-                    {`${activeRedemption.venue_rating.toFixed(1)}`}
-                    {activeRedemption.venue_review_count
-                      ? ` (${activeRedemption.venue_review_count} Reviews)`
-                      : ""}
-                    {activeRedemption.venue_neighborhood
-                      ? ` · ${activeRedemption.venue_neighborhood}`
-                      : ""}
-                  </p>
-                ) : activeRedemption.venue_neighborhood ? (
-                  <p className="mt-0.5 truncate text-[0.78rem] text-gray-500 dark:text-white/60">
-                    {activeRedemption.venue_neighborhood}
-                  </p>
-                ) : null}
-                {activeRedemption.discount_value ? (
-                  <p className="mt-1 truncate text-[0.82rem] font-semibold text-red-500 dark:text-[#ff9d7d]">
-                    {activeRedemption.discount_value}
-                  </p>
-                ) : null}
-                <p className="mt-1 text-[0.7rem] text-gray-400 dark:text-white/45">
-                  Redeemed at {formatTimestamp(activeRedemption.redeemed_at)}
-                </p>
-              </div>
-            </div>
-
-            {/* QR code */}
-            <div className="mx-auto mb-4 w-full max-w-[18rem] rounded-[24px] bg-white p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={buildQrImageUrl(activeRedemption.verify_url, 360)}
-                alt={`QR code for ${activeRedemption.offer_title}`}
-                className="h-auto w-full object-contain"
-              />
-            </div>
-
-            <p className="mb-6 text-center text-sm font-medium text-gray-700 dark:text-white/80">
-              Show this to your server
-            </p>
-
-            {/* Terms */}
-            <div className="rounded-[20px] border border-white/10 bg-black/20 p-4 dark:border-white/10">
-              <p className="mb-2 text-[0.82rem] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-white/60">
-                Terms of offer
+          // Shared venue info card
+          const VenueInfoCard = ar ? (
+            <div className="mb-5 rounded-[20px] border border-[#E7070380] bg-transparent p-4 dark:border-[#E7070380] dark:bg-black/30">
+              <p className="text-[1.05rem] font-bold text-gray-900 dark:text-white">
+                {ar.venue_name || `Venue #${ar.vendor_id}`}
               </p>
-              <ul className="space-y-1.5 text-[0.85rem] leading-5 text-gray-700 dark:text-white/72">
-                {activeRedemption.offer_terms ? (
-                  activeRedemption.offer_terms
-                    .split(/\n|•/)
-                    .map((line) => line.trim())
-                    .filter(Boolean)
-                    .map((line, i) => (
-                      <li key={i} className="flex gap-2">
-                        <span className="flex-none">•</span>
-                        <span>{line}</span>
-                      </li>
-                    ))
-                ) : (
-                  <>
-                    <li className="flex gap-2">
-                      <span className="flex-none">•</span>
-                      <span>Offer valid for the next 24 hours from activation.</span>
-                    </li>
-                    <li className="flex gap-2">
-                      <span className="flex-none">•</span>
-                      <span>Cannot be combined with other offers or promotions.</span>
-                    </li>
-                  </>
-                )}
-              </ul>
+              {ar.venue_rating ? (
+                <div className="mt-1 flex flex-wrap items-center gap-1 text-[0.78rem] text-gray-500 dark:text-white/60">
+                  {[1,2,3,4,5].map((n) => (
+                    <span key={n} className={`text-[0.85rem] ${n <= Math.round(ar.venue_rating!) ? "text-yellow-400" : "text-gray-300 dark:text-white/20"}`}>★</span>
+                  ))}
+                  <span className="font-semibold text-gray-800 dark:text-white/80">{ar.venue_rating.toFixed(1)}</span>
+                  {ar.venue_review_count ? <span>({ar.venue_review_count} Reviews)</span> : null}
+                  {ar.venue_neighborhood ? <><span className="text-gray-300">·</span><span>{ar.venue_neighborhood}</span></> : null}
+                </div>
+              ) : null}
+              {ar.discount_value ? (
+                <p className="mt-1 text-[0.88rem] font-semibold text-red-500 dark:text-[#ff9d7d]">{ar.discount_value}</p>
+              ) : null}
+              <p className="mt-1 text-[0.75rem] text-gray-400 dark:text-white/45">
+                Redeemed at {formatTimestamp(ar.redeemed_at)}
+              </p>
             </div>
-          </section>
-        ) : null}
+          ) : null;
 
-        {/* ── OFFER ACTIVATED FALLBACK (no active redemption) ── */}
-        {activeScreen === "offer-activated" && !activeRedemption ? (
-          <section className="pb-8">
-            <div className="mb-4 flex items-center">
+          // Header
+          const Header = (
+            <div className="mb-5 flex items-center">
               <button
                 type="button"
-                onClick={() => navigateTo("offers")}
+                onClick={() => { setRedemptionOutcome(null); goBack("offer-detail"); }}
                 aria-label="Go back"
                 className="inline-flex h-9 w-9 items-center justify-center rounded-full text-red-600 dark:border dark:border-white/12 dark:bg-black/24 dark:text-white/82"
               >
                 <BackIcon size={20} />
               </button>
               <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
-                Offer Activated
+                Redeem Offer
               </h2>
             </div>
-            <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-5 text-sm text-white/72">
-              No active redemption. Open an offer from V.I.Bee Offers to generate a QR code.
-            </div>
-          </section>
-        ) : null}
+          );
+
+          // ── State: Redeemed Successfully ──
+          if (redemptionOutcome === "success") {
+            return (
+              <section className="flex flex-col items-center pb-8">
+                {Header}
+                <div className="mt-10 flex h-24 w-24 items-center justify-center rounded-full bg-green-500 shadow-[0_8px_32px_rgba(34,197,94,0.4)]">
+                  <svg viewBox="0 0 24 24" className="h-12 w-12 text-white" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                </div>
+                <p className="mt-6 text-[1.2rem] font-bold text-gray-900 dark:text-white">Offer Redeemed Successfully!</p>
+                <p className="mt-2 text-[0.85rem] text-gray-500 dark:text-white/55">{ar ? formatTimestamp(ar.redeemed_at) : ""}</p>
+              </section>
+            );
+          }
+
+          // ── State: Offer Expired ──
+          if (redemptionOutcome === "expired") {
+            return (
+              <section className="pb-8">
+                {Header}
+                {VenueInfoCard}
+                <div className="mt-4 text-center">
+                  <p className="text-[1.1rem] font-bold text-red-500">Offer is Expired!</p>
+                  <p className="mt-2 text-[0.88rem] text-gray-500 dark:text-white/55">Oh No! You&apos;ve missed the offer.<br />Offer was valid for 24 hours only</p>
+                </div>
+              </section>
+            );
+          }
+
+          // ── State: Already Redeemed ──
+          if (redemptionOutcome === "already_redeemed") {
+            return (
+              <section className="flex flex-col items-center pb-8">
+                {Header}
+                <div className="mt-10 flex h-24 w-24 items-center justify-center rounded-full bg-red-600 shadow-[0_8px_32px_rgba(220,38,38,0.4)]">
+                  <span className="text-[2.5rem] font-black text-white">!</span>
+                </div>
+                <p className="mt-6 text-[1.2rem] font-bold text-gray-900 dark:text-white">Offer redeemed already!</p>
+                <p className="mt-2 text-[0.85rem] text-gray-500 dark:text-white/55">{ar ? formatTimestamp(ar.redeemed_at) : ""}</p>
+              </section>
+            );
+          }
+
+          // ── State: No active redemption fallback ──
+          if (!ar) {
+            return (
+              <section className="pb-8">
+                {Header}
+                <div className="rounded-[20px] border border-[#E7070380] bg-transparent px-4 py-5 text-sm text-gray-600 dark:text-white/72">
+                  No active redemption. Open an offer from V.I.Bee Offers to generate a QR code.
+                </div>
+              </section>
+            );
+          }
+
+          // ── State: QR code (default) ──
+          const isExpired = ar.redeemed_at && Date.now() > ar.redeemed_at + 24 * 60 * 60 * 1000;
+          return (
+            <section className="pb-8">
+              {Header}
+              {VenueInfoCard}
+
+              {isExpired ? (
+                <div className="mb-5 rounded-[16px] border border-[#E7070380] bg-transparent px-4 py-3 text-center">
+                  <p className="text-[0.88rem] font-semibold text-red-500">This offer has expired</p>
+                </div>
+              ) : (
+                <>
+                  {/* QR code */}
+                  <div className="mx-auto mb-3 w-full max-w-[16rem] rounded-[24px] bg-white p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={buildQrImageUrl(ar.verify_url, 320)}
+                      alt={`QR code for ${ar.offer_title}`}
+                      className="h-auto w-full object-contain"
+                    />
+                  </div>
+                  <p className="mb-5 text-center text-[0.95rem] font-medium text-gray-700 dark:text-white/80">
+                    Show this to your server.
+                  </p>
+                  {/* Confirm Redemption */}
+                  <button
+                    type="button"
+                    onClick={() => setRedemptionOutcome("success")}
+                    className="mb-5 w-full rounded-[18px] border border-red-500 bg-red-600 py-4 text-[1rem] font-bold text-white shadow-[0_8px_24px_rgba(231,7,7,0.35)] dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                  >
+                    Confirm Redemption
+                  </button>
+                </>
+              )}
+
+              {/* Terms */}
+              <div className="rounded-[20px] border border-[#E7070380] bg-transparent p-4 dark:border-[#E7070380] dark:bg-black/20">
+                <p className="mb-2 text-[0.88rem] font-semibold text-gray-700 dark:text-white/70">Terms of offer</p>
+                <ul className="space-y-1.5 text-[0.83rem] leading-5 text-gray-500 dark:text-white/60">
+                  {ar.offer_terms ? (
+                    ar.offer_terms.split(/\n|•/).map((line) => line.trim()).filter(Boolean).map((line, i) => (
+                      <li key={i} className="flex gap-2"><span className="flex-none">•</span><span>{line}</span></li>
+                    ))
+                  ) : (
+                    <>
+                      <li className="flex gap-2"><span className="flex-none">•</span><span>Offer valid until {new Date((ar.redeemed_at + 24 * 60 * 60 * 1000)).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})} tomorrow</span></li>
+                      <li className="flex gap-2"><span className="flex-none">•</span><span>No two offers can be clubbed together</span></li>
+                    </>
+                  )}
+                </ul>
+              </div>
+            </section>
+          );
+        })() : null}
 
         {/* ── RECENT REDEMPTIONS ── */}
         {activeScreen === "redemptions" ? (() => {
@@ -3081,8 +3236,8 @@ export function SinglePageGenieApp({
                         key={redemption.id}
                         className={`rounded-[18px] border p-3.5 ${
                           status === "expired"
-                            ? "border-white/8 bg-black/25 opacity-70 dark:border-white/8"
-                            : "border-red-200/30 bg-white dark:border-white/10 dark:bg-black/30"
+                            ? "border-[#E7070380] bg-transparent opacity-70 dark:border-white/8 dark:bg-black/25"
+                            : "border-[#E7070380] bg-transparent dark:border-white/10 dark:bg-black/30"
                         }`}
                       >
                         <div className="flex items-start justify-between gap-3">
@@ -3159,8 +3314,8 @@ export function SinglePageGenieApp({
               </div>
             ) : (
               <>
-                <div className="mb-5">
-                  <h2 className="text-center text-[1.35rem] font-semibold text-gray-900 dark:text-white">
+                <div className="mb-2">
+                  <h2 className="text-center text-[1.2rem] font-semibold text-gray-900 dark:text-white">
                     Social Preferences
                   </h2>
                 </div>
@@ -3174,11 +3329,11 @@ export function SinglePageGenieApp({
                     {(() => {
                       const categories = Object.keys(socialTagOptions) as Array<keyof typeof socialTagOptions>;
                       const categoryImage: Record<keyof typeof socialTagOptions, string> = {
-                        music_tags: "",
-                        bevy_bites_tags: "/sample-venue-1.jpeg",
-                        experiences_tags: "/sample-venue-1.jpeg",
-                        atmosphere_tags: "/sample-venue-2.jpeg",
-                        community_tags: "/sample-venue-2.jpeg",
+                        music_tags: "/prefrences/music.png",
+                        bevy_bites_tags: "/prefrences/bevybites.png",
+                        experiences_tags: "/prefrences/experiences.png",
+                        atmosphere_tags: "/prefrences/atmosphere.png",
+                        community_tags: "/prefrences/community.png",
                       };
                       const totalSelected = categories.reduce((sum, key) => {
                         const value = socialProfileDraft[key];
@@ -3195,7 +3350,6 @@ export function SinglePageGenieApp({
 
                       const renderCard = (field: keyof typeof socialTagOptions) => {
                         const isActive = activeTagCategory === field;
-                        const isMusic = field === "music_tags";
                         return (
                           <button
                             key={field}
@@ -3209,32 +3363,16 @@ export function SinglePageGenieApp({
                                 : "border-gray-100 dark:border-white/10"
                             }`}
                           >
-                            <div className="relative h-28 w-full overflow-hidden">
-                              {isMusic ? (
-                                <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(145deg,#1a1033,#3a1a5a)]">
-                                  <svg viewBox="0 0 24 24" className="h-12 w-12">
-                                    <defs>
-                                      <linearGradient id="musicGrad" x1="0" y1="0" x2="1" y2="1">
-                                        <stop offset="0%" stopColor="#f472b6" />
-                                        <stop offset="100%" stopColor="#8b5cf6" />
-                                      </linearGradient>
-                                    </defs>
-                                    <path d="M9 18V5l12-2v13" fill="none" stroke="url(#musicGrad)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                    <circle cx="6" cy="18" r="3" fill="url(#musicGrad)" />
-                                    <circle cx="18" cy="16" r="3" fill="url(#musicGrad)" />
-                                  </svg>
-                                </div>
-                              ) : (
-                                <Image
-                                  src={categoryImage[field]}
-                                  alt={socialTagLabels[field]}
-                                  fill
-                                  className="object-cover"
-                                  sizes="(max-width: 768px) 45vw, 200px"
-                                />
-                              )}
+                            <div className="relative aspect-[4/3] w-full overflow-hidden">
+                              <Image
+                                src={categoryImage[field]}
+                                alt={socialTagLabels[field]}
+                                fill
+                                className="object-cover"
+                                sizes="(max-width: 768px) 45vw, 200px"
+                              />
                             </div>
-                            <p className="px-3 py-2 text-center text-[14px] font-medium text-gray-900 dark:text-white">
+                            <p className="px-2 py-1.5 text-center text-[13px] font-medium text-gray-900 dark:text-white">
                               {socialTagLabels[field]}
                             </p>
                           </button>
@@ -3242,7 +3380,7 @@ export function SinglePageGenieApp({
                       };
 
                       const renderTagStrip = () => (
-                        <div className="-mx-4 mt-3 overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                        <div className="-mx-4 mt-2 overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                           <div className="flex flex-nowrap items-center gap-2">
                             {socialTagOptions[activeTagCategory].map((option) => {
                               const fieldValue = socialProfileDraft[activeTagCategory];
@@ -3254,7 +3392,7 @@ export function SinglePageGenieApp({
                                   key={`${activeTagCategory}-${option}`}
                                   type="button"
                                   onClick={() => toggleSocialTag(activeTagCategory, option)}
-                                  className={`shrink-0 whitespace-nowrap rounded-full border px-4 py-1.5 text-[13px] font-medium transition ${
+                                  className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1 text-[12px] font-medium transition ${
                                     selected
                                       ? "border-red-500 bg-red-600 text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
                                       : "border-gray-300 bg-transparent text-gray-700 hover:border-red-300 hover:text-red-600 dark:border-white/25 dark:text-white/85 dark:hover:border-white/55"
@@ -3270,12 +3408,12 @@ export function SinglePageGenieApp({
 
                       return (
                         <>
-                          <div className="space-y-3">
+                          <div className="space-y-2">
                             {rows.map((row, rowIndex) => {
                               const rowContainsActive = row.includes(activeTagCategory);
                               return (
                                 <div key={`pref-row-${rowIndex}`}>
-                                  <div className="grid grid-cols-2 gap-3">
+                                  <div className="grid grid-cols-2 gap-2">
                                     {row.map(renderCard)}
                                   </div>
                                   {rowContainsActive ? renderTagStrip() : null}
@@ -3284,7 +3422,7 @@ export function SinglePageGenieApp({
                             })}
                           </div>
 
-                          <p className="mt-4 text-center text-[13px] text-gray-500 dark:text-white/65">
+                          <p className="mt-2 text-center text-[12px] text-gray-500 dark:text-white/65">
                             {totalSelected} {totalSelected === 1 ? "tag" : "tags"} selected
                           </p>
 
@@ -3292,7 +3430,7 @@ export function SinglePageGenieApp({
                             type="button"
                             onClick={() => void handleSaveSocialProfile()}
                             disabled={socialSaving}
-                            className="mt-3 w-full rounded-[20px] border border-red-500 bg-red-600 px-4 py-3.5 text-[15px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                            className="mt-2 w-full rounded-[18px] border border-red-500 bg-red-600 px-4 py-2.5 text-[14px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
                           >
                             {socialSaving ? "Saving..." : "Next"}
                           </button>
@@ -3369,19 +3507,19 @@ export function SinglePageGenieApp({
 
             {/* Stats row */}
             <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-[18px] border border-red-200/60 bg-[rgba(120,10,10,0.55)] px-4 py-4 dark:border-white/10 dark:bg-black/30">
-                <p className="text-[2rem] font-bold leading-none text-white">
+              <div className="rounded-[18px] border border-[#E7070380] bg-transparent px-4 py-4 text-center dark:border-[#E7070380] dark:bg-black/30">
+                <p className="text-[2rem] font-bold leading-none text-gray-900 dark:text-white">
                   {offers.length}
                 </p>
-                <p className="mt-1 text-[0.75rem] font-medium text-white/70">
+                <p className="mt-1 text-[0.75rem] font-medium text-red-600 dark:text-white/70">
                   Offers Available
                 </p>
               </div>
-              <div className="rounded-[18px] border border-red-200/60 bg-[rgba(120,10,10,0.55)] px-4 py-4 dark:border-white/10 dark:bg-black/30">
-                <p className="text-[2rem] font-bold leading-none text-white">
+              <div className="rounded-[18px] border border-[#E7070380] bg-transparent px-4 py-4 text-center dark:border-[#E7070380] dark:bg-black/30">
+                <p className="text-[2rem] font-bold leading-none text-gray-900 dark:text-white">
                   {redemptions.length}
                 </p>
-                <p className="mt-1 text-[0.75rem] font-medium text-white/70">
+                <p className="mt-1 text-[0.75rem] font-medium text-red-600 dark:text-white/70">
                   Redemption Used
                 </p>
               </div>
@@ -3393,7 +3531,7 @@ export function SinglePageGenieApp({
                 Your V.I.Bee Offers
               </h2>
               {offersLoading ? (
-                <p className="text-sm text-white/60">Loading offers...</p>
+                <p className="text-sm text-gray-500 dark:text-white/60">Loading offers...</p>
               ) : offers.length ? (
                 <>
                   <div className="-mx-4 overflow-x-auto">
@@ -3406,16 +3544,16 @@ export function SinglePageGenieApp({
                             setSelectedOfferId(offer.id);
                             navigateTo("offer-detail");
                           }}
-                          className="w-[9rem] flex-none rounded-[18px] border border-red-200/40 bg-[rgba(80,5,5,0.70)] p-3 text-left dark:border-white/10 dark:bg-black/35"
+                          className="w-[9rem] flex-none rounded-[18px] border border-[#E7070380] bg-transparent p-3 text-left dark:border-[#E7070380] dark:bg-black/35"
                         >
-                          <p className="truncate text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-white/55">
+                          <p className="truncate text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-red-600 dark:text-white/55">
                             {offer.offer_type?.replaceAll("_", " ") || "Offer"}
                           </p>
-                          <p className="mt-1 line-clamp-2 text-[0.88rem] font-bold leading-snug text-white">
+                          <p className="mt-1 line-clamp-2 text-[0.88rem] font-bold leading-snug text-gray-900 dark:text-white">
                             {offer.title}
                           </p>
                           {offer.description ? (
-                            <p className="mt-0.5 truncate text-[0.65rem] text-white/50">
+                            <p className="mt-0.5 truncate text-[0.65rem] text-gray-500 dark:text-white/50">
                               {offer.description}
                             </p>
                           ) : null}
@@ -3431,13 +3569,13 @@ export function SinglePageGenieApp({
                   <button
                     type="button"
                     onClick={() => navigateTo("offers")}
-                    className="mt-3 w-full rounded-[16px] border border-red-500/60 bg-[rgba(150,15,15,0.55)] py-3 text-sm font-semibold text-white dark:border-white/15"
+                    className="mt-3 w-full rounded-[16px] border border-red-500 bg-red-600 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 dark:border-white/15 dark:bg-[rgba(150,15,15,0.55)]"
                   >
                     See All Offers
                   </button>
                 </>
               ) : (
-                <div className="rounded-[16px] border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/60">
+                <div className="rounded-[16px] border border-[#E7070380] bg-transparent px-4 py-3 text-sm text-gray-600 dark:bg-black/20 dark:text-white/60">
                   {account?.membership === "vibee"
                     ? "No active offers right now. Check back soon."
                     : "Upgrade to V.I.Bee to unlock exclusive offers."}
@@ -3465,14 +3603,14 @@ export function SinglePageGenieApp({
                     return (
                       <div
                         key={redemption.id}
-                        className="flex items-center justify-between rounded-[16px] border border-white/10 bg-[rgba(60,5,5,0.55)] px-4 py-3 dark:bg-black/25"
+                        className="flex items-center justify-between rounded-[16px] border border-[#E7070380] bg-transparent px-4 py-3 dark:bg-[rgba(60,5,5,0.55)]"
                       >
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-white">
+                          <p className="truncate text-sm font-semibold text-gray-900 dark:text-white">
                             {matchedOffer?.title || `Offer #${redemption.offer_id}`}
                           </p>
                           {date ? (
-                            <p className="mt-0.5 text-[0.72rem] text-white/50">
+                            <p className="mt-0.5 text-[0.72rem] text-gray-500 dark:text-white/50">
                               {date}
                             </p>
                           ) : null}
@@ -3480,8 +3618,8 @@ export function SinglePageGenieApp({
                         <span
                           className={`ml-3 inline-flex flex-none items-center gap-1 rounded-full px-2.5 py-1 text-[0.65rem] font-bold ${
                             isVerified
-                              ? "bg-green-500/20 text-green-400"
-                              : "bg-white/10 text-white/55"
+                              ? "bg-green-600 text-white dark:bg-green-500/20 dark:text-green-400"
+                              : "bg-gray-200 text-gray-600 dark:bg-white/10 dark:text-white/55"
                           }`}
                         >
                           {isVerified ? (
@@ -3503,7 +3641,7 @@ export function SinglePageGenieApp({
                 <button
                   type="button"
                   onClick={() => navigateTo("offers")}
-                  className="mt-3 w-full rounded-[16px] border border-red-500/60 bg-[rgba(150,15,15,0.55)] py-3 text-sm font-semibold text-white dark:border-white/15"
+                  className="mt-3 w-full rounded-[16px] border border-red-500 bg-red-600 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 dark:border-white/15 dark:bg-[rgba(150,15,15,0.55)]"
                 >
                   See All
                 </button>
@@ -3526,7 +3664,7 @@ export function SinglePageGenieApp({
                         setDetailReturnScreen("saved");
                         navigateTo("detail");
                       }}
-                      className="overflow-hidden rounded-[18px] border border-white/10 bg-black/30 text-left"
+                      className="overflow-hidden rounded-[18px] border border-[#E7070380] bg-transparent text-left dark:bg-black/30"
                     >
                       <div className="relative h-28 w-full">
                         <Image
@@ -3549,17 +3687,17 @@ export function SinglePageGenieApp({
                         </div>
                       </div>
                       <div className="px-2.5 py-2">
-                        <p className="line-clamp-1 text-[0.85rem] font-semibold text-white">
+                        <p className="line-clamp-1 text-[0.85rem] font-semibold text-gray-900 dark:text-white">
                           {venue.venue_name}
                         </p>
-                        <p className="mt-0.5 truncate text-[0.68rem] text-white/55">
+                        <p className="mt-0.5 truncate text-[0.68rem] text-gray-500 dark:text-white/55">
                           {getVenueHeadlineShort(venue)} · {getVenueDistance(venue, index)}
                         </p>
                         <div className="mt-1.5 flex flex-wrap gap-1">
                           {buildVenueTags(venue).slice(0, 2).map((tag) => (
                             <span
                               key={tag}
-                              className="rounded-full bg-white/10 px-2 py-0.5 text-[0.6rem] font-medium text-white/70"
+                              className="rounded-full bg-gray-100 px-2 py-0.5 text-[0.6rem] font-medium text-gray-600 dark:bg-white/10 dark:text-white/70"
                             >
                               {tag}
                             </span>
@@ -3597,7 +3735,10 @@ export function SinglePageGenieApp({
                 onBack={() => goBack("home")}
                 onSave={async (data) => {
                   if (!account) return;
-                  const { user } = await updateUserProfile({
+                  const { saveVendorContactInfo } = await import(
+                    "@/app/lib/publicApiClient"
+                  );
+                  await saveVendorContactInfo({
                     first_name: data.firstName,
                     last_name: data.lastName,
                     email: data.email,
@@ -3605,14 +3746,34 @@ export function SinglePageGenieApp({
                   });
                   const updated = {
                     ...account,
-                    firstName: user.first_name,
-                    lastName: user.last_name,
-                    email: user.email,
-                    phone: user.phone ?? "",
+                    firstName: data.firstName,
+                    lastName: data.lastName,
+                    email: data.email,
+                    phone: data.phone,
                   };
                   setAccount(updated);
-                  const { writeConsumerAccount } = await import("@/app/lib/localState");
+                  const { writeConsumerAccount } = await import(
+                    "@/app/lib/localState"
+                  );
                   writeConsumerAccount(updated);
+                }}
+                onDeleteAccount={async () => {
+                  const { deleteAccount } = await import(
+                    "@/app/lib/publicApiClient"
+                  );
+                  await deleteAccount();
+                  const { clearConsumerSession } = await import(
+                    "@/app/lib/localState"
+                  );
+                  try {
+                    clearConsumerSession();
+                  } catch {
+                    // best-effort — fall through to reload
+                  }
+                  setAccount(null);
+                  if (typeof window !== "undefined") {
+                    window.location.href = "/";
+                  }
                 }}
               />
             )}

@@ -275,6 +275,110 @@ export async function updateUserProfile(payload: {
   });
 }
 
+/**
+ * Update VENDOR contact info (V-05 flow).
+ * Requires the user to have a `genie_vendor` row linked — otherwise Xano
+ * returns "Vendor profile not found". For consumer users use
+ * `updateUserProfile` instead.
+ */
+export async function saveVendorContactInfo(payload: {
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  phone?: string;
+}) {
+  const external_user_id = readExternalUserId();
+  if (!external_user_id) {
+    throw new Error("You must be signed in to update vendor contact info.");
+  }
+  return apiJson<{
+    success: boolean;
+    vendor: {
+      first_name?: string;
+      last_name?: string;
+      email?: string;
+      phone?: string | null;
+    };
+  }>("/api/vendor/contact-info", {
+    method: "POST",
+    body: JSON.stringify({ ...payload, external_user_id }),
+  });
+}
+
+export async function deleteAccount() {
+  const external_user_id = readExternalUserId();
+  if (!external_user_id) {
+    throw new Error("You must be signed in to delete your account.");
+  }
+  return apiJson<{ success: boolean; message?: string }>(
+    "/api/auth/delete-account",
+    {
+      method: "POST",
+      body: JSON.stringify({ external_user_id }),
+    }
+  );
+}
+
+export async function fetchVendorProfile() {
+  const external_user_id = readExternalUserId();
+  if (!external_user_id) {
+    throw new Error("You must be signed in to view your vendor profile.");
+  }
+  const params = new URLSearchParams({ external_user_id });
+  return apiJson<{
+    error: string | null;
+    vendor: {
+      id: number;
+      user_id: number;
+      venue_id: number;
+      business_name: string;
+      first_name: string;
+      last_name: string;
+      email: string;
+      phone: string;
+      business_address: string;
+      city: string;
+      state: string;
+      zip: string;
+      latitude: number;
+      longitude: number;
+      is_live: boolean;
+      is_claimed: boolean;
+      location_enabled: boolean;
+      plan_selected: string;
+      plan_selected_at: number;
+      stripe_customer_id: string;
+      onboarding_completed: boolean;
+      monthly_boost_active: boolean;
+      reservation_url: string;
+      reservation_platform: string;
+    } | null;
+  }>(`/api/vendor/profile?${params.toString()}`);
+}
+
+export async function saveVendorProfileChanges(payload: {
+  business_name?: string;
+  business_address?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  location_enabled?: boolean;
+  reservation_url?: string;
+  reservation_platform?: string;
+}) {
+  const external_user_id = readExternalUserId();
+  if (!external_user_id) {
+    throw new Error("You must be signed in to update your vendor profile.");
+  }
+  return apiJson<{ error: string | null; success: boolean }>(
+    "/api/vendor/profile",
+    {
+      method: "PUT",
+      body: JSON.stringify({ ...payload, external_user_id }),
+    }
+  );
+}
+
 export async function submitContactForm(payload: {
   first_name?: string;
   last_name?: string;
@@ -773,11 +877,21 @@ export async function createVendorOffer(payload: {
   });
 }
 
-export async function updateVendorProfile(payload: Record<string, string>) {
-  return apiJson<{ success: boolean }>("/api/vendor/profile", {
-    method: "PUT",
-    body: JSON.stringify(payload),
-  });
+export async function updateVendorProfile(payload: Record<string, unknown>) {
+  const external_user_id = readExternalUserId();
+  if (!external_user_id) {
+    throw new Error("You must be signed in to update your vendor profile.");
+  }
+  // Note: only fields supported by `ep_save_profile_changes_dev` are persisted
+  // server-side. Unsupported keys (e.g. description, hours) are filtered by
+  // the route handler — see app/api/vendor/profile/route.ts.
+  return apiJson<{ success: boolean; error?: string | null }>(
+    "/api/vendor/profile",
+    {
+      method: "PUT",
+      body: JSON.stringify({ ...payload, external_user_id }),
+    }
+  );
 }
 
 export function logVendorInteraction(
