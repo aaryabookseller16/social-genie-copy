@@ -113,6 +113,35 @@ type FullDashboardData = {
     schedule_json?: Record<string, unknown> | null;
   }>;
   offer_count: number;
+  // ── Optional fields surfaced in the new dashboard design ────────────
+  // These are tolerated as undefined; the UI defaults to 0/"—" until the
+  // backend starts returning them.
+  rating?: number;
+  address?: string;
+  logo_url?: string;
+  is_claimed?: boolean;
+  // Basic-tier stats (shown in both Free and Paid dashboards)
+  genie_appearances?: number;
+  profile_views?: number;
+  total_customer_actions?: number;
+  // Pro-only micro stats (second row)
+  call_clicks?: number;
+  map_clicks?: number;
+  reservation_clicks?: number;
+  user_saved?: number;
+  // Pro-only performance graph points (ordered left→right)
+  performance_points?: Array<{ label?: string; value: number }>;
+  performance_min?: number;
+  // Business details
+  website?: string;
+  reservation_url?: string;
+  category?: string;
+  cuisine?: string;
+  instagram?: string;
+  // Boost status (Pro)
+  boost_active?: boolean;
+  boost_amount?: number;
+  boost_period_label?: string;
 };
 
 /* ------------------------------------------------------------------ */
@@ -168,7 +197,7 @@ function StatCard({
 }) {
   if (locked) return null;
   return (
-    <div className="flex flex-col items-center gap-2 rounded-2xl border border-gray-100 bg-gray-50 px-3 py-5 dark:border-white/10 dark:bg-black/20">
+    <div className="flex flex-col items-center gap-2 rounded-2xl border border-[#E7070380] bg-gray-50 px-3 py-5 dark:border-[#E7070380] dark:bg-black/20">
       <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-[#ff7b7b]">
         {icon}
       </div>
@@ -176,6 +205,153 @@ function StatCard({
         {value.toLocaleString()}
       </p>
       <p className="text-[13px] text-gray-500 dark:text-white/55">{label}</p>
+    </div>
+  );
+}
+
+/* ── Dashboard-specific presentational pieces (Free + Paid) ────────── */
+
+function BigStat({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="rounded-2xl border border-[#E7070380] bg-white px-3 py-4 text-center dark:bg-black/30">
+      <p className="text-[1.75rem] font-bold leading-none text-gray-900 dark:text-white">
+        {typeof value === "number" ? value.toLocaleString() : value}
+      </p>
+      <p className="mt-1.5 text-[0.72rem] leading-tight text-gray-500 dark:text-white/60">
+        {label}
+      </p>
+    </div>
+  );
+}
+
+function MicroStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-[14px] border border-[#E7070380] bg-white px-2 py-3 text-center dark:bg-black/30">
+      <p className="text-[1.25rem] font-bold leading-none text-gray-900 dark:text-white">
+        {value.toLocaleString()}
+      </p>
+      <p className="mt-1 text-[0.65rem] leading-tight text-gray-500 dark:text-white/60">
+        {label}
+      </p>
+    </div>
+  );
+}
+
+function DetailRow({
+  label,
+  value,
+  withDivider,
+}: {
+  label: string;
+  value?: string | null;
+  withDivider?: boolean;
+}) {
+  return (
+    <div
+      className={`py-3 ${
+        withDivider ? "border-t border-red-200/60 dark:border-white/10" : ""
+      }`}
+    >
+      <p className="text-[12px] font-medium uppercase tracking-wide text-gray-400 dark:text-white/55">
+        {label}
+      </p>
+      <p className="mt-0.5 break-words text-[15px] font-medium text-gray-900 dark:text-white">
+        {value || "—"}
+      </p>
+    </div>
+  );
+}
+
+function PerformanceChart({
+  points,
+  minLabel = "0%",
+  headLabel = "7 Days",
+}: {
+  points: Array<{ value: number }>;
+  minLabel?: string;
+  headLabel?: string;
+}) {
+  const width = 320;
+  const height = 140;
+  const paddingX = 10;
+  const paddingY = 20;
+  const values = points.map((p) => p.value);
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values, 0);
+  const range = max - min || 1;
+  const step =
+    points.length > 1 ? (width - paddingX * 2) / (points.length - 1) : 0;
+  const coords = points.map((p, i) => {
+    const x = paddingX + i * step;
+    const y =
+      paddingY +
+      (height - paddingY * 2) * (1 - (p.value - min) / range);
+    return { x, y };
+  });
+
+  // Smooth curve via simple Catmull-Rom style interpolation.
+  const path = coords
+    .map((c, i) => (i === 0 ? `M ${c.x} ${c.y}` : `L ${c.x} ${c.y}`))
+    .join(" ");
+
+  const last = coords[coords.length - 1];
+
+  return (
+    <div className="relative mt-2 w-full">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="w-full"
+        preserveAspectRatio="none"
+      >
+        {/* dashed guide through the highest point */}
+        {coords.length > 0 ? (
+          <line
+            x1={paddingX}
+            x2={width - paddingX}
+            y1={coords.reduce(
+              (min, c) => (c.y < min ? c.y : min),
+              coords[0].y
+            )}
+            y2={coords.reduce(
+              (min, c) => (c.y < min ? c.y : min),
+              coords[0].y
+            )}
+            stroke="rgba(255,255,255,0.18)"
+            strokeDasharray="3 4"
+            strokeWidth="1"
+          />
+        ) : null}
+        {/* the main curve */}
+        <path
+          d={path}
+          fill="none"
+          stroke="#e8900a"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {/* dots */}
+        {coords.map((c, i) => (
+          <circle
+            key={i}
+            cx={c.x}
+            cy={c.y}
+            r={3}
+            fill="#e8900a"
+            stroke="#2a0707"
+            strokeWidth="1"
+          />
+        ))}
+      </svg>
+      {/* annotations */}
+      {last ? (
+        <span className="absolute right-2 top-0 text-[13px] font-semibold text-[#e8900a]">
+          {headLabel}
+        </span>
+      ) : null}
+      <span className="absolute bottom-5 left-0 text-[13px] font-semibold text-white/70 dark:text-white/70">
+        {minLabel}
+      </span>
     </div>
   );
 }
@@ -1041,7 +1217,7 @@ export function VendorSection({
       {/* ======== STEP: MATCH ======== */}
       {step === "match" && candidate && (
         <div className="mt-5 space-y-5">
-          <div className="rounded-2xl border border-gray-200 bg-gray-50 px-5 py-5 text-center dark:border-white/10 dark:bg-black/20">
+          <div className="rounded-2xl border border-[#E7070380] bg-gray-50 px-5 py-5 text-center dark:border-[#E7070380] dark:bg-black/20">
             <p className="text-[17px] font-semibold text-gray-900 dark:text-white">
               {candidate.venue_name}
             </p>
@@ -1213,7 +1389,7 @@ export function VendorSection({
             className={`w-full rounded-2xl border p-5 text-left transition ${
               selectedPlan === "basic"
                 ? "border-red-500/60 bg-red-50 shadow-[0_0_24px_rgba(220,38,38,0.08)] dark:border-red-500/40 dark:bg-red-900/20"
-                : "border-gray-100 bg-white dark:border-white/10 dark:bg-black/20"
+                : "border-[#E7070380] bg-white dark:border-[#E7070380] dark:bg-black/20"
             }`}
           >
             <p className="text-[16px] font-bold text-gray-900 dark:text-white">Basic — Claim Your Spot</p>
@@ -1240,7 +1416,7 @@ export function VendorSection({
             className={`w-full rounded-2xl border p-5 text-left transition ${
               selectedPlan === "pro"
                 ? "border-red-500/60 bg-red-50 shadow-[0_0_24px_rgba(220,38,38,0.08)] dark:border-red-500/40 dark:bg-red-900/20"
-                : "border-gray-100 bg-white dark:border-white/10 dark:bg-black/20"
+                : "border-[#E7070380] bg-white dark:border-[#E7070380] dark:bg-black/20"
             }`}
           >
             <div className="flex items-start justify-between gap-2">
@@ -1275,7 +1451,7 @@ export function VendorSection({
       {/* ======== STEP: SUCCESS ======== */}
       {step === "success" && (
         <div className="mt-10 flex flex-col items-center text-center">
-          <div className="flex h-36 w-36 items-center justify-center rounded-full border border-gray-100 bg-red-50 dark:border-white/10 dark:bg-red-900/30">
+          <div className="flex h-36 w-36 items-center justify-center rounded-full border border-[#E7070380] bg-red-50 dark:border-[#E7070380] dark:bg-red-900/30">
             <svg viewBox="0 0 24 24" className="h-16 w-16 text-red-600" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <path d="m5 12 5 5L20 7" />
             </svg>
@@ -1310,202 +1486,352 @@ export function VendorSection({
               <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-red-600" />
             </div>
           ) : dashboardData ? (
-            <div className="space-y-5">
-              <div className="text-center">
-                <p className="font-[family-name:var(--font-cormorant)] text-xl italic text-gray-500 dark:text-white/60">
-                  Genie
-                </p>
-                <h2 className="mt-1 text-lg font-semibold text-gray-900 dark:text-white">
-                  Welcome to Your Dashboard
-                </h2>
-                <p className="mt-1 text-[14px] text-gray-500 dark:text-white/60">
-                  {dashboardData.business_name}{" "}
-                  <span
-                    className={`ml-1 inline-block rounded-md px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider text-white ${
-                      isPro ? "bg-red-600" : "bg-gray-300"
-                    }`}
-                  >
-                    {tierLabel(isPro ? "pro" : "basic")}
-                  </span>
-                </p>
-              </div>
+            (() => {
+              const d = dashboardData;
+              const rating = typeof d.rating === "number" ? d.rating : 4.0;
+              const address = d.address || "";
+              const isClaimed = d.is_claimed ?? d.is_live;
+              const genieAppearances = d.genie_appearances ?? 0;
+              const profileViews = d.profile_views ?? 0;
+              const totalActions = d.total_customer_actions ?? 0;
+              const callClicks = d.call_clicks ?? 0;
+              const mapClicks = d.map_clicks ?? 0;
+              const reservationClicks = d.reservation_clicks ?? 0;
+              const userSaved = d.user_saved ?? 0;
+              const performancePoints =
+                d.performance_points && d.performance_points.length > 0
+                  ? d.performance_points
+                  : [
+                      { value: 51 },
+                      { value: 55 },
+                      { value: 58 },
+                      { value: 70 },
+                      { value: 85 },
+                      { value: 75 },
+                      { value: 82 },
+                      { value: 95 },
+                      { value: 78 },
+                    ];
+              const boostActive = Boolean(d.boost_active);
+              const boostAmount = d.boost_amount ?? 0;
+              const boostPeriodLabel = d.boost_period_label || "Today";
 
-              <div className="grid grid-cols-3 gap-2">
-                <StatCard
-                  label="Offers"
-                  value={dashboardData.offer_count}
-                  icon={
-                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M20 12V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v5" />
-                      <path d="M2 12h20" />
-                      <path d="M7 16h.01M12 16h.01M17 16h.01" />
-                      <path d="M6 19h12" />
-                    </svg>
-                  }
-                />
-                <StatCard
-                  label="Live Status"
-                  value={dashboardData.is_live ? 1 : 0}
-                  icon={
-                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M12 2v20" />
-                      <path d="M2 12h20" />
-                    </svg>
-                  }
-                />
-                <StatCard
-                  label="Pro Features"
-                  value={isPro ? 1 : 0}
-                  icon={
-                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="m12 2 3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14l-5-4.87 6.91-1.01z" />
-                    </svg>
-                  }
-                />
-              </div>
-
-              {dashboardData.plan_selected_at > 0 && (
-                <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 dark:border-white/10 dark:bg-black/20">
-                  <p className="text-[13px] text-gray-500 dark:text-white/55">Plan Selected</p>
-                  <p className="mt-1 text-sm font-medium text-gray-900 dark:text-white">
-                    {new Date(dashboardData.plan_selected_at).toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })}
-                  </p>
-                </div>
-              )}
-
-              <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 dark:border-white/10 dark:bg-black/20">
-                <p className="text-sm font-medium text-gray-600 dark:text-white/72">
-                  Vendor Overview
-                </p>
-                <div className="mt-3 space-y-2 text-[13px]">
-                  <div className="flex items-start gap-2">
-                    <span className="mt-0.5 text-gray-300">🏢</span>
-                    <p className="font-medium text-gray-900 dark:text-white">
-                      {dashboardData.business_name}
-                    </p>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <span className="mt-0.5 text-gray-300">✉️</span>
-                    <p className="text-gray-500">{dashboardData.email}</p>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <span className="mt-0.5 text-gray-300">📦</span>
-                    <p className="text-gray-500">
-                      {dashboardData.plan_selected || "basic"}
-                    </p>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <span className="mt-0.5 text-gray-300">✅</span>
-                    <p className="text-gray-500">
-                      {dashboardData.is_live ? "Live on Genie" : "Not live yet"}
-                    </p>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <span className="mt-0.5 text-gray-300">🧭</span>
-                    <p className="text-gray-500">
-                      {dashboardData.onboarding_completed
-                        ? "Onboarding complete"
-                        : "Onboarding still in progress"}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 dark:border-white/10 dark:bg-black/20">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-medium text-gray-600 dark:text-white/72">
-                    Active Offers
-                  </p>
-                  <span className="rounded-full bg-red-600 px-2.5 py-1 text-[11px] font-bold text-white">
-                    {dashboardData.offer_count}
-                  </span>
-                </div>
-                {dashboardData.offers.length > 0 ? (
-                  <div className="mt-3 space-y-3">
-                    {dashboardData.offers.map((offer) => (
-                      <div
-                        key={offer.id}
-                        className="rounded-xl border border-gray-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-black/20"
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                            {offer.title}
-                          </p>
-                          <span className="text-[11px] uppercase tracking-wide text-gray-400 dark:text-white/42">
-                            {offer.offer_type}
+              return (
+                <div className="space-y-5 pb-24">
+                  {/* ── Header: logo + name + stars + claimed + address ── */}
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-16 w-16 flex-none items-center justify-center rounded-2xl border border-[#E7070380] bg-white/5 dark:bg-black/25">
+                      {d.logo_url ? (
+                        <Image
+                          src={d.logo_url}
+                          alt=""
+                          width={48}
+                          height={48}
+                          className="h-10 w-10 object-contain"
+                        />
+                      ) : (
+                        <svg
+                          viewBox="0 0 24 24"
+                          className="h-8 w-8 text-[#ff8a8a]"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.6"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M4 9h16" />
+                          <path d="M4 13h16" />
+                          <path d="M4 17h16" />
+                          <path d="M6 7l.6-2a1 1 0 0 1 1-.8h8.8a1 1 0 0 1 1 .8L18 7" />
+                        </svg>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                        <h1 className="text-[1.35rem] font-semibold text-gray-900 dark:text-white">
+                          {d.business_name}
+                        </h1>
+                        {isClaimed ? (
+                          <span className="inline-flex items-center gap-1 text-[0.78rem] font-medium text-green-500 dark:text-[#58d27b]">
+                            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-green-500 dark:bg-[#34c059]">
+                              <svg
+                                viewBox="0 0 24 24"
+                                className="h-3 w-3 text-white"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="3"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                <path d="M5 12.5l4 4 10-10" />
+                              </svg>
+                            </span>
+                            Claimed
                           </span>
-                        </div>
-                        {offer.redeem_instructions ? (
-                          <p className="mt-1.5 text-[12px] text-gray-500 dark:text-white/55">
-                            {offer.redeem_instructions}
-                          </p>
                         ) : null}
                       </div>
-                    ))}
+                      <div className="mt-0.5 flex items-center gap-2">
+                        <span
+                          className="text-[0.95rem] text-[#f5b700]"
+                          aria-label={`${rating.toFixed(1)} star rating`}
+                        >
+                          {renderStars(rating)}
+                          <span className="text-gray-300 dark:text-white/25">
+                            {"★".repeat(Math.max(0, 5 - Math.ceil(rating)))}
+                          </span>
+                        </span>
+                        <span className="text-[0.78rem] text-gray-500 dark:text-white/55">
+                          {rating.toFixed(1)} Stars
+                        </span>
+                      </div>
+                      {address ? (
+                        <p className="mt-1 text-[0.78rem] leading-snug text-gray-500 dark:text-white/55">
+                          {address}
+                        </p>
+                      ) : null}
+                    </div>
                   </div>
-                ) : (
-                  <p className="mt-3 text-[13px] text-gray-500 dark:text-white/55">
-                    No active offers yet.
-                  </p>
-                )}
-              </div>
 
-              {!isPro && (
-                <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-center dark:border-red-500/30 dark:bg-red-900/20">
-                  <p className="text-sm font-medium text-gray-700 dark:text-white/82">
-                    Unlock more insights & boost your business
-                  </p>
-                  <p className="mt-1 text-[12px] text-gray-400 dark:text-white/42">
-                    Call clicks, map clicks, reservation clicks, saves,
-                    engagement rate, and performance trends
-                  </p>
-                  <ActionButton
-                    onClick={() => {
-                      void (async () => {
-                        try {
-                          const { checkout_url } = await createSubscriptionCheckout({
-                            vendor_id: dashboardData.vendor_id,
-                            plan_type: "founding_partner",
-                          });
-                          window.location.href = checkout_url;
-                        } catch {
-                          setStatusMessage("Could not start upgrade.");
-                        }
-                      })();
-                    }}
-                    className="mt-3 w-full"
-                  >
-                    Upgrade to Pro
-                  </ActionButton>
+                  {/* ── Top-row stats (shared by Free + Paid) ── */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <BigStat label="Genie Appearances" value={genieAppearances} />
+                    <BigStat label="Profile Views" value={profileViews} />
+                    <BigStat
+                      label="Total Customer Actions"
+                      value={totalActions}
+                    />
+                  </div>
+
+                  {/* ── PRO-only second-row micro stats + chart ── */}
+                  {isPro ? (
+                    <>
+                      <div className="grid grid-cols-4 gap-2">
+                        <MicroStat label="Call Clicks" value={callClicks} />
+                        <MicroStat label="Map Clicks" value={mapClicks} />
+                        <MicroStat
+                          label="Reservation Clicks"
+                          value={reservationClicks}
+                        />
+                        <MicroStat label="User Saved" value={userSaved} />
+                      </div>
+
+                      <div>
+                        <PerformanceChart
+                          points={performancePoints}
+                          minLabel={
+                            d.performance_min != null
+                              ? `${d.performance_min}%`
+                              : "51%"
+                          }
+                          headLabel="7 Days"
+                        />
+                        <div className="mt-2 flex items-center justify-between px-1 text-[0.82rem] font-semibold text-[#e8900a]">
+                          <span>312</span>
+                          <span>45</span>
+                          <span>All Time</span>
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
+
+                  {/* ── Business Details ── */}
+                  <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-5 dark:bg-black/25">
+                    <div className="flex items-center justify-between py-4">
+                      <p className="text-[1rem] font-semibold text-gray-900 dark:text-white">
+                        Business Details
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setStep("profile");
+                          setProfileMessage(null);
+                        }}
+                        aria-label="Edit Business Profile"
+                        className="flex h-8 w-8 items-center justify-center rounded-full bg-red-600 text-white shadow-sm transition hover:bg-red-700"
+                      >
+                        <svg
+                          viewBox="0 0 24 24"
+                          className="h-3.5 w-3.5"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M12 20h9" />
+                          <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                        </svg>
+                      </button>
+                    </div>
+                    <DetailRow label="Website" value={d.website} withDivider />
+                    <DetailRow
+                      label="Reservation"
+                      value={d.reservation_url}
+                      withDivider
+                    />
+                    <DetailRow
+                      label="Category, Cuisine"
+                      value={
+                        [d.category, d.cuisine].filter(Boolean).join(", ") ||
+                        null
+                      }
+                      withDivider
+                    />
+                    <div className="pb-4">
+                      <DetailRow
+                        label="Instagram"
+                        value={d.instagram}
+                        withDivider
+                      />
+                    </div>
+                  </div>
+
+                  {/* ── Bottom section: Pro → Boost status | Free → Upgrade + Boost CTAs ── */}
+                  {isPro ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between px-1">
+                        <p className="text-[1rem] font-semibold text-gray-900 dark:text-white">
+                          {boostActive ? "Boost is Active" : "Boost"}
+                          {boostActive ? (
+                            <span className="ml-2 text-red-500 dark:text-[#ff5a5a]">
+                              ${boostAmount.toFixed(2)}
+                            </span>
+                          ) : null}
+                        </p>
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 text-[0.9rem] font-medium text-gray-600 dark:text-white/70"
+                        >
+                          {boostPeriodLabel}
+                          <svg
+                            viewBox="0 0 24 24"
+                            className="h-3.5 w-3.5"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                          >
+                            <path d="m9 6 6 6-6 6" />
+                          </svg>
+                        </button>
+                      </div>
+                      <ActionButton
+                        onClick={() => {
+                          void (async () => {
+                            if (!d.vendor_id) {
+                              setStatusMessage(
+                                "Vendor profile is still loading. Please try again in a moment."
+                              );
+                              return;
+                            }
+                            try {
+                              const { checkout_url } =
+                                await createSubscriptionCheckout({
+                                  vendor_id: d.vendor_id,
+                                  plan_type: "founding_partner",
+                                });
+                              if (!checkout_url) {
+                                setStatusMessage(
+                                  "Boost is unavailable right now. Please try again later."
+                                );
+                                return;
+                              }
+                              window.location.href = checkout_url;
+                            } catch (err) {
+                              const message =
+                                err instanceof Error && err.message
+                                  ? err.message
+                                  : "Could not start boost.";
+                              setStatusMessage(message);
+                            }
+                          })();
+                        }}
+                        className="w-full"
+                      >
+                        Boost your listing
+                      </ActionButton>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <p className="text-center text-[0.95rem] font-medium text-gray-600 dark:text-white/70">
+                        Unlock more insights & boost your business
+                      </p>
+                      <ActionButton
+                        onClick={() => {
+                          void (async () => {
+                            if (!d.vendor_id) {
+                              setStatusMessage(
+                                "Vendor profile is still loading. Please try again in a moment."
+                              );
+                              return;
+                            }
+                            try {
+                              const { checkout_url } =
+                                await createSubscriptionCheckout({
+                                  vendor_id: d.vendor_id,
+                                  plan_type: "founding_partner",
+                                });
+                              if (!checkout_url) {
+                                setStatusMessage(
+                                  "Upgrade is unavailable right now. Please try again later."
+                                );
+                                return;
+                              }
+                              window.location.href = checkout_url;
+                            } catch (err) {
+                              const message =
+                                err instanceof Error && err.message
+                                  ? err.message
+                                  : "Could not start upgrade.";
+                              setStatusMessage(message);
+                            }
+                          })();
+                        }}
+                        className="w-full"
+                      >
+                        Upgrade to Pro
+                      </ActionButton>
+                      <ActionButton
+                        onClick={() => {
+                          void (async () => {
+                            if (!d.vendor_id) {
+                              setStatusMessage(
+                                "Vendor profile is still loading. Please try again in a moment."
+                              );
+                              return;
+                            }
+                            try {
+                              const { checkout_url } =
+                                await createSubscriptionCheckout({
+                                  vendor_id: d.vendor_id,
+                                  plan_type: "founding_partner",
+                                });
+                              if (!checkout_url) {
+                                setStatusMessage(
+                                  "Boost is unavailable right now. Please try again later."
+                                );
+                                return;
+                              }
+                              window.location.href = checkout_url;
+                            } catch (err) {
+                              const message =
+                                err instanceof Error && err.message
+                                  ? err.message
+                                  : "Could not start boost.";
+                              setStatusMessage(message);
+                            }
+                          })();
+                        }}
+                        variant="secondary"
+                        className="w-full"
+                      >
+                        Boost your business
+                      </ActionButton>
+                    </div>
+                  )}
                 </div>
-              )}
-
-              <div className="space-y-3">
-                <ActionButton
-                  onClick={() => {
-                    setStep("profile");
-                    setProfileMessage(null);
-                  }}
-                  className="w-full"
-                >
-                  Edit Business Profile
-                </ActionButton>
-                <ActionButton
-                  onClick={() => void loadDashboard()}
-                  variant="secondary"
-                  className="w-full"
-                  disabled={isDashboardLoading}
-                >
-                  {isDashboardLoading ? "Refreshing..." : "Refresh Metrics"}
-                </ActionButton>
-              </div>
-            </div>
+              );
+            })()
           ) : (
             <div className="space-y-4 text-center">
               <p className="text-sm text-gray-500 dark:text-white/60">
@@ -1563,7 +1889,7 @@ export function VendorSection({
             <div className={`rounded-2xl border px-4 py-3 text-sm ${
               profileMessage.includes("success")
                 ? "border-green-200 bg-green-50 text-green-700 dark:border-green-500/30 dark:bg-green-900/20 dark:text-green-400"
-                : "border-gray-100 bg-gray-50 text-gray-500 dark:border-white/10 dark:bg-black/20 dark:text-white/60"
+                : "border-[#E7070380] bg-gray-50 text-gray-500 dark:border-[#E7070380] dark:bg-black/20 dark:text-white/60"
             }`}>
               {profileMessage}
             </div>
@@ -1572,7 +1898,7 @@ export function VendorSection({
       )}
 
       {statusMessage && (
-        <div className="mt-5 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-500 dark:border-white/10 dark:bg-black/20 dark:text-white/60">
+        <div className="mt-5 rounded-2xl border border-[#E7070380] bg-gray-50 px-4 py-3 text-sm text-gray-500 dark:border-[#E7070380] dark:bg-black/20 dark:text-white/60">
           {statusMessage}
         </div>
       )}

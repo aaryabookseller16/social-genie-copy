@@ -151,7 +151,7 @@ function StyledInput({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         style={{ fontSize: "16px" }}
-        className="w-full rounded-[16px] border border-gray-200 bg-gray-50 px-4 py-3 text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
+        className="w-full rounded-[16px] border border-[#E7070380] bg-gray-50 px-4 py-3 text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#E7070380] dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
       />
     </label>
   );
@@ -298,7 +298,7 @@ export function ProfileSection({
       </div>
 
       {/* Info card */}
-      <div className="overflow-hidden rounded-[18px] border border-red-300 bg-transparent dark:border-white/12 dark:bg-black/20">
+      <div className="overflow-hidden rounded-[18px] border border-[#E7070380] bg-transparent dark:border-[#E7070380] dark:bg-black/20">
         <InfoRow label="Name" value={fullName} />
         <InfoRow label="Email" value={account?.email} withDivider />
         <InfoRow label="Phone" value={account?.phone} withDivider />

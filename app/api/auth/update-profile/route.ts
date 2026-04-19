@@ -12,11 +12,14 @@ function isEmailValid(email: string) {
 /**
  * POST /api/auth/update-profile
  *
- * Updates the authenticated user's profile (first_name, last_name, email, phone).
- * Proxies to Xano Auth base URL (api:dRDS80y8) → `auth/update_profile`.
+ * Updates the authenticated CONSUMER user's profile
+ * (first_name, last_name, email, phone).
  *
- * The bearer token is required; only fields present in the request body are
- * forwarded so the backend can do a partial update.
+ * Proxies to Xano Auth base URL (api:dRDS80y8) → `auth/update_profile`.
+ * Auth is via bearer token (JWT).
+ *
+ * For VENDOR contact-info edits (V-05 flow), use `/api/vendor/contact-info`
+ * which proxies to `genie/ep_save_contact_info_dev`.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -87,6 +90,21 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     if (error instanceof XanoError) {
+      // Xano returns "Unable to locate request" with a 404 when the consumer
+      // auth/update_profile endpoint hasn't been built yet. Surface a
+      // friendlier message rather than the raw backend error.
+      const isMissingEndpoint =
+        error.status === 404 ||
+        /unable to locate request/i.test(error.message);
+      if (isMissingEndpoint) {
+        return NextResponse.json(
+          {
+            error:
+              "Profile editing isn't available right now. Please try again later or contact support.",
+          },
+          { status: 503 }
+        );
+      }
       return NextResponse.json(
         { error: error.message },
         { status: error.status }

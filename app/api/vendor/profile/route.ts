@@ -6,28 +6,112 @@ import {
 } from "@/app/lib/server/xanoProxy";
 
 /**
+ * GET /api/vendor/profile?external_user_id=...
+ * Proxies to `genie/ep_get_vendor_profile_dev`.
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const authToken = extractBearerToken(request);
+    const externalUserId =
+      request.nextUrl.searchParams.get("external_user_id")?.trim() ?? "";
+
+    if (!externalUserId) {
+      return NextResponse.json(
+        { error: "external_user_id is required" },
+        { status: 400 }
+      );
+    }
+
+    const result = await xanoFetch<{
+      error: string | null;
+      vendor: Record<string, unknown> | null;
+    }>("genie/ep_get_vendor_profile_dev", {
+      method: "GET",
+      authToken,
+      params: { external_user_id: externalUserId },
+    });
+
+    if (result?.error) {
+      return NextResponse.json(
+        { error: result.error, vendor: null },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json(result ?? { vendor: null });
+  } catch (error) {
+    if (error instanceof XanoError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status }
+      );
+    }
+    console.error("GET /api/vendor/profile failed:", error);
+    return NextResponse.json(
+      { error: "Could not load vendor profile." },
+      { status: 500 }
+    );
+  }
+}
+
+/**
  * PUT /api/vendor/profile
- * Update vendor profile fields.
+ * Proxies to `genie/ep_save_profile_changes_dev`.
+ *
+ * Body must include `external_user_id`. Only provided fields are updated —
+ * omitted fields retain their current values.
  */
 export async function PUT(request: NextRequest) {
   try {
     const authToken = extractBearerToken(request);
-    if (!authToken) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const body = (await request.json().catch(() => ({}))) as Record<
       string,
       unknown
     >;
 
-    // For now, forward the payload directly.
-    // The Xano endpoint handles field validation.
-    const result = await xanoFetch("genie/vendor_profile", {
-      method: "PUT",
+    const externalUserId =
+      typeof body.external_user_id === "string"
+        ? body.external_user_id.trim()
+        : "";
+    if (!externalUserId) {
+      return NextResponse.json(
+        { error: "external_user_id is required" },
+        { status: 400 }
+      );
+    }
+
+    const allowed: ReadonlyArray<keyof typeof body> = [
+      "business_name",
+      "business_address",
+      "city",
+      "state",
+      "zip",
+      "location_enabled",
+      "reservation_url",
+      "reservation_platform",
+    ];
+
+    const payload: Record<string, unknown> = {
+      external_user_id: externalUserId,
+    };
+    for (const key of allowed) {
+      if (body[key] !== undefined) {
+        payload[key as string] = body[key];
+      }
+    }
+
+    const result = await xanoFetch<{
+      error: string | null;
+      success: boolean;
+    }>("genie/ep_save_profile_changes_dev", {
+      method: "POST",
       authToken,
-      body,
+      body: payload,
     });
+
+    if (result?.error) {
+      return NextResponse.json({ error: result.error }, { status: 400 });
+    }
 
     return NextResponse.json(result ?? { success: true });
   } catch (error) {

@@ -198,24 +198,43 @@ export function BottomDock({
 }) {
   return (
     <div className="pointer-events-auto fixed bottom-0 left-1/2 z-50 w-[min(100vw,28rem)] -translate-x-1/2">
-      <div className="relative flex items-center justify-between border-t border-red-200 bg-white/95 px-10 pb-[calc(env(safe-area-inset-bottom,0px)+8px)] pt-2 backdrop-blur-2xl dark:border-white/15 dark:bg-black/30">
+      <div className="relative flex items-center justify-between bg-white/10 px-10 pb-[calc(env(safe-area-inset-bottom,0px)+8px)] pt-2 backdrop-blur-3xl dark:bg-black/30">
+        {/* Red line pinned to the very top of the nav bar */}
+        <Image
+          src="/bottom-red-line.png"
+          alt=""
+          aria-hidden="true"
+          width={448}
+          height={4}
+          className="absolute inset-x-0 top-0 w-full object-fill"
+        />
         <button
           type="button"
           onClick={onHome}
           className={`flex h-10 w-10 items-center justify-center ${
             activeId === "saved" || activeId === "detail"
-              ? "text-gray-400 dark:text-white/58"
-              : "text-red-600 dark:text-[#ff7b7b]"
+              ? "opacity-35 dark:opacity-50"
+              : ""
           }`}
           aria-label="Go home"
         >
+          {/* home_svgrepo.com.png is already red — visible in light mode */}
           <Image
             src="/home_svgrepo.com.png"
-            alt=""
+            alt="home"
             width={20}
             height={20}
-            className="h-5 w-5 object-contain"
+            className="h-5 w-5 object-contain dark:hidden"
           />
+
+          <Image
+            src="/home_svgrepo_dark.com.png"
+            alt="home"
+            width={20}
+            height={20}
+            className="hidden h-5 w-5 object-contain dark:block"
+          />
+
         </button>
 
         <button
@@ -236,15 +255,23 @@ export function BottomDock({
         <button
           type="button"
           onClick={onSearch}
-          className="flex h-10 w-10 items-center justify-center text-gray-400 dark:text-white/58"
+          className="flex h-10 w-10 items-center justify-center"
           aria-label="Search"
         >
+          {/* light mode: red search icon / dark mode: white search icon */}
+          <Image
+            src="/search_red.png"
+            alt=""
+            width={20}
+            height={20}
+            className="h-5 w-5 object-contain dark:hidden"
+          />
           <Image
             src="/icons/searchIcon.png"
             alt=""
             width={20}
             height={20}
-            className="h-5 w-5 object-contain"
+            className="hidden h-5 w-5 object-contain opacity-60 dark:block"
           />
         </button>
       </div>
@@ -366,30 +393,30 @@ export function ResultCard({
       onClick={onOpen}
       className="w-full overflow-hidden rounded-[20px] border border-red-200 bg-white text-left shadow-[0_8px_24px_rgba(0,0,0,0.06)] transition hover:shadow-[0_10px_26px_rgba(0,0,0,0.1)] dark:border-[#6a1d1d] dark:bg-black/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.4)] dark:hover:border-[#ff7b7b]"
     >
-      <div className="flex gap-3 p-2.5">
-        <div className="relative h-[5.5rem] w-[5.5rem] flex-none overflow-hidden rounded-[14px]">
+      <div className="flex gap-3 p-3">
+        <div className="relative h-28 w-28 flex-none overflow-hidden rounded-2xl">
           <Image
             src={venue.image || "/sample-venue-1.jpeg"}
             alt={venue.venue_name || "Venue"}
             fill
             className="object-cover"
-            sizes="88px"
+            sizes="112px"
           />
         </div>
 
-        <div className="min-w-0 flex-1 py-0.5">
-          <p className="truncate text-[1rem] font-semibold leading-tight text-gray-900 dark:text-white">
+        <div className="min-w-0 flex-1 py-1">
+          <p className="truncate text-[1.1rem] font-semibold leading-tight text-gray-900 dark:text-white">
             {venue.venue_name}
           </p>
-          <p className="mt-0.5 truncate text-[0.75rem] text-gray-500 dark:text-white/60">
+          <p className="mt-1 truncate text-[0.82rem] text-gray-500 dark:text-white/60">
             {getVenueHeadlineShort(venue)} - {getVenueDistance(venue, index)}
           </p>
 
-          <p className="mt-1 truncate text-[0.8rem] font-medium text-red-500 dark:text-[#ff9d7d]">
+          <p className="mt-1.5 truncate text-[0.88rem] font-medium text-red-500 dark:text-[#ff9d7d]">
             {getVenueTagline(venue)}
           </p>
 
-          <p className="mt-1 flex items-center gap-1.5 text-[0.78rem] font-medium text-amber-500 dark:text-amber-300">
+          <p className="mt-1.5 flex items-center gap-1.5 text-[0.82rem] font-medium text-amber-500 dark:text-amber-300">
             <span className={`inline-block h-2 w-2 rounded-full ${statusColor}`} />
             {statusText}
           </p>

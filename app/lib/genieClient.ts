@@ -16,10 +16,19 @@ import {
 
 export type { GenieFilters, GenieResponseEnvelope, GenieVenue };
 
-export async function callGenie(message: string): Promise<GenieResponseEnvelope> {
+export type CallGenieOptions = {
+  coords?: { lat: number; lng: number } | null;
+  radiusMeters?: number;
+};
+
+export async function callGenie(
+  message: string,
+  options: CallGenieOptions = {}
+): Promise<GenieResponseEnvelope> {
   const config = getRuntimeConfig();
   const token = readAuthToken();
   const account = readConsumerAccount();
+  const { coords, radiusMeters } = options;
   const body = {
     message,
     channel: "web",
@@ -27,6 +36,12 @@ export async function callGenie(message: string): Promise<GenieResponseEnvelope>
     user_name: account?.firstName || undefined,
     session_token: readSessionToken(),
     city_context: config.citySlug,
+    lat: coords && Number.isFinite(coords.lat) ? coords.lat : undefined,
+    lng: coords && Number.isFinite(coords.lng) ? coords.lng : undefined,
+    radius_meters:
+      typeof radiusMeters === "number" && Number.isFinite(radiusMeters)
+        ? radiusMeters
+        : 2500,
     user: account?.id
       ? {
           first_name: account.firstName,
