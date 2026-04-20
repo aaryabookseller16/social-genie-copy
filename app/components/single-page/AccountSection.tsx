@@ -400,14 +400,29 @@ export function AccountSection({
           </p>
 
           <label className="flex cursor-pointer items-center gap-2 pt-1 text-[14px] leading-relaxed text-gray-800 dark:text-white/60">
-            <input
-              type="checkbox"
-              checked={form.consent}
-              onChange={(e) =>
-                setForm((c) => ({ ...c, consent: e.target.checked }))
-              }
-              className="h-5 w-5 flex-none appearance-none rounded-full border-2 border-red-500 bg-white checked:border-red-600 checked:bg-red-600 checked:bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><path fill=%22none%22 stroke=%22white%22 stroke-width=%222.4%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22 d=%22m3.25 8.5 2.5 2.5 6-6%22/></svg>')] checked:bg-center checked:bg-no-repeat focus:outline-none focus:ring-2 focus:ring-red-500/30"
-            />
+            <span className="relative flex h-5 w-5 flex-none items-center justify-center">
+              <input
+                type="checkbox"
+                checked={form.consent}
+                onChange={(e) =>
+                  setForm((c) => ({ ...c, consent: e.target.checked }))
+                }
+                className="peer sr-only"
+              />
+              <span className="h-5 w-5 rounded-full border-2 border-red-500 bg-white transition peer-checked:border-red-600 peer-checked:bg-red-600 peer-focus-visible:ring-2 peer-focus-visible:ring-red-500/30 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:peer-checked:border-[#ff6a6a] dark:peer-checked:bg-red-600" />
+              <svg
+                viewBox="0 0 16 16"
+                className="pointer-events-none absolute h-3 w-3 text-white opacity-0 transition peer-checked:opacity-100"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="m3.25 8.5 2.5 2.5 6-6" />
+              </svg>
+            </span>
             <span>
               I agree to the <span className="text-red-600 underline">Terms</span> and{" "}
               <span className="text-red-600 underline">Privacy Policy</span>
@@ -579,7 +594,7 @@ export function AccountSection({
                     <p className="text-[16px] font-semibold text-red-600 dark:text-[#ff7b7b]">
                       Become a V.I. Bee
                     </p>
-                    <p className="mt-0.5 text-[16px] text-red-500 dark:text-[#ff7b7b]">
+                    <p className="mt-0.5 text-[16px]">
                       {toMonthlyPriceLabel(config.vibeeMonthlyPrice)}
                     </p>
                     <BenefitList benefits={config.vibeeBenefits} />

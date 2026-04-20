@@ -2056,7 +2056,7 @@ export function SinglePageGenieApp({
                       {buildVenueTags(venue).slice(0, 2).map((tag) => (
                         <span
                           key={`${venue.id}-${tag}`}
-                          className="rounded-full border border-gray-200 bg-transparent px-2.5 py-0.5 text-[0.65rem] font-medium text-gray-600 dark:border-white/25 dark:text-white/70"
+                          className="rounded-full border border-[#E7070380] bg-[#E70703] px-2.5 py-0.5 text-[0.65rem] font-medium text-white dark:border-[#E7070380] dark:bg-transparent dark:text-white"
                         >
                           {tag}
                         </span>
@@ -2101,7 +2101,7 @@ export function SinglePageGenieApp({
                             {buildVenueTags(venue).slice(0, 2).map((tag) => (
                               <span
                                 key={`${venue.id}-${tag}`}
-                                className="rounded-full border border-gray-200 bg-transparent px-2 py-0.5 text-[0.6rem] font-medium text-gray-600 dark:border-white/25 dark:text-white/70"
+                                className="rounded-full border border-[#E7070380] bg-[#E70703] px-2 py-0.5 text-[0.6rem] font-medium text-white dark:border-[#E7070380] dark:bg-transparent dark:text-white"
                               >
                                 {tag}
                               </span>
@@ -2119,7 +2119,7 @@ export function SinglePageGenieApp({
 
         {activeScreen === "detail" && selectedVenue ? (
           <section ref={detailRef} className="-mx-4 -mt-3 pb-24 sm:-mx-6 sm:-mt-5">
-            <div className="relative h-[22rem] w-full overflow-hidden">
+            <div className="relative h-[14rem] w-full overflow-hidden">
               <Image
                 src={selectedVenue.image || "/sample-venue-1.jpeg"}
                 alt={selectedVenue.venue_name || "Venue"}
@@ -2132,7 +2132,7 @@ export function SinglePageGenieApp({
                 <button
                   type="button"
                   onClick={handleTopBack}
-                  className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-red-600 shadow-sm dark:border dark:border-white/40 dark:bg-black/40 dark:text-white dark:backdrop-blur-sm"
+                  className="flex h-8 w-8 items-center justify-center text-red-600 dark:text-white"
                   aria-label="Go back"
                 >
                   <BackIcon size={24} className="h-6 w-6 object-contain" />
@@ -2173,26 +2173,27 @@ export function SinglePageGenieApp({
                 <h2 className="text-[2.1rem] font-bold leading-tight text-white">
                   {selectedVenue.venue_name}
                 </h2>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span className="rounded-full bg-red-600 px-3 py-1 text-[0.72rem] font-semibold text-white dark:bg-white dark:text-gray-900">
-                    {getVenueStatus(selectedVenue, 0)}
-                  </span>
-                  <span className="rounded-full border border-red-300 bg-transparent px-3 py-1 text-[0.72rem] font-medium text-red-500 dark:border-[#E7070380] dark:text-white/85">
-                    {[
-                      selectedVenue.energy_level,
-                      selectedVenue.price_band === "$$" ? "Mid-Range" : selectedVenue.price_band,
-                      selectedVenue.music?.split(",")[0].split(" ").slice(0, 2).join(" "),
-                      selectedVenue.crowd?.split(" ").slice(0, 2).join(" "),
-                    ]
-                      .filter(Boolean)
-                      .slice(0, 4)
-                      .join(" - ")}
-                  </span>
-                </div>
               </div>
             </div>
 
             <div className="space-y-4 px-5 pb-5 pt-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-red-600 px-3 py-1 text-[0.72rem] font-semibold text-white dark:bg-white dark:text-gray-900">
+                  {getVenueStatus(selectedVenue, 0)}
+                </span>
+                <span className="rounded-full border border-red-300 bg-transparent px-3 py-1 text-[0.72rem] font-medium text-red-500 dark:border-[#E7070380] dark:text-white/85">
+                  {[
+                    selectedVenue.energy_level,
+                    selectedVenue.price_band === "$$" ? "Mid-Range" : selectedVenue.price_band,
+                    selectedVenue.music?.split(",")[0].split(" ").slice(0, 2).join(" "),
+                    selectedVenue.crowd?.split(" ").slice(0, 2).join(" "),
+                  ]
+                    .filter(Boolean)
+                    .slice(0, 4)
+                    .join(" - ")}
+                </span>
+              </div>
+
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.82rem] text-gray-700 dark:text-white/80">
                 <span className="flex items-center gap-1">
                   {[1, 2, 3, 4, 5].map((n) => (
@@ -2257,7 +2258,7 @@ export function SinglePageGenieApp({
                 ) : null}
               </div>
 
-              <div className="grid grid-cols-[1fr_1.45fr_1fr] gap-2">
+              <div className="grid grid-cols-[1fr_1.45fr_1fr] gap-1">
                 {detailActions.slice(0, 3).map((action, index) => {
                   const isCall =
                     action.id.includes("call") ||
@@ -2279,10 +2280,10 @@ export function SinglePageGenieApp({
                       key={action.id}
                       type="button"
                       onClick={gateDetailTap(action.onClick)}
-                      className={`flex items-center justify-center gap-1.5 rounded-full border font-medium transition ${
+                      className={`flex items-center justify-center gap-1 rounded-full border font-medium transition ${
                         isReserve
-                          ? "border-red-500 bg-red-600 px-2 py-3 text-[0.85rem] text-white hover:bg-red-700 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
-                          : "border-[#E7070380] bg-transparent px-2 py-2.5 text-[0.8rem] text-red-600 hover:bg-red-50 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
+                          ? "border-red-500 bg-red-600 px-1.5 py-2 text-[0.76rem] text-white hover:bg-red-700 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
+                          : "border-[#E7070380] bg-transparent px-1.5 py-1.5 text-[0.72rem] text-red-600 hover:bg-red-50 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
                       }`}
                     >
                       <Image
@@ -2291,7 +2292,7 @@ export function SinglePageGenieApp({
                         aria-hidden="true"
                         width={16}
                         height={16}
-                        className={`${isReserve ? "h-[18px] w-[18px]" : "h-4 w-4"} object-contain dark:hidden`}
+                        className={`${isReserve ? "h-[15px] w-[15px]" : "h-[14px] w-[14px]"} object-contain dark:hidden`}
                       />
                       <Image
                         src={darkIconSrc}
@@ -2299,7 +2300,7 @@ export function SinglePageGenieApp({
                         aria-hidden="true"
                         width={16}
                         height={16}
-                        className={`hidden ${isReserve ? "h-[18px] w-[18px]" : "h-4 w-4"} object-contain dark:block`}
+                        className={`hidden ${isReserve ? "h-[15px] w-[15px]" : "h-[14px] w-[14px]"} object-contain dark:block`}
                       />
                       {label}
                     </button>

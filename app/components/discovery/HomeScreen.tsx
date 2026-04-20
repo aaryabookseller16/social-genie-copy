@@ -68,7 +68,7 @@ export function HomeScreen({
             width={520}
             height={520}
             priority
-            className="pointer-events-none absolute left-[44%] top-1/2 z-0 h-auto w-full max-w-none -translate-x-1/2 -translate-y-1/2 object-contain opacity-95"
+            className="pointer-events-none absolute left-[48%] top-1/2 z-0 h-auto w-full max-w-none -translate-x-1/2 -translate-y-1/2 object-contain opacity-95"
           />
           <Image
             src="/icons/Social-Genie-Home-Screen.png"
