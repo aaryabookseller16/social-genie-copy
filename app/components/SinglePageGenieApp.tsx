@@ -22,6 +22,7 @@ import {
   getVenueHeadlineShort,
   getVenueStatus,
   getVenueDescription,
+  getGenieTake,
   getOpenUntil,
 } from "@/app/components/single-page/ui";
 import { HomeScreen } from "@/app/components/discovery/HomeScreen";
@@ -661,6 +662,13 @@ export function SinglePageGenieApp({
     index: number,
     source: "decision" | "more" | "saved"
   ) => {
+    // Account Intro gate: on the Decision screen, after the user has completed
+    // at least two queries, the first venue tap by an unauthenticated user
+    // takes them to the Account Intro instead of the detail view.
+    if (source === "decision" && !account && queryCount >= 2) {
+      maybeTriggerSignup("second_query");
+      return;
+    }
     setSelectedVenueId(getVenueId(venue));
     setDetailReturnScreen(source);
     setBrowseCount((previous) => previous + 1);
@@ -1134,12 +1142,15 @@ export function SinglePageGenieApp({
       );
     };
 
+    // Do NOT auto-show the location banner. The ask is only surfaced after
+    // the user signals a near-me intent (taps a smart prompt chip or types
+    // "near me"). If permission was previously granted, silently fetch the
+    // coords so they're ready for the next query.
     if (permissionsApi?.query) {
       permissionsApi
         .query({ name: "geolocation" })
         .then((status) => {
           if (status.state === "granted") {
-            // Already granted - silently fetch once for use in queries.
             navigator.geolocation.getCurrentPosition(
               (pos) => onGranted(pos.coords.latitude, pos.coords.longitude),
               () => {
@@ -1147,20 +1158,11 @@ export function SinglePageGenieApp({
                 setLocationPromptDismissed(true);
               }
             );
-          } else if (status.state === "prompt" && !dismissed) {
-            setLocationPromptDismissed(false);
-          } else {
-            setLocationPromptDismissed(true);
           }
         })
-        .catch(() => {
-          if (!dismissed) {
-            setLocationPromptDismissed(false);
-          }
-        });
-    } else if (!dismissed) {
-      setLocationPromptDismissed(false);
+        .catch(() => {});
     }
+    void dismissed;
 
     // Expose askNow on the ref so the banner can call it
     (window as Window & { __genieAskLocation?: () => void }).__genieAskLocation =
@@ -1187,6 +1189,24 @@ export function SinglePageGenieApp({
       window.localStorage.setItem("genie_location_prompt_dismissed_v1", "1");
     }
   }, []);
+
+  // Surface the location ask when a query has a near-me intent (chip tap or
+  // the phrase "near me" in typed/voice input). No-op if already granted or
+  // permanently dismissed on this device.
+  const maybeAskLocationForIntent = useCallback(
+    (text: string, source: "chip" | "typed" | "voice") => {
+      if (typeof window === "undefined" || !("geolocation" in navigator)) return;
+      if (locationGranted) return;
+      const dismissed =
+        window.localStorage.getItem("genie_location_prompt_dismissed_v1") === "1";
+      if (dismissed) return;
+      const isNearMeIntent =
+        source === "chip" || /\bnear me\b/i.test(text ?? "");
+      if (!isNearMeIntent) return;
+      setLocationPromptDismissed(false);
+    },
+    [locationGranted]
+  );
 
   // Silence unused variable warning — locationGranted is reserved for future
   // UI states (e.g. showing a "using your location" indicator).
@@ -1310,17 +1330,23 @@ export function SinglePageGenieApp({
     window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
   }, []);
 
-  useEffect(() => {
-    if (queryCount >= 2) {
-      maybeTriggerSignup("second_query");
-    }
-  }, [maybeTriggerSignup, queryCount]);
+  // Account Intro is NOT triggered on query count or browse count alone.
+  // It's gated to the moment the user taps a venue on the Decision screen
+  // after completing their second (or later) query — see selectVenue below.
+  void browseCount;
 
+  // Post-login redirect for the Vendor Dashboard entry point: when a logged-
+  // out user taps "Vendor Dashboard" we stash an intent flag and send them
+  // through the magic-link login. Once the session is hydrated, forward
+  // them to the vendor flow — VendorSection itself decides dashboard vs.
+  // claim based on whether the account has a vendor_id.
   useEffect(() => {
-    if (browseCount >= 2) {
-      maybeTriggerSignup("repeated_browse");
-    }
-  }, [browseCount, maybeTriggerSignup]);
+    if (!account || typeof window === "undefined") return;
+    const target = window.sessionStorage.getItem("genie_post_login_target");
+    if (target !== "vendor") return;
+    window.sessionStorage.removeItem("genie_post_login_target");
+    navigateTo("vendor");
+  }, [account, navigateTo]);
 
   useEffect(() => {
     if (!response || response.response_mode !== "structured_results") {
@@ -1573,7 +1599,20 @@ export function SinglePageGenieApp({
           );
           break;
         case "vendor":
-          navigateTo("vendor");
+          // Role-aware routing:
+          //  • logged in + vendorId  → VendorSection routes straight to dashboard
+          //  • logged in, no vendorId → VendorSection shows "Claim your business"
+          //  • logged out             → send to login (magic link); after auth
+          //    hydration completes we'll forward them to Vendor Dashboard.
+          if (!account) {
+            if (typeof window !== "undefined") {
+              window.sessionStorage.setItem("genie_post_login_target", "vendor");
+            }
+            setIsDrawerOpen(false);
+            navigateTo("account");
+          } else {
+            navigateTo("vendor");
+          }
           break;
         case "help-faq":
           setIsDrawerOpen(false);
@@ -1710,6 +1749,7 @@ export function SinglePageGenieApp({
         onNavigate={handleDrawerNavigate}
         onLogout={handleLogout}
         onLogin={() => { setIsDrawerOpen(false); navigateTo("account"); }}
+        isVendor={!!account?.vendorId}
         notificationsEnabled={notificationsEnabled}
         onToggleNotifications={() => setNotificationsEnabled((prev) => !prev)}
       />
@@ -1837,17 +1877,20 @@ export function SinglePageGenieApp({
 
               setPendingTranscript(false);
               setInputValue(prompt);
+              maybeAskLocationForIntent(prompt, "chip");
               void handleQuery(prompt, "chip");
             }}
             onOrbTap={startListening}
             onSubmit={() => {
               setPendingTranscript(false);
+              maybeAskLocationForIntent(inputValue, "typed");
               void handleQuery(inputValue, "typed");
             }}
             onConfirmTranscript={() => {
               const value = inputValue.trim();
               setPendingTranscript(false);
               if (value) {
+                maybeAskLocationForIntent(value, "voice");
                 void handleQuery(value, "voice");
               }
             }}
@@ -2056,7 +2099,7 @@ export function SinglePageGenieApp({
                       {buildVenueTags(venue).slice(0, 2).map((tag) => (
                         <span
                           key={`${venue.id}-${tag}`}
-                          className="rounded-full border border-gray-200 bg-transparent px-2.5 py-0.5 text-[0.65rem] font-medium text-gray-600 dark:border-white/25 dark:text-white/70"
+                          className="rounded-full border border-[#E70703] bg-transparent px-2.5 py-0.5 text-[0.65rem] font-medium text-[#E70703] dark:border-[#E70703] dark:bg-transparent dark:text-white"
                         >
                           {tag}
                         </span>
@@ -2101,7 +2144,7 @@ export function SinglePageGenieApp({
                             {buildVenueTags(venue).slice(0, 2).map((tag) => (
                               <span
                                 key={`${venue.id}-${tag}`}
-                                className="rounded-full border border-gray-200 bg-transparent px-2 py-0.5 text-[0.6rem] font-medium text-gray-600 dark:border-white/25 dark:text-white/70"
+                                className="rounded-full border border-[#E70703] bg-transparent px-2 py-0.5 text-[0.6rem] font-medium text-[#E70703] dark:border-[#E70703] dark:bg-transparent dark:text-white"
                               >
                                 {tag}
                               </span>
@@ -2119,7 +2162,7 @@ export function SinglePageGenieApp({
 
         {activeScreen === "detail" && selectedVenue ? (
           <section ref={detailRef} className="-mx-4 -mt-3 pb-24 sm:-mx-6 sm:-mt-5">
-            <div className="relative h-[22rem] w-full overflow-hidden">
+            <div className="relative h-[14rem] w-full overflow-hidden">
               <Image
                 src={selectedVenue.image || "/sample-venue-1.jpeg"}
                 alt={selectedVenue.venue_name || "Venue"}
@@ -2132,7 +2175,7 @@ export function SinglePageGenieApp({
                 <button
                   type="button"
                   onClick={handleTopBack}
-                  className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-red-600 shadow-sm dark:border dark:border-white/40 dark:bg-black/40 dark:text-white dark:backdrop-blur-sm"
+                  className="flex h-8 w-8 items-center justify-center text-red-600 dark:text-white"
                   aria-label="Go back"
                 >
                   <BackIcon size={24} className="h-6 w-6 object-contain" />
@@ -2145,8 +2188,8 @@ export function SinglePageGenieApp({
                     aria-label="Save"
                   >
                     {savedVenueIds.includes(getVenueId(selectedVenue)) ? (
-                      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" aria-hidden="true">
-                        <path d="M12 21s-7-4.35-7-10a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 5.65-7 10-7 10-1 .65-3 .65-4 0z" />
+                      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
                       </svg>
                     ) : (
                       <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -2173,26 +2216,27 @@ export function SinglePageGenieApp({
                 <h2 className="text-[2.1rem] font-bold leading-tight text-white">
                   {selectedVenue.venue_name}
                 </h2>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span className="rounded-full bg-red-600 px-3 py-1 text-[0.72rem] font-semibold text-white dark:bg-white dark:text-gray-900">
-                    {getVenueStatus(selectedVenue, 0)}
-                  </span>
-                  <span className="rounded-full border border-red-300 bg-transparent px-3 py-1 text-[0.72rem] font-medium text-red-500 dark:border-[#E7070380] dark:text-white/85">
-                    {[
-                      selectedVenue.energy_level,
-                      selectedVenue.price_band === "$$" ? "Mid-Range" : selectedVenue.price_band,
-                      selectedVenue.music?.split(",")[0].split(" ").slice(0, 2).join(" "),
-                      selectedVenue.crowd?.split(" ").slice(0, 2).join(" "),
-                    ]
-                      .filter(Boolean)
-                      .slice(0, 4)
-                      .join(" - ")}
-                  </span>
-                </div>
               </div>
             </div>
 
             <div className="space-y-4 px-5 pb-5 pt-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-red-600 px-3 py-1 text-[0.72rem] font-semibold text-white dark:bg-white dark:text-gray-900">
+                  {getVenueStatus(selectedVenue, 0)}
+                </span>
+                <span className="rounded-full border border-red-300 bg-transparent px-3 py-1 text-[0.72rem] font-medium text-red-500 dark:border-[#E7070380] dark:text-white/85">
+                  {[
+                    selectedVenue.energy_level,
+                    selectedVenue.price_band === "$$" ? "Mid-Range" : selectedVenue.price_band,
+                    selectedVenue.music?.split(",")[0].split(" ").slice(0, 2).join(" "),
+                    selectedVenue.crowd?.split(" ").slice(0, 2).join(" "),
+                  ]
+                    .filter(Boolean)
+                    .slice(0, 4)
+                    .join(" - ")}
+                </span>
+              </div>
+
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.82rem] text-gray-700 dark:text-white/80">
                 <span className="flex items-center gap-1">
                   {[1, 2, 3, 4, 5].map((n) => (
@@ -2219,28 +2263,26 @@ export function SinglePageGenieApp({
                 </span>
               </div>
 
-              {/* Genie's Review Intelligence */}
-              {selectedVenue.vibe_notes ? (
-                <div className="flex items-start gap-3 rounded-[18px] border border-[#E7070380] bg-transparent px-4 py-3 dark:border-[#E7070380] dark:bg-black/25">
-                  <div className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center overflow-hidden rounded-full">
-                    <Image
-                      src="/icons/Social-Genie-Home-Screen.png"
-                      alt="Genie"
-                      width={32}
-                      height={32}
-                      className="h-8 w-8 object-cover"
-                    />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-red-500 dark:text-[#ff9d7d]">
-                      Genie&apos;s Take
-                    </p>
-                    <p className="mt-1 text-[0.85rem] leading-5 text-gray-700 dark:text-white/80">
-                      {selectedVenue.vibe_notes}
-                    </p>
-                  </div>
+              {/* Genie's Review Intelligence — rendered for every venue. */}
+              <div className="flex items-start gap-3 rounded-[18px] border border-[#E7070380] bg-transparent px-4 py-3 dark:border-[#E7070380] dark:bg-black/25">
+                <div className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center overflow-hidden rounded-full">
+                  <Image
+                    src="/icons/Social-Genie-Home-Screen.png"
+                    alt="Genie"
+                    width={32}
+                    height={32}
+                    className="h-8 w-8 object-cover"
+                  />
                 </div>
-              ) : null}
+                <div className="min-w-0 flex-1">
+                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-red-500 dark:text-[#ff9d7d]">
+                    Genie&apos;s Take
+                  </p>
+                  <p className="mt-1 text-[0.85rem] leading-5 text-gray-700 dark:text-white/80">
+                    {getGenieTake(selectedVenue)}
+                  </p>
+                </div>
+              </div>
 
               <div className="flex flex-wrap items-center gap-2 text-[0.82rem]">
                 {getOpenUntil(selectedVenue) ? (
@@ -2257,7 +2299,7 @@ export function SinglePageGenieApp({
                 ) : null}
               </div>
 
-              <div className="grid grid-cols-[1fr_1.45fr_1fr] gap-2">
+              <div className="grid grid-cols-[1fr_1.45fr_1fr] gap-1">
                 {detailActions.slice(0, 3).map((action, index) => {
                   const isCall =
                     action.id.includes("call") ||
@@ -2279,10 +2321,10 @@ export function SinglePageGenieApp({
                       key={action.id}
                       type="button"
                       onClick={gateDetailTap(action.onClick)}
-                      className={`flex items-center justify-center gap-1.5 rounded-full border font-medium transition ${
+                      className={`flex items-center justify-center gap-1 rounded-full border font-medium transition ${
                         isReserve
-                          ? "border-red-500 bg-red-600 px-2 py-3 text-[0.85rem] text-white hover:bg-red-700 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
-                          : "border-[#E7070380] bg-transparent px-2 py-2.5 text-[0.8rem] text-red-600 hover:bg-red-50 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
+                          ? "border-red-500 bg-red-600 px-1.5 py-2 text-[0.76rem] text-white hover:bg-red-700 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
+                          : "border-[#E7070380] bg-transparent px-1.5 py-1.5 text-[0.72rem] text-red-600 hover:bg-red-50 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
                       }`}
                     >
                       <Image
@@ -2291,7 +2333,7 @@ export function SinglePageGenieApp({
                         aria-hidden="true"
                         width={16}
                         height={16}
-                        className={`${isReserve ? "h-[18px] w-[18px]" : "h-4 w-4"} object-contain dark:hidden`}
+                        className={`${isReserve ? "h-[15px] w-[15px]" : "h-[14px] w-[14px]"} object-contain dark:hidden`}
                       />
                       <Image
                         src={darkIconSrc}
@@ -2299,7 +2341,7 @@ export function SinglePageGenieApp({
                         aria-hidden="true"
                         width={16}
                         height={16}
-                        className={`hidden ${isReserve ? "h-[18px] w-[18px]" : "h-4 w-4"} object-contain dark:block`}
+                        className={`hidden ${isReserve ? "h-[15px] w-[15px]" : "h-[14px] w-[14px]"} object-contain dark:block`}
                       />
                       {label}
                     </button>
@@ -3732,6 +3774,11 @@ export function SinglePageGenieApp({
               <ProfileSection
                 visible
                 account={account}
+                socialProfile={socialProfile}
+                isVibeeMember={isVibeeMember}
+                onEditPreferences={() => navigateTo("preferences")}
+                onOpenMembership={() => navigateTo("membership")}
+                onUpgradeMembership={() => navigateTo("membership")}
                 onBack={() => goBack("home")}
                 onSave={async (data) => {
                   if (!account) return;

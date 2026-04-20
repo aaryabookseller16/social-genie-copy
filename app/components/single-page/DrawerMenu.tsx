@@ -25,6 +25,7 @@ type DrawerMenuProps = {
   visible: boolean;
   activeScreen: FlowAnchor;
   isLoggedIn: boolean;
+  isVendor?: boolean;
   onClose: () => void;
   onNavigate: (target: DrawerMenuActionId) => void;
   onLogout: () => void;
@@ -85,6 +86,7 @@ export function DrawerMenu({
   visible,
   activeScreen,
   isLoggedIn,
+  isVendor = false,
   onClose,
   onNavigate,
   onLogout,
@@ -107,25 +109,27 @@ export function DrawerMenu({
 
   const isDark = resolvedTheme === "dark";
 
+  // Sub-screens (Social Preferences / Saved Spots / V.I.Bee Offers /
+  // Redemptions / Membership status) live inside My Profile and My Dashboard,
+  // so the drawer itself stays flat to match the design.
   const primaryItems: Array<{ id: DrawerMenuActionId; label: string }> = [
     { id: "home", label: "Home" },
     { id: "profile", label: "My Profile" },
-    { id: "dashboard", label: "Dashboard" },
-    { id: "preferences", label: "Social Preferences" },
-    { id: "saved", label: "Saved Spots" },
-    { id: "membership", label: "Membership" },
-    { id: "offers", label: "V.I.Bee Offers" },
-    { id: "redemptions", label: "My Redemptions" },
+    { id: "dashboard", label: "My Dashboard" },
     { id: "how-genie-works", label: "How Genie Works" },
-    { id: "vendor", label: "Claim your business" },
+    {
+      id: "vendor",
+      label: isVendor ? "Vendor Dashboard" : "Claim Your Business",
+    },
   ];
 
   const secondaryItems: Array<{ id: DrawerMenuActionId; label: string }> = [
     { id: "help-faq", label: "Help / FAQ's" },
     { id: "contact", label: "Contact Us" },
     { id: "privacy", label: "Privacy Policy" },
-    { id: "terms", label: "Terms of use" },
+    { id: "terms", label: "Terms of Use" },
   ];
+
 
   return (
     <div
@@ -149,102 +153,102 @@ export function DrawerMenu({
         {/* Dark overlay for readability — dark mode only */}
         <div className="pointer-events-none absolute inset-0 hidden bg-black/55 dark:block" />
 
-        {/* Scrollable content */}
-        <div className="relative flex h-full flex-col overflow-y-auto px-5 pb-6 pt-10">
-          {/* Primary nav */}
-          <nav className="flex flex-col gap-1">
-            {primaryItems.map((item) => {
-              const active = isActiveItem(item.id, activeScreen);
-              return (
+        {/* Drawer content */}
+        <div className="relative flex h-full flex-col px-4 pb-4 pt-6">
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {/* Primary nav */}
+            <nav className="flex flex-col gap-1.5">
+              {primaryItems.map((item) => {
+                const active = isActiveItem(item.id, activeScreen);
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => onNavigate(item.id)}
+                    className={`whitespace-nowrap rounded-lg px-2.5 py-1 text-left text-[0.97rem] font-medium leading-[1.2] transition ${
+                      active
+                        ? "bg-black/5 text-gray-900 dark:bg-white/12 dark:text-white"
+                        : "text-gray-900 hover:bg-black/5 dark:text-white/75 dark:hover:bg-white/8 dark:hover:text-white"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
+            </nav>
+
+            {/* Divider */}
+            <div className="my-2 h-px bg-black/10 dark:bg-white/15" />
+
+            {/* Notifications toggle */}
+            <div className="flex items-center justify-between px-2.5 py-1">
+              <span className="text-[0.97rem] font-medium text-gray-900 dark:text-white/75">
+                Notifications
+              </span>
+              <ToggleSwitch
+                enabled={notificationsEnabled}
+                onToggle={onToggleNotifications}
+              />
+            </div>
+
+            {/* Dark Mode toggle */}
+            <div className="flex items-center justify-between px-2.5 py-1">
+              <span className="text-[0.97rem] font-medium text-gray-900 dark:text-white/75">
+                Dark Mode
+              </span>
+              <ToggleSwitch
+                enabled={isDark}
+                onToggle={() => setTheme(isDark ? "light" : "dark")}
+              />
+            </div>
+
+            {/* Divider */}
+            <div className="my-2 h-px bg-black/10 dark:bg-white/15" />
+
+            {/* Secondary nav */}
+            <nav className="flex flex-col gap-0.5">
+              {secondaryItems.map((item) => (
                 <button
                   key={item.id}
                   type="button"
                   onClick={() => onNavigate(item.id)}
-                  className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-left text-[1rem] font-medium leading-5 transition ${
-                    active
-                      ? "bg-black/5 text-gray-900 dark:bg-white/12 dark:text-white"
-                      : "text-gray-900 hover:bg-black/5 dark:text-white/75 dark:hover:bg-white/8 dark:hover:text-white"
-                  }`}
+                  className="whitespace-nowrap rounded-lg px-2.5 py-1 text-left text-[0.97rem] font-medium text-gray-900 transition hover:bg-black/5 dark:text-white/75 dark:hover:bg-white/8 dark:hover:text-white"
                 >
                   {item.label}
                 </button>
-              );
-            })}
-          </nav>
-
-          {/* Divider */}
-          <div className="my-3 h-px bg-black/10 dark:bg-white/15" />
-
-          {/* Notifications toggle */}
-          <div className="flex items-center justify-between px-3 py-1.5">
-            <span className="text-[1rem] font-medium text-gray-900 dark:text-white/75">
-              Notifications
-            </span>
-            <ToggleSwitch
-              enabled={notificationsEnabled}
-              onToggle={onToggleNotifications}
-            />
+              ))}
+            </nav>
           </div>
 
-          {/* Theme toggle */}
-          <button
-            type="button"
-            onClick={() => setTheme(isDark ? "light" : "dark")}
-            className="whitespace-nowrap rounded-lg px-3 py-1.5 text-left text-[1rem] font-medium text-gray-900 transition hover:bg-black/5 dark:text-white/75 dark:hover:bg-white/8 dark:hover:text-white"
-          >
-            {`Switch to ${isDark ? "light" : "dark"} mode`}
-          </button>
-
-          {/* Divider */}
-          <div className="my-3 h-px bg-black/10 dark:bg-white/15" />
-
-          {/* Secondary nav */}
-          <nav className="flex flex-col gap-1">
-            {secondaryItems.map((item) => (
+          <div className="mt-2 shrink-0 border-t border-black/10 pt-2 dark:border-white/15">
+            {isLoggedIn ? (
               <button
-                key={item.id}
                 type="button"
-                onClick={() => onNavigate(item.id)}
-                className="whitespace-nowrap rounded-lg px-3 py-1.5 text-left text-[1rem] font-medium text-gray-900 transition hover:bg-black/5 dark:text-white/75 dark:hover:bg-white/8 dark:hover:text-white"
+                onClick={onLogout}
+                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1 text-left text-[0.97rem] font-medium text-gray-500 transition hover:bg-black/5 dark:font-semibold dark:text-red-400 dark:hover:bg-white/8 dark:hover:text-red-300"
               >
-                {item.label}
+                <svg viewBox="0 0 24 24" className="h-4 w-4 flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+                Logout
               </button>
-            ))}
-          </nav>
-
-          {/* Spacer to push logout to bottom */}
-          <div className="flex-1" />
-
-          {/* Divider */}
-          <div className="mb-2 mt-3 h-px bg-black/10 dark:bg-white/15" />
-
-          {isLoggedIn ? (
-            <button
-              type="button"
-              onClick={onLogout}
-              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-[1rem] font-medium text-gray-500 transition hover:bg-black/5 dark:font-semibold dark:text-red-400 dark:hover:bg-white/8 dark:hover:text-red-300"
-            >
-              <svg viewBox="0 0 24 24" className="h-4 w-4 flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                <polyline points="16 17 21 12 16 7" />
-                <line x1="21" y1="12" x2="9" y2="12" />
-              </svg>
-              Logout
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={onLogin}
-              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-[1rem] font-semibold text-gray-900 transition hover:bg-black/5 dark:text-white/80 dark:hover:bg-white/8 dark:hover:text-white"
-            >
-              <svg viewBox="0 0 24 24" className="h-4 w-4 flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
-                <polyline points="10 17 15 12 10 7" />
-                <line x1="15" y1="12" x2="3" y2="12" />
-              </svg>
-              Login / Sign Up
-            </button>
-          )}
+            ) : (
+              <button
+                type="button"
+                onClick={onLogin}
+                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1 text-left text-[0.97rem] font-semibold text-gray-900 transition hover:bg-black/5 dark:text-white/80 dark:hover:bg-white/8 dark:hover:text-white"
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4 flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                  <polyline points="10 17 15 12 10 7" />
+                  <line x1="15" y1="12" x2="3" y2="12" />
+                </svg>
+                Login / Sign Up
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

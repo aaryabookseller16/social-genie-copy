@@ -218,21 +218,22 @@ export function BottomDock({
           }`}
           aria-label="Go home"
         >
-          {/* home_svgrepo.com.png is already red — visible in light mode */}
+          {/* The home PNGs have extra internal padding vs. the search PNG —
+              bump the box to h-7/w-7 so the glyph visually matches. */}
           <Image
             src="/home_svgrepo.com.png"
             alt="home"
-            width={20}
-            height={20}
-            className="h-5 w-5 object-contain dark:hidden"
+            width={28}
+            height={28}
+            className="h-7 w-7 object-contain dark:hidden"
           />
 
           <Image
             src="/home_svgrepo_dark.com.png"
             alt="home"
-            width={20}
-            height={20}
-            className="hidden h-5 w-5 object-contain dark:block"
+            width={28}
+            height={28}
+            className="hidden h-7 w-7 object-contain dark:block"
           />
 
         </button>
@@ -262,16 +263,16 @@ export function BottomDock({
           <Image
             src="/search_red.png"
             alt=""
-            width={20}
-            height={20}
-            className="h-5 w-5 object-contain dark:hidden"
+            width={22}
+            height={22}
+            className="h-[22px] w-[22px] object-contain dark:hidden"
           />
           <Image
             src="/icons/searchIcon.png"
             alt=""
-            width={20}
-            height={20}
-            className="hidden h-5 w-5 object-contain opacity-60 dark:block"
+            width={22}
+            height={22}
+            className="hidden h-[22px] w-[22px] object-contain opacity-60 dark:block"
           />
         </button>
       </div>
@@ -335,6 +336,46 @@ export function getVenueDescription(venue: GenieVenue) {
     venue.vibe_notes ??
     "Genie thinks this spot matches your vibe for tonight."
   );
+}
+
+// Genie's Take — review intelligence shown on every venue detail. Uses
+// curated vibe_notes when available, otherwise composes a fallback from the
+// venue's attributes so no venue is left without a take.
+export function getGenieTake(venue: GenieVenue) {
+  const notes = venue.vibe_notes?.trim();
+  if (notes) return notes;
+
+  const parts: string[] = [];
+  const energy = venue.energy_level?.trim();
+  const crowd = venue.crowd?.split(",")[0].trim();
+  if (energy && crowd) {
+    parts.push(`A ${energy.toLowerCase()}-energy pick for a ${crowd.toLowerCase()} crowd.`);
+  } else if (energy) {
+    parts.push(`A ${energy.toLowerCase()}-energy spot.`);
+  } else if (crowd) {
+    parts.push(`Popular with a ${crowd.toLowerCase()} crowd.`);
+  }
+
+  const music = venue.music?.split(",")[0].trim();
+  if (music) parts.push(`Expect ${music.toLowerCase()}.`);
+
+  const cuisine = Array.isArray(venue.cuisine_tags) && venue.cuisine_tags.length
+    ? String(venue.cuisine_tags[0])
+    : null;
+  if (cuisine) parts.push(`Known for ${cuisine.toLowerCase()}.`);
+
+  const rating = typeof venue.google_rating === "number" ? venue.google_rating : null;
+  const reviewCount = venue.google_user_ratings_total ?? null;
+  if (rating && reviewCount) {
+    parts.push(`Reviewers give it ${rating.toFixed(1)}★ across ${reviewCount} ratings.`);
+  } else if (rating) {
+    parts.push(`Reviewers give it ${rating.toFixed(1)}★.`);
+  }
+
+  if (parts.length === 0) {
+    return "Genie thinks this spot matches the vibe you're after tonight.";
+  }
+  return parts.join(" ");
 }
 
 export function getOpenUntil(venue: GenieVenue) {

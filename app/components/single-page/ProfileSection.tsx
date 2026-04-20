@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 
 import { BackIcon } from "@/app/components/single-page/ui";
 import { type ConsumerAccount } from "@/app/lib/localState";
+import { type SocialProfile } from "@/app/lib/publicApiClient";
 
 type ProfileSectionProps = {
   visible: boolean;
   account: ConsumerAccount | null;
+  socialProfile?: SocialProfile | null;
+  isVibeeMember?: boolean;
   onBack: () => void;
   onSave: (data: {
     firstName: string;
@@ -15,6 +18,9 @@ type ProfileSectionProps = {
     email: string;
     phone: string;
   }) => Promise<void>;
+  onEditPreferences?: () => void;
+  onOpenMembership?: () => void;
+  onUpgradeMembership?: () => void;
   onDeleteAccount?: () => Promise<void> | void;
 };
 
@@ -22,29 +28,118 @@ function BackArrow() {
   return <BackIcon size={20} />;
 }
 
-function InfoRow({
-  label,
-  value,
-  withDivider,
+function PencilIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+    </svg>
+  );
+}
+
+function EditPencilButton({
+  onClick,
+  ariaLabel,
 }: {
-  label: string;
-  value: string | null | undefined;
-  withDivider?: boolean;
+  onClick: () => void;
+  ariaLabel: string;
 }) {
   return (
-    <div
-      className={`flex items-center justify-between px-4 py-3.5 ${
-        withDivider ? "border-t border-red-200/60 dark:border-white/10" : ""
-      }`}
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={ariaLabel}
+      className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-red-600 text-white shadow-[0_6px_18px_rgba(231,7,3,0.35)] transition hover:bg-red-700 dark:bg-[#E70703] dark:shadow-[0_6px_20px_rgba(231,7,3,0.45)]"
     >
-      <span className="text-[15px] text-gray-900 dark:text-white/75">
-        {label}
-      </span>
-      <span className="text-[15px] font-medium text-gray-900 dark:text-white">
-        {value || "—"}
-      </span>
+      <PencilIcon size={14} />
+    </button>
+  );
+}
+
+function ProfileCard({
+  title,
+  onEdit,
+  editAriaLabel,
+  children,
+}: {
+  title: string;
+  onEdit?: () => void;
+  editAriaLabel?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="rounded-[22px] border border-[#E7070380] bg-transparent px-5 pb-5 pt-5 dark:border-[#E7070380] dark:bg-black/20">
+      <div className="flex items-center justify-between">
+        <h3 className="text-[1.1rem] font-semibold text-gray-900 dark:text-white">
+          {title}
+        </h3>
+        {onEdit ? (
+          <EditPencilButton
+            onClick={onEdit}
+            ariaLabel={editAriaLabel ?? `Edit ${title}`}
+          />
+        ) : null}
+      </div>
+      <div className="mt-3 h-px bg-black/10 dark:bg-white/10" />
+      <div className="mt-4">{children}</div>
     </div>
   );
+}
+
+function DetailField({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[0.82rem] text-gray-500 dark:text-white/55">{label}</p>
+      <p className="mt-1 text-[1rem] font-medium text-gray-900 dark:text-white">
+        {value || "—"}
+      </p>
+    </div>
+  );
+}
+
+function formatTagList(tags: unknown): string {
+  // Backend can hand us an array, a JSON-encoded string, a comma-separated
+  // string, or nothing at all — normalize everything to an array of strings.
+  let list: string[] = [];
+  if (Array.isArray(tags)) {
+    list = tags.filter((t): t is string => typeof t === "string");
+  } else if (typeof tags === "string") {
+    const trimmed = tags.trim();
+    if (!trimmed) return "—";
+    if (trimmed.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          list = parsed.filter((t): t is string => typeof t === "string");
+        }
+      } catch {
+        list = trimmed.split(",").map((t) => t.trim()).filter(Boolean);
+      }
+    } else {
+      list = trimmed.split(",").map((t) => t.trim()).filter(Boolean);
+    }
+  }
+
+  if (list.length === 0) return "—";
+  return list
+    .map((tag) =>
+      tag
+        .split(/[-_\s]+/)
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+        .join("-")
+    )
+    .join(", ");
 }
 
 function DeleteAccountSheet({
@@ -160,8 +255,13 @@ function StyledInput({
 export function ProfileSection({
   visible,
   account,
+  socialProfile,
+  isVibeeMember = false,
   onBack,
   onSave,
+  onEditPreferences,
+  onOpenMembership,
+  onUpgradeMembership,
   onDeleteAccount,
 }: ProfileSectionProps) {
   const [editing, setEditing] = useState(false);
@@ -204,7 +304,7 @@ export function ProfileSection({
             <BackArrow />
           </button>
           <h2 className="flex-1 text-center pr-9 font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
-            Edit Profile
+            Edit Details
           </h2>
         </div>
 
@@ -271,11 +371,14 @@ export function ProfileSection({
 
   const fullName =
     [account?.firstName, account?.lastName].filter(Boolean).join(" ") || "";
+  const membershipLabel = isVibeeMember ? "V.I.Bee" : "Free";
+  const musicValue = formatTagList(socialProfile?.music_tags);
+  const bevyBitesValue = formatTagList(socialProfile?.bevy_bites_tags);
 
   return (
     <section className="relative flex min-h-[calc(100dvh-4rem)] flex-1 flex-col pb-4">
       {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex items-center">
         <button
           type="button"
           onClick={onBack}
@@ -284,24 +387,73 @@ export function ProfileSection({
         >
           <BackArrow />
         </button>
-        <h2 className="font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
+        <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
           My Profile
         </h2>
-        <button
-          type="button"
-          onClick={() => setEditing(true)}
-          className="text-[15px] font-semibold text-red-600 transition hover:text-red-700 dark:text-[#ff7b7b] dark:hover:text-[#ffa0a0]"
-          aria-label="Edit profile"
-        >
-          Edit
-        </button>
       </div>
 
-      {/* Info card */}
-      <div className="overflow-hidden rounded-[18px] border border-[#E7070380] bg-transparent dark:border-[#E7070380] dark:bg-black/20">
-        <InfoRow label="Name" value={fullName} />
-        <InfoRow label="Email" value={account?.email} withDivider />
-        <InfoRow label="Phone" value={account?.phone} withDivider />
+      <div className="space-y-5">
+        {/* Details */}
+        <ProfileCard
+          title="Details"
+          onEdit={() => setEditing(true)}
+          editAriaLabel="Edit details"
+        >
+          <div className="space-y-4">
+            <DetailField label="Name" value={fullName} />
+            <div className="h-px bg-black/10 dark:bg-white/10" />
+            <DetailField label="Email" value={account?.email ?? ""} />
+            <div className="h-px bg-black/10 dark:bg-white/10" />
+            <DetailField label="Phone" value={account?.phone ?? ""} />
+          </div>
+        </ProfileCard>
+
+        {/* Membership */}
+        <ProfileCard
+          title="Membership"
+          onEdit={onOpenMembership}
+          editAriaLabel="Manage membership"
+        >
+          <div className="space-y-4">
+            <DetailField label="Currently Active" value={membershipLabel} />
+            {!isVibeeMember ? (
+              <button
+                type="button"
+                onClick={onUpgradeMembership ?? onOpenMembership}
+                className="w-full rounded-[20px] border border-red-500 bg-[radial-gradient(120%_140%_at_50%_50%,#ff4d4f_0%,#E70703_45%,#860a0c_100%)] px-4 py-3.5 text-[15px] font-semibold text-white shadow-[0_10px_28px_rgba(231,7,3,0.35)] transition hover:brightness-110 dark:border-[#d75050]"
+              >
+                Upgrade to V.I.Bee Now
+              </button>
+            ) : null}
+          </div>
+        </ProfileCard>
+
+        {/* Social Preferences */}
+        <ProfileCard
+          title="Social Preferences"
+          onEdit={onEditPreferences}
+          editAriaLabel="Edit social preferences"
+        >
+          <div className="space-y-4">
+            <div>
+              <p className="text-[0.95rem] font-semibold text-gray-900 dark:text-white">
+                Music
+              </p>
+              <p className="mt-1 text-[0.95rem] leading-6 text-gray-500 dark:text-white/60">
+                {musicValue}
+              </p>
+            </div>
+            <div className="h-px bg-black/10 dark:bg-white/10" />
+            <div>
+              <p className="text-[0.95rem] font-semibold text-gray-900 dark:text-white">
+                Bevy Bites
+              </p>
+              <p className="mt-1 text-[0.95rem] leading-6 text-gray-500 dark:text-white/60">
+                {bevyBitesValue}
+              </p>
+            </div>
+          </div>
+        </ProfileCard>
       </div>
 
       {/* Delete my account — anchored to bottom */}

@@ -80,6 +80,9 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    // Per `ep_save_profile_changes_dev` contract — these are the only fields
+    // the Xano endpoint accepts. Anything else (description, phone, hours,
+    // website_url, image_primary_url, vendor_id) is silently dropped.
     const allowed: ReadonlyArray<keyof typeof body> = [
       "business_name",
       "business_address",
