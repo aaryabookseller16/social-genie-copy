@@ -76,7 +76,7 @@ export function HomeScreen({
             width={520}
             height={820}
             priority
-            className="relative z-10 mx-auto h-full w-auto max-w-[60%] object-contain drop-shadow-[0_20px_40px_rgba(0,0,0,0.25)]"
+            className="relative z-10 mx-auto h-full w-auto max-w-[60%] object-contain drop-shadow-[0_20px_40px_rgba(0,0,0,0.25)] translate-x-[3%]"
           />
         </div>
 
