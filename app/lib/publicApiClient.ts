@@ -882,9 +882,10 @@ export async function updateVendorProfile(payload: Record<string, unknown>) {
   if (!external_user_id) {
     throw new Error("You must be signed in to update your vendor profile.");
   }
-  // Note: only fields supported by `ep_save_profile_changes_dev` are persisted
-  // server-side. Unsupported keys (e.g. description, hours) are filtered by
-  // the route handler — see app/api/vendor/profile/route.ts.
+  // Xano `ep_save_profile_changes_dev` resolves the vendor via
+  // `external_user_id`. Supported fields: business_name, business_address,
+  // city, state, zip, location_enabled, reservation_url, reservation_platform.
+  // Other keys passed in `payload` are dropped by the route handler.
   return apiJson<{ success: boolean; error?: string | null }>(
     "/api/vendor/profile",
     {

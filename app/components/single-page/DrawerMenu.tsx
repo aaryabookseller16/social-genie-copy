@@ -25,6 +25,7 @@ type DrawerMenuProps = {
   visible: boolean;
   activeScreen: FlowAnchor;
   isLoggedIn: boolean;
+  isVendor?: boolean;
   onClose: () => void;
   onNavigate: (target: DrawerMenuActionId) => void;
   onLogout: () => void;
@@ -85,6 +86,7 @@ export function DrawerMenu({
   visible,
   activeScreen,
   isLoggedIn,
+  isVendor = false,
   onClose,
   onNavigate,
   onLogout,
@@ -107,25 +109,27 @@ export function DrawerMenu({
 
   const isDark = resolvedTheme === "dark";
 
+  // Sub-screens (Social Preferences / Saved Spots / V.I.Bee Offers /
+  // Redemptions / Membership status) live inside My Profile and My Dashboard,
+  // so the drawer itself stays flat to match the design.
   const primaryItems: Array<{ id: DrawerMenuActionId; label: string }> = [
     { id: "home", label: "Home" },
     { id: "profile", label: "My Profile" },
-    { id: "dashboard", label: "Dashboard" },
-    { id: "preferences", label: "Social Preferences" },
-    { id: "saved", label: "Saved Spots" },
-    { id: "membership", label: "Membership" },
-    { id: "offers", label: "V.I.Bee Offers" },
-    { id: "redemptions", label: "My Redemptions" },
+    { id: "dashboard", label: "My Dashboard" },
     { id: "how-genie-works", label: "How Genie Works" },
-    { id: "vendor", label: "Claim your business" },
+    {
+      id: "vendor",
+      label: isVendor ? "Vendor Dashboard" : "Claim Your Business",
+    },
   ];
 
   const secondaryItems: Array<{ id: DrawerMenuActionId; label: string }> = [
     { id: "help-faq", label: "Help / FAQ's" },
     { id: "contact", label: "Contact Us" },
     { id: "privacy", label: "Privacy Policy" },
-    { id: "terms", label: "Terms of use" },
+    { id: "terms", label: "Terms of Use" },
   ];
+
 
   return (
     <div
@@ -187,14 +191,16 @@ export function DrawerMenu({
               />
             </div>
 
-            {/* Theme toggle */}
-            <button
-              type="button"
-              onClick={() => setTheme(isDark ? "light" : "dark")}
-              className="whitespace-nowrap rounded-lg px-2.5 py-1 text-left text-[0.97rem] font-medium text-gray-900 transition hover:bg-black/5 dark:text-white/75 dark:hover:bg-white/8 dark:hover:text-white"
-            >
-              {`Switch to ${isDark ? "light" : "dark"} mode`}
-            </button>
+            {/* Dark Mode toggle */}
+            <div className="flex items-center justify-between px-2.5 py-1">
+              <span className="text-[0.97rem] font-medium text-gray-900 dark:text-white/75">
+                Dark Mode
+              </span>
+              <ToggleSwitch
+                enabled={isDark}
+                onToggle={() => setTheme(isDark ? "light" : "dark")}
+              />
+            </div>
 
             {/* Divider */}
             <div className="my-2 h-px bg-black/10 dark:bg-white/15" />
