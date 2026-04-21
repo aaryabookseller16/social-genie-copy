@@ -29,15 +29,20 @@ export async function callGenie(
   const token = readAuthToken();
   const account = readConsumerAccount();
   const { coords, radiusMeters } = options;
+  const hasCoords = Boolean(
+    coords && Number.isFinite(coords.lat) && Number.isFinite(coords.lng)
+  );
   const body = {
     message,
     channel: "web",
     external_user_id: readExternalUserId() || (account?.id ? String(account.id) : "web_guest"),
     user_name: account?.firstName || undefined,
     session_token: readSessionToken(),
-    city_context: config.citySlug,
-    lat: coords && Number.isFinite(coords.lat) ? coords.lat : undefined,
-    lng: coords && Number.isFinite(coords.lng) ? coords.lng : undefined,
+    // When we have real coords, let the backend determine the city from them.
+    // Otherwise fall back to the runtime-configured city slug.
+    city_context: hasCoords ? undefined : config.citySlug,
+    lat: hasCoords ? coords!.lat : undefined,
+    lng: hasCoords ? coords!.lng : undefined,
     radius_meters:
       typeof radiusMeters === "number" && Number.isFinite(radiusMeters)
         ? radiusMeters

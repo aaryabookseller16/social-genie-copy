@@ -206,6 +206,67 @@ function formatDate(value?: number | null) {
   });
 }
 
+// Parses an AI fallback reply into a short intro paragraph plus a list of
+// items. Handles two backend formats:
+//  1. Paragraph-separated: "Intro\n\n1. Item one\n\n2. Item two"
+//  2. Inline: "Intro: 1. Item one. 2. Item two. 3. Item three."
+// Used for reply_mode = city_unsupported | ai_fallback so the single `reply`
+// string can render as two Figma containers (speech bubble + bulleted list).
+function parseAiFallbackReply(text: string): {
+  intro: string;
+  items: string[];
+} {
+  const stripMd = (s: string) =>
+    s.replace(/\*\*([^*]+)\*\*/g, "$1").replace(/\s+/g, " ").trim();
+
+  const normalized = text.replace(/\r\n/g, "\n").trim();
+  const paragraphs = normalized
+    .split(/\n{2,}/)
+    .map((chunk) => chunk.trim())
+    .filter(Boolean);
+
+  // Case 1: reply has blank-line separated numbered/dashed chunks.
+  const paragraphItems = paragraphs.filter((chunk) =>
+    /^(?:\d+\.|[-•*])\s+/.test(chunk)
+  );
+  if (paragraphItems.length >= 2) {
+    const items: string[] = [];
+    const introParts: string[] = [];
+    for (const chunk of paragraphs) {
+      const m = chunk.match(/^(?:\d+\.|[-•*])\s+([\s\S]+)$/);
+      if (m) {
+        const value = stripMd(m[1]);
+        if (value) items.push(value);
+      } else if (items.length === 0) {
+        introParts.push(chunk);
+      }
+    }
+    return { intro: stripMd(introParts.join(" ")), items };
+  }
+
+  // Case 2: inline numbered items in a single run of text (e.g. "… options:
+  // 1. Foo. 2. Bar. 3. Baz.").
+  const firstItem = normalized.match(/(?:^|[\s:;,—-])\s*1\.\s+/);
+  if (firstItem && firstItem.index !== undefined && /\s2\.\s/.test(normalized)) {
+    const splitAt = firstItem.index + firstItem[0].indexOf("1.");
+    const introRaw = normalized.slice(0, splitAt).trim().replace(/[:\-—]\s*$/, "");
+    const listPart = normalized.slice(splitAt);
+    const rawItems = listPart
+      .split(/\s+(?=\d+\.\s+)/)
+      .map((p) => p.trim())
+      .filter(Boolean);
+    const items = rawItems
+      .map((p) => {
+        const m = p.match(/^\d+\.\s+([\s\S]+)$/);
+        return m ? stripMd(m[1]) : "";
+      })
+      .filter(Boolean);
+    return { intro: stripMd(introRaw), items };
+  }
+
+  return { intro: stripMd(normalized), items: [] };
+}
+
 type SinglePageGenieAppProps = {
   initialScreen?: FlowAnchor;
   initialVenueId?: string | null;
@@ -551,10 +612,45 @@ export function SinglePageGenieApp({
       city: config.cityLabel,
     }).catch(() => {});
 
+    // Try to attach fresh coords on every query. If we already have them, reuse;
+    // otherwise ask the browser (resolves to null quickly if denied/unavailable
+    // so we never block the query).
+    const resolvedCoords = await (async () => {
+      if (userCoords) return userCoords;
+      if (typeof window === "undefined" || !("geolocation" in navigator)) {
+        return null;
+      }
+      return await new Promise<{ latitude: number; longitude: number } | null>(
+        (resolve) => {
+          let settled = false;
+          const finish = (value: { latitude: number; longitude: number } | null) => {
+            if (settled) return;
+            settled = true;
+            resolve(value);
+          };
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              const next = {
+                latitude: pos.coords.latitude,
+                longitude: pos.coords.longitude,
+              };
+              setUserCoords(next);
+              setLocationGranted(true);
+              finish(next);
+            },
+            () => finish(null),
+            { enableHighAccuracy: false, timeout: 5000, maximumAge: 5 * 60 * 1000 }
+          );
+          // Hard cap so a hung permission prompt never stalls the query.
+          setTimeout(() => finish(null), 5500);
+        }
+      );
+    })();
+
     try {
       const nextResponse = await callGenie(trimmed, {
-        coords: userCoords
-          ? { lat: userCoords.latitude, lng: userCoords.longitude }
+        coords: resolvedCoords
+          ? { lat: resolvedCoords.latitude, lng: resolvedCoords.longitude }
           : null,
         radiusMeters: 2500,
       });
@@ -1728,12 +1824,19 @@ export function SinglePageGenieApp({
     activeScreen !== "saved" &&
     activeScreen !== "detail";
 
+  const isAiFallbackLayout =
+    !isThinking &&
+    !!nonStructuredResponse &&
+    (nonStructuredResponse.response_mode === "city_unsupported" ||
+      nonStructuredResponse.response_mode === "ai_fallback");
+
   const shouldShowFooter =
     activeScreen === "decision" ||
     activeScreen === "more" ||
     activeScreen === "detail" ||
     activeScreen === "saved" ||
-    activeScreen === "dashboard";
+    activeScreen === "dashboard" ||
+    (activeScreen === "thinking" && isAiFallbackLayout);
 
   const footerActiveId: FlowAnchor =
     activeScreen === "saved" ? "saved" : activeScreen === "home" ? "home" : "decision";
@@ -1950,68 +2053,109 @@ export function SinglePageGenieApp({
             ref={thinkingRef}
             className="relative flex min-h-0 flex-1 flex-col items-center text-center"
           >
-            {/* Header */}
-            <h2 className="mt-1 font-[family:var(--font-display)] text-[1.4rem] font-semibold leading-[1.1] text-gray-900 dark:text-white sm:text-[1.7rem]">
-              Got it - looking for:
-            </h2>
-            <p className="mt-1 max-w-[28ch] text-[0.85rem] font-medium text-gray-600 dark:text-white/80">
-              {response?.normalized_intent || lastQuery || "Your next spot in Houston"}
-            </p>
+            {/* For city_unsupported / ai_fallback, Figma calls for bubble +
+                bulleted list only — no orb, no "Got it" header, no status text.
+                We still show those while thinking is in-flight so the user has
+                feedback during the request. */}
+            {isAiFallbackLayout ? null : (
+              <>
+                {/* Header */}
+                <h2 className="mt-1 font-[family:var(--font-display)] text-[1.4rem] font-semibold leading-[1.1] text-gray-900 dark:text-white sm:text-[1.7rem]">
+                  Got it - looking for:
+                </h2>
+                <p className="mt-1 max-w-[28ch] text-[0.85rem] font-medium text-gray-600 dark:text-white/80">
+                  {response?.normalized_intent || lastQuery || "Your next spot in Houston"}
+                </p>
 
-            {/* Girl + Orb — same size as HomeScreen */}
-            <div className="relative mt-1 min-h-0 w-full flex-1 max-h-[48vh]">
-              <Image
-                src="/orb.png"
-                alt=""
-                aria-hidden="true"
-                width={520}
-                height={520}
-                className="pointer-events-none absolute left-[47%] top-1/2 z-0 h-auto w-full max-w-none -translate-x-1/2 -translate-y-1/2 object-contain opacity-95 animate-orbPulse"
-              />
-              <Image
-                src="/icons/Social-Genie-Home-Screen.png"
-                alt="Genie thinking"
-                width={520}
-                height={820}
-                className="relative z-10 mx-auto h-full w-auto max-w-[60%] object-contain drop-shadow-[0_20px_40px_rgba(0,0,0,0.4)]"
-              />
-            </div>
+                {/* Girl + Orb — same size as HomeScreen */}
+                <div className="relative mt-1 min-h-0 w-full flex-1 max-h-[48vh]">
+                  <Image
+                    src="/orb.png"
+                    alt=""
+                    aria-hidden="true"
+                    width={520}
+                    height={520}
+                    className="pointer-events-none absolute left-[47%] top-1/2 z-0 h-auto w-full max-w-none -translate-x-1/2 -translate-y-1/2 object-contain opacity-95 animate-orbPulse"
+                  />
+                  <Image
+                    src="/icons/Social-Genie-Home-Screen.png"
+                    alt="Genie thinking"
+                    width={520}
+                    height={820}
+                    className="relative z-10 mx-auto h-full w-auto max-w-[60%] object-contain drop-shadow-[0_20px_40px_rgba(0,0,0,0.4)]"
+                  />
+                </div>
 
-            {/* Status text */}
-            <p className="mt-1 shrink-0 text-[1.1rem] font-semibold text-gray-900 dark:text-white">
-              {isThinking ? "Say less... I got you!" : response?.reply || statusMessage}
-            </p>
+                {/* Status text */}
+                <p className="mt-1 shrink-0 text-[1.1rem] font-semibold text-gray-900 dark:text-white">
+                  {isThinking ? "Say less... I got you!" : response?.reply || statusMessage}
+                </p>
+              </>
+            )}
 
             {/* Non-structured responses — always text, no cards/images */}
             {nonStructuredResponse ? (
               <div className="mt-5 w-full space-y-3">
-                <div className="rounded-[22px] border border-white/15 bg-black/30 px-4 py-3 text-sm leading-6 text-white/80 backdrop-blur-sm">
-                  {nonStructuredResponse.response_mode === "supported_no_results"
-                    ? "Genie did not find a clean match yet. Tighten the ask and try again."
-                    : nonStructuredResponse.response_mode === "city_missing"
-                      ? "Tell Genie your city and preferences so recommendations can stay local."
-                    : nonStructuredResponse.response_mode === "city_unsupported"
-                      ? nonStructuredResponse.reply?.trim() ||
-                        `Genie is not live in ${nonStructuredResponse.city_context || "that city"} yet — but here is the vibe: try searching Houston for now.`
-                      : nonStructuredResponse.reply}
-                </div>
-                {(nonStructuredResponse.response_mode === "city_missing" ||
-                  nonStructuredResponse.show_intake_prompt) && (
-                  <button
-                    type="button"
-                    onClick={() => navigateTo("preferences")}
-                    className="w-full rounded-[18px] border border-white/30 bg-white/10 px-4 py-3 text-sm font-semibold text-white backdrop-blur-sm hover:bg-white/20"
-                  >
-                    Set my preferences
-                  </button>
+                {nonStructuredResponse.response_mode === "city_unsupported" ||
+                nonStructuredResponse.response_mode === "ai_fallback" ? (
+                  (() => {
+                    const parsed = parseAiFallbackReply(
+                      nonStructuredResponse.reply?.trim() ||
+                        `Genie is not live in ${nonStructuredResponse.city_context || "that city"} yet.`
+                    );
+                    const introCopy =
+                      parsed.intro ||
+                      `Here's what I've got for ${nonStructuredResponse.city_context || "that city"}.`;
+                    return (
+                      <div className="space-y-3 text-left">
+                        <GenieBubble copy={introCopy} compact />
+                        {parsed.items.length > 0 ? (
+                          <div className="rounded-[22px] border border-red-200 bg-[rgba(255,250,250,0.92)] px-5 py-4 dark:border-white/10 dark:bg-black/16">
+                            <ul className="space-y-3 text-[0.95rem] leading-6 text-gray-800 dark:text-white/82">
+                              {parsed.items.map((item, index) => (
+                                <li key={index} className="flex gap-3">
+                                  <span aria-hidden="true" className="mt-[0.1em]">
+                                    •
+                                  </span>
+                                  <span>{item}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })()
+                ) : (
+                  <div className="rounded-[22px] border border-white/15 bg-black/30 px-4 py-3 text-sm leading-6 text-white/80 backdrop-blur-sm">
+                    {nonStructuredResponse.response_mode === "supported_no_results"
+                      ? "Genie did not find a clean match yet. Tighten the ask and try again."
+                      : nonStructuredResponse.response_mode === "city_missing"
+                        ? "Tell Genie your city and preferences so recommendations can stay local."
+                        : nonStructuredResponse.reply}
+                  </div>
                 )}
-                <button
-                  type="button"
-                  onClick={goHome}
-                  className="w-full rounded-[18px] border border-red-500 bg-red-600 px-4 py-3 text-sm font-semibold text-white shadow-sm"
-                >
-                  Ask Genie again
-                </button>
+                {isAiFallbackLayout ? null : (
+                  <>
+                    {(nonStructuredResponse.response_mode === "city_missing" ||
+                      nonStructuredResponse.show_intake_prompt) && (
+                      <button
+                        type="button"
+                        onClick={() => navigateTo("preferences")}
+                        className="w-full rounded-[18px] border border-white/30 bg-white/10 px-4 py-3 text-sm font-semibold text-white backdrop-blur-sm hover:bg-white/20"
+                      >
+                        Set my preferences
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={goHome}
+                      className="w-full rounded-[18px] border border-red-500 bg-red-600 px-4 py-3 text-sm font-semibold text-white shadow-sm"
+                    >
+                      Ask Genie again
+                    </button>
+                  </>
+                )}
               </div>
             ) : statusMessage && currentResponseMode !== "structured_results" ? (
               <div className="mt-5 rounded-[22px] border border-white/15 bg-black/30 px-4 py-3 text-sm leading-6 text-white/80 backdrop-blur-sm">
