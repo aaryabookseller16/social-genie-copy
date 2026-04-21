@@ -1271,12 +1271,35 @@ export function SinglePageGenieApp({
   }, []);
 
   const requestLocationPermission = useCallback(() => {
-    const ask = (
-      window as Window & { __genieAskLocation?: () => void }
-    ).__genieAskLocation;
-    if (typeof ask === "function") {
-      ask();
+    if (typeof window === "undefined" || !("geolocation" in navigator)) {
+      return;
     }
+    // Call getCurrentPosition directly so the click always triggers the
+    // browser permission prompt (when permission is in "prompt" state) and
+    // we don't depend on the banner-effect ref being initialized.
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserCoords({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+        });
+        setLocationGranted(true);
+        setLocationPromptDismissed(true);
+        window.localStorage.setItem("genie_location_prompt_dismissed_v1", "1");
+      },
+      (err) => {
+        // Permission denied or unavailable. If denied, the browser won't
+        // show another prompt — user has to re-enable in site settings.
+        if (err.code === err.PERMISSION_DENIED) {
+          alert(
+            "Location is blocked for this site. Enable it in your browser settings, then try again."
+          );
+        }
+        setLocationPromptDismissed(true);
+        window.localStorage.setItem("genie_location_prompt_dismissed_v1", "1");
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60_000 }
+    );
   }, []);
 
   const dismissLocationPrompt = useCallback(() => {
