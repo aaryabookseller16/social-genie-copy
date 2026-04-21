@@ -51,20 +51,24 @@ function inferResponseMode(
         return "city_missing";
       case "city_unsupported":
         return "city_unsupported";
+      case "ai_fallback":
+        return "ai_fallback";
     }
   }
 
   const debug = rawResponse.debug ?? {};
   const citySupported = debug.city_supported;
 
+  // If the backend flags the city as unsupported, always fall back to text —
+  // even if `use_xano` is true or stray venues come back from a geo match.
+  if (citySupported === false) {
+    return "city_unsupported";
+  }
+
   if (rawResponse.use_xano) {
     return totalVenueCount > 0
       ? "structured_results"
       : "supported_no_results";
-  }
-
-  if (citySupported === false) {
-    return "city_unsupported";
   }
 
   return "ai_fallback";

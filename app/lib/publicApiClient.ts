@@ -844,6 +844,16 @@ export async function fetchVendorDashboard(vendorId: number) {
       schedule_json?: Record<string, unknown> | null;
     }>;
     offer_count: number;
+    // Venue/profile fields surfaced for the Edit Profile form
+    description?: string | null;
+    vibe_notes?: string | null;
+    phone?: string | null;
+    website?: string | null;
+    website_url?: string | null;
+    reservation_url?: string | null;
+    hours_text?: string | null;
+    image_primary_url?: string | null;
+    address?: string | null;
   }>(`/api/vendor/dashboard?vendor_id=${vendorId}`);
 }
 
@@ -875,6 +885,33 @@ export async function createVendorOffer(payload: {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export async function updateVendorVenue(payload: {
+  venue_name?: string;
+  description?: string;
+  phone?: string;
+  website_url?: string;
+  reservation_url?: string;
+  reservation_platform?: string;
+  hours_text?: string;
+  image_primary_url?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+}) {
+  const external_user_id = readExternalUserId();
+  if (!external_user_id) {
+    throw new Error("You must be signed in to update your venue details.");
+  }
+  return apiJson<{ success: boolean; error?: string | null }>(
+    "/api/vendor/venue",
+    {
+      method: "PUT",
+      body: JSON.stringify({ ...payload, external_user_id }),
+    }
+  );
 }
 
 export async function updateVendorProfile(payload: Record<string, unknown>) {
