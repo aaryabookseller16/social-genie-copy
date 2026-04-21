@@ -1960,7 +1960,8 @@ export function SinglePageGenieApp({
     !isThinking &&
     !!nonStructuredResponse &&
     (nonStructuredResponse.response_mode === "city_unsupported" ||
-      nonStructuredResponse.response_mode === "ai_fallback");
+      nonStructuredResponse.response_mode === "ai_fallback" ||
+      nonStructuredResponse.response_mode === "supported_no_results");
 
   const shouldShowFooter =
     activeScreen === "decision" ||
@@ -2245,11 +2246,15 @@ export function SinglePageGenieApp({
                   </div>
                 ) : null}
                 {nonStructuredResponse.response_mode === "city_unsupported" ||
-                nonStructuredResponse.response_mode === "ai_fallback" ? (
+                nonStructuredResponse.response_mode === "ai_fallback" ||
+                nonStructuredResponse.response_mode === "supported_no_results" ? (
                   (() => {
+                    const fallbackIntroByMode =
+                      nonStructuredResponse.response_mode === "supported_no_results"
+                        ? `I'm not fully built out in that area yet, but here are a few spots I found in ${nonStructuredResponse.city_context || "your city"}.`
+                        : `Genie is not live in ${nonStructuredResponse.city_context || "that city"} yet.`;
                     const parsed = parseAiFallbackReply(
-                      nonStructuredResponse.reply?.trim() ||
-                        `Genie is not live in ${nonStructuredResponse.city_context || "that city"} yet.`
+                      nonStructuredResponse.reply?.trim() || fallbackIntroByMode
                     );
                     const introCopy =
                       parsed.intro ||
@@ -2303,11 +2308,9 @@ export function SinglePageGenieApp({
                   })()
                 ) : (
                   <div className="rounded-[22px] border border-white/15 bg-black/30 px-4 py-3 text-sm leading-6 text-white/80 backdrop-blur-sm">
-                    {nonStructuredResponse.response_mode === "supported_no_results"
-                      ? "Genie did not find a clean match yet. Tighten the ask and try again."
-                      : nonStructuredResponse.response_mode === "city_missing"
-                        ? "Tell Genie your city and preferences so recommendations can stay local."
-                        : nonStructuredResponse.reply}
+                    {nonStructuredResponse.response_mode === "city_missing"
+                      ? "Tell Genie your city and preferences so recommendations can stay local."
+                      : nonStructuredResponse.reply}
                   </div>
                 )}
                 {isAiFallbackLayout ? null : (
