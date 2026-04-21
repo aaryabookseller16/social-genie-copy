@@ -639,7 +639,7 @@ export function SinglePageGenieApp({
               finish(next);
             },
             () => finish(null),
-            { enableHighAccuracy: false, timeout: 5000, maximumAge: 5 * 60 * 1000 }
+            { enableHighAccuracy: true, timeout: 5000, maximumAge: 60_000 }
           );
           // Hard cap so a hung permission prompt never stalls the query.
           setTimeout(() => finish(null), 5500);
@@ -1234,7 +1234,7 @@ export function SinglePageGenieApp({
           setLocationPromptDismissed(true);
           window.localStorage.setItem(dismissedKey, "1");
         },
-        { enableHighAccuracy: false, timeout: 8000, maximumAge: 5 * 60 * 1000 }
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 60_000 }
       );
     };
 
@@ -2096,6 +2096,22 @@ export function SinglePageGenieApp({
             {/* Non-structured responses — always text, no cards/images */}
             {nonStructuredResponse ? (
               <div className="mt-5 w-full space-y-3">
+                {/* Reference: when `needs_location: true`, the user asked
+                    "near me" but we never sent coords. Prompt them to enable. */}
+                {nonStructuredResponse.needs_location ? (
+                  <div className="rounded-[22px] border border-red-300 bg-red-50 px-4 py-3 text-left dark:border-white/10 dark:bg-black/24">
+                    <p className="text-sm leading-6 text-gray-800 dark:text-white/82">
+                      Genie needs your location for near-me searches.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={requestLocationPermission}
+                      className="mt-3 w-full rounded-[16px] border border-red-500 bg-red-600 px-4 py-2 text-sm font-semibold text-white"
+                    >
+                      Enable location
+                    </button>
+                  </div>
+                ) : null}
                 {nonStructuredResponse.response_mode === "city_unsupported" ||
                 nonStructuredResponse.response_mode === "ai_fallback" ? (
                   (() => {
@@ -2106,6 +2122,19 @@ export function SinglePageGenieApp({
                     const introCopy =
                       parsed.intro ||
                       `Here's what I've got for ${nonStructuredResponse.city_context || "that city"}.`;
+                    const cityForMaps =
+                      (typeof nonStructuredResponse.debug?.city === "string"
+                        ? (nonStructuredResponse.debug.city as string)
+                        : nonStructuredResponse.city_context) || "";
+                    const mapsQuery = [
+                      nonStructuredResponse.normalized_intent,
+                      cityForMaps,
+                    ]
+                      .filter(Boolean)
+                      .join(" in ");
+                    const mapsUrl = mapsQuery
+                      ? `https://www.google.com/maps/search/${encodeURIComponent(mapsQuery)}`
+                      : null;
                     return (
                       <div className="space-y-3 text-left">
                         <GenieBubble copy={introCopy} compact />
@@ -2122,6 +2151,17 @@ export function SinglePageGenieApp({
                               ))}
                             </ul>
                           </div>
+                        ) : null}
+                        {nonStructuredResponse.response_mode ===
+                          "city_unsupported" && mapsUrl ? (
+                          <a
+                            href={mapsUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block w-full rounded-[18px] border border-white/30 bg-white/10 px-4 py-3 text-center text-sm font-semibold text-white backdrop-blur-sm hover:bg-white/20"
+                          >
+                            Search on Google Maps
+                          </a>
                         ) : null}
                       </div>
                     );
