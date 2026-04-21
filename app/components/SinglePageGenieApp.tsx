@@ -166,11 +166,120 @@ function buildStaticMapUrl(venue: GenieVenue) {
 }
 
 const socialTagOptions = {
-  music_tags: ["R&B / Soul", "Hip-Hop / Rap", "AfroBeats", "House", "Top 40"],
-  bevy_bites_tags: ["Soul Food", "Seafood", "Signature Cocktails", "Tacos", "Wine"],
-  experiences_tags: ["Brunch", "Happy Hour", "Day Party", "Dinner", "Late Night"],
-  atmosphere_tags: ["Rooftop", "Patio", "Live DJ", "Lounge", "Sports Bar"],
-  community_tags: ["Black-Owned", "LGBTQ+ Friendly", "Free Parking", "Date Night"],
+  music_tags: [
+    "R&B / Soul",
+    "Hip-Hop / Rap",
+    "AfroBeats",
+    "Latin Music",
+    "Jazz",
+    "House / Electronic",
+    "Reggae",
+    "Country",
+    "Rock",
+    "Pop",
+  ],
+  bevy_bites_tags: [
+    "Soul Food",
+    "Seafood",
+    "Vegan",
+    "Barbecue",
+    "Cajun",
+    "Comfort Food",
+    "Tapas / Small Plates",
+    "Bottomless Mimosas",
+    "Signature Cocktails",
+    "Whiskey / Bourbon Bars",
+    "Wine Focused",
+    "Beer Gardens",
+    "Mexican",
+    "Tex-Mex",
+    "Cuban",
+    "Colombian",
+    "Peruvian",
+    "Salvadoran",
+    "Chinese",
+    "Korean",
+    "Japanese",
+    "Vietnamese",
+    "Thai",
+    "Indian",
+    "Pakistani",
+    "Nepalese",
+    "Italian",
+    "French",
+    "Mediterranean",
+    "Greek",
+    "Spanish",
+    "British Pub Food",
+    "American Diner",
+    "Nigerian",
+    "Ethiopian",
+    "Ghanaian",
+    "Moroccan",
+    "Filipino",
+    "Indonesian",
+    "Malaysian",
+    "Persian",
+    "Lebanese",
+    "Turkish",
+    "Brazilian BBQ",
+    "Feijoada",
+    "Jamaican",
+    "Trinidadian",
+    "Haitian",
+    "Kosher",
+    "Halal",
+    "Gluten-Free",
+    "Vegetarian",
+    "Fusion Cuisine",
+    "Haute Cuisine",
+    "Street Food",
+  ],
+  experiences_tags: [
+    "Brunch",
+    "Happy Hour",
+    "Day Party",
+    "Late Night",
+    "Live Band",
+    "Lounges",
+    "Hookah Nights",
+    "Karaoke",
+    "Game Night",
+    "Trivia Night",
+    "BOGO Specials",
+    "Theme Nights",
+  ],
+  atmosphere_tags: [
+    "Rooftop",
+    "Patio",
+    "Indoor Cozy",
+    "Speakeasy Vibe",
+    "Club Vibe",
+    "Chill & Intimate",
+    "Loud & Lit",
+    "Live DJ",
+    "No DJ",
+    "Dancing Allowed",
+    "Dress Code: Casual",
+    "Dress Code: Trendy",
+    "Dress Code: Upscale",
+    "Cigar Lounge",
+    "Hookah Available",
+    "Smoke-Free",
+  ],
+  community_tags: [
+    "Black-Owned",
+    "Woman-Owned",
+    "LGBTQ+ Friendly",
+    "21+ Only",
+    "No Kids",
+    "Pet Friendly",
+    "Free Parking",
+    "Valet Parking",
+    "Street Parking",
+    "Open Late",
+    "Free Events",
+  ],
 } as const;
 
 const socialPreferenceOptions = {
@@ -2163,16 +2272,19 @@ export function SinglePageGenieApp({
                         <GenieBubble copy={introCopy} compact />
                         {parsed.items.length > 0 ? (
                           <div className="rounded-[22px] border border-red-200 bg-[rgba(255,250,250,0.92)] px-5 py-4 dark:border-white/10 dark:bg-black/16">
-                            <ul className="space-y-3 text-[0.95rem] leading-6 text-gray-800 dark:text-white/82">
+                            <ol className="space-y-3 text-[0.95rem] leading-6 text-gray-800 dark:text-white/82">
                               {parsed.items.map((item, index) => (
                                 <li key={index} className="flex gap-3">
-                                  <span aria-hidden="true" className="mt-[0.1em]">
-                                    •
+                                  <span
+                                    aria-hidden="true"
+                                    className="mt-[0.1em] min-w-[1.5em] font-semibold"
+                                  >
+                                    {index + 1}.
                                   </span>
                                   <span>{item}</span>
                                 </li>
                               ))}
-                            </ul>
+                            </ol>
                           </div>
                         ) : null}
                         {nonStructuredResponse.response_mode ===
