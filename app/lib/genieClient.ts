@@ -38,9 +38,7 @@ export async function callGenie(
     external_user_id: readExternalUserId() || (account?.id ? String(account.id) : "web_guest"),
     user_name: account?.firstName || undefined,
     session_token: readSessionToken(),
-    // When we have real coords, let the backend determine the city from them.
-    // Otherwise fall back to the runtime-configured city slug.
-    city_context: hasCoords ? undefined : config.citySlug,
+    city_context: undefined,
     lat: hasCoords ? coords!.lat : undefined,
     lng: hasCoords ? coords!.lng : undefined,
     radius_meters:
