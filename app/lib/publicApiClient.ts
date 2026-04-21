@@ -887,6 +887,79 @@ export async function createVendorOffer(payload: {
   });
 }
 
+export type VendorRecord = {
+  id?: number;
+  user_id?: number;
+  venue_id?: number;
+  business_name?: string;
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  phone?: string;
+  business_address?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  is_claimed?: boolean;
+  is_live?: boolean;
+  location_enabled?: boolean;
+  plan_selected?: string;
+  onboarding_completed?: boolean;
+  monthly_boost_active?: boolean;
+  reservation_url?: string;
+  reservation_platform?: string;
+  stripe_customer_id?: string;
+};
+
+export type VenueRecord = {
+  id?: number;
+  venue_name?: string;
+  address?: string;
+  city?: string;
+  phone?: string;
+  website_url?: string;
+  reservation_url?: string;
+  reservation_platform?: string;
+  instagram_handle?: string;
+  facebook_url?: string;
+  google_maps_url?: string;
+  image_primary_url?: string;
+  image_fallback_url?: string;
+  vibe_notes?: string;
+  hours_text?: string;
+  hours_json?: Record<string, unknown>;
+  venue_type?: string;
+  cuisine_tags?: unknown;
+  dietary_tags?: unknown;
+  price_band?: string;
+  price_level?: number;
+  google_rating?: number;
+  google_user_ratings_total?: number;
+  neighborhood_text?: string;
+  area_neighborhood?: string;
+  reservations_supported?: boolean;
+  is_open_now?: boolean;
+  is_vendor_subscriber?: boolean;
+  priority_tier?: string;
+};
+
+export type VendorVenueDetails = {
+  error: string | null;
+  vendor: VendorRecord | null;
+  venue: VenueRecord | null;
+};
+
+export async function fetchVendorVenue() {
+  const external_user_id = readExternalUserId();
+  if (!external_user_id) {
+    throw new Error("You must be signed in to view your venue details.");
+  }
+  const params = new URLSearchParams({ external_user_id });
+  return apiJson<VendorVenueDetails>(
+    `/api/vendor/venue?${params.toString()}`
+  );
+}
+
 export async function updateVendorVenue(payload: {
   venue_name?: string;
   description?: string;

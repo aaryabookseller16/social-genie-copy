@@ -6,6 +6,60 @@ import {
 } from "@/app/lib/server/xanoProxy";
 
 /**
+ * GET /api/vendor/venue?external_user_id=...
+ * Proxies to `genie/ep_get_venue_details_dev`. Returns venue details (name,
+ * address, contact info, category/cuisine, social links) along with the
+ * dashboard stats the vendor dashboard card renders.
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const authToken = extractBearerToken(request);
+    const externalUserId =
+      request.nextUrl.searchParams.get("external_user_id")?.trim() ?? "";
+
+    if (!externalUserId) {
+      return NextResponse.json(
+        { error: "external_user_id is required" },
+        { status: 400 }
+      );
+    }
+
+    const result = await xanoFetch<Record<string, unknown>>(
+      "genie/ep_get_venue_details_dev",
+      {
+        method: "GET",
+        authToken,
+        params: { external_user_id: externalUserId },
+      }
+    );
+
+    if (result && typeof result === "object" && "error" in result) {
+      const errMsg = (result as { error?: unknown }).error;
+      if (errMsg) {
+        return NextResponse.json(
+          { error: String(errMsg) },
+          { status: 404 }
+        );
+      }
+    }
+
+    return NextResponse.json(result ?? {});
+  } catch (error) {
+    if (error instanceof XanoError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status }
+      );
+    }
+    console.error("GET /api/vendor/venue failed:", error);
+    return NextResponse.json(
+      { error: "Could not load venue details." },
+      { status: 500 }
+    );
+  }
+}
+
+/**
  * PUT /api/vendor/venue
  * Proxies to `genie/ep_save_venue_details_dev`.
  *

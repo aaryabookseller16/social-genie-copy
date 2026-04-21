@@ -1053,7 +1053,7 @@ export function SinglePageGenieApp({
   }, [activeScreen, loadOffersAndRedemptions]);
 
   useEffect(() => {
-    if (activeScreen === "preferences") {
+    if (activeScreen === "preferences" || activeScreen === "profile") {
       void loadSocialPreferences();
     }
   }, [activeScreen, loadSocialPreferences]);
