@@ -60,24 +60,16 @@ export async function POST(request: NextRequest) {
             ? String(auth.user.id)
             : "web_guest";
 
-    const hasUpstreamCoords =
-      (typeof location?.lat === "number" && typeof location?.lng === "number") ||
-      (typeof body.lat === "number" && typeof body.lng === "number");
-
     const upstreamBody = {
       message: String(body.message ?? "").trim(),
       channel: String(body.channel ?? "web"),
       external_user_id: resolvedExternalUserId,
       user_name: resolvedUserName,
-      // Only inject the Houston default when the client gave us neither a
-      // city_context nor coordinates. With coords, let the backend infer the
-      // city so the `city_unsupported` reply_mode can actually fire.
+      // Forward city_context only if the client explicitly sent one. No
+      // hardcoded Houston default — let the backend decide from coords or
+      // return `city_missing` / `city_unsupported` when it can't resolve a city.
       city_context:
-        typeof body.city_context === "string"
-          ? body.city_context
-          : hasUpstreamCoords
-            ? undefined
-            : "Houston",
+        typeof body.city_context === "string" ? body.city_context : undefined,
       session_token:
         typeof body.session_token === "string" ? body.session_token : "",
       user_data:
