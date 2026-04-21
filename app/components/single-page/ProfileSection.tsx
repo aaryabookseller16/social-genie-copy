@@ -372,8 +372,13 @@ export function ProfileSection({
   const fullName =
     [account?.firstName, account?.lastName].filter(Boolean).join(" ") || "";
   const membershipLabel = isVibeeMember ? "V.I.Bee" : "Free";
-  const musicValue = formatTagList(socialProfile?.music_tags);
-  const bevyBitesValue = formatTagList(socialProfile?.bevy_bites_tags);
+  const preferenceRows: Array<{ label: string; value: string }> = [
+    { label: "Music", value: formatTagList(socialProfile?.music_tags) },
+    { label: "Bevy Bites", value: formatTagList(socialProfile?.bevy_bites_tags) },
+    { label: "Experiences", value: formatTagList(socialProfile?.experiences_tags) },
+    { label: "Atmosphere", value: formatTagList(socialProfile?.atmosphere_tags) },
+    { label: "Community", value: formatTagList(socialProfile?.community_tags) },
+  ];
 
   return (
     <section className="relative flex min-h-[calc(100dvh-4rem)] flex-1 flex-col pb-4">
@@ -435,23 +440,19 @@ export function ProfileSection({
           editAriaLabel="Edit social preferences"
         >
           <div className="space-y-4">
-            <div>
-              <p className="text-[0.95rem] font-semibold text-gray-900 dark:text-white">
-                Music
-              </p>
-              <p className="mt-1 text-[0.95rem] leading-6 text-gray-500 dark:text-white/60">
-                {musicValue}
-              </p>
-            </div>
-            <div className="h-px bg-black/10 dark:bg-white/10" />
-            <div>
-              <p className="text-[0.95rem] font-semibold text-gray-900 dark:text-white">
-                Bevy Bites
-              </p>
-              <p className="mt-1 text-[0.95rem] leading-6 text-gray-500 dark:text-white/60">
-                {bevyBitesValue}
-              </p>
-            </div>
+            {preferenceRows.map((row, index) => (
+              <div key={row.label}>
+                {index > 0 ? (
+                  <div className="mb-4 h-px bg-black/10 dark:bg-white/10" />
+                ) : null}
+                <p className="text-[0.95rem] font-semibold text-gray-900 dark:text-white">
+                  {row.label}
+                </p>
+                <p className="mt-1 text-[0.95rem] leading-6 text-gray-500 dark:text-white/60">
+                  {row.value}
+                </p>
+              </div>
+            ))}
           </div>
         </ProfileCard>
       </div>

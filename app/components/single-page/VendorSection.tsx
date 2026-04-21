@@ -18,6 +18,7 @@ import {
   createSubscriptionCheckout,
   createVendorBusiness,
   fetchVendorDashboard,
+  fetchVendorVenue,
   searchVendorBusinesses,
   updateVendorProfile,
   updateVendorVenue,
@@ -158,6 +159,23 @@ type FullDashboardData = {
 
 function isEmailValid(value: string) {
   return /\S+@\S+\.\S+/.test(value);
+}
+
+// Xano tag fields come back as arrays, objects keyed by tag, or strings.
+// Flatten to a comma-separated label, or "" when empty.
+function formatTagRecord(value: unknown): string {
+  if (!value) return "";
+  if (Array.isArray(value)) {
+    return value.filter((x): x is string => typeof x === "string").join(", ");
+  }
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "object") {
+    const keys = Object.keys(value as Record<string, unknown>).filter(
+      (k) => (value as Record<string, unknown>)[k]
+    );
+    return keys.join(", ");
+  }
+  return "";
 }
 
 function createContactState(
@@ -614,18 +632,31 @@ export function VendorSection({
     if (!vid) return;
     let cancelled = false;
     setIsProfileLoading(true);
-    fetchVendorDashboard(vid)
-      .then((v) => {
-        if (cancelled || !v) return;
-        const str = (val: unknown) =>
-          typeof val === "string" ? val : val == null ? "" : String(val);
+    const str = (val: unknown) =>
+      typeof val === "string" ? val : val == null ? "" : String(val);
+    Promise.all([
+      fetchVendorDashboard(vid).catch(() => null),
+      fetchVendorVenue().catch(() => null),
+    ])
+      .then(([d, venueResp]) => {
+        if (cancelled) return;
+        const venue = venueResp?.venue ?? null;
+        const vendor = venueResp?.vendor ?? null;
         setProfileForm({
-          description: str(v.description ?? v.vibe_notes),
-          phone: str(v.phone),
-          website_url: str(v.website_url ?? v.website),
-          reservation_url: str(v.reservation_url),
-          hours: str(v.hours_text),
-          image_primary_url: str(v.image_primary_url),
+          description: str(venue?.vibe_notes ?? d?.description ?? d?.vibe_notes),
+          phone: str(venue?.phone ?? d?.phone),
+          website_url: str(
+            venue?.website_url ?? d?.website_url ?? d?.website
+          ),
+          reservation_url: str(
+            venue?.reservation_url ??
+              vendor?.reservation_url ??
+              d?.reservation_url
+          ),
+          hours: str(venue?.hours_text ?? d?.hours_text),
+          image_primary_url: str(
+            venue?.image_primary_url ?? d?.image_primary_url
+          ),
         });
       })
       .catch(() => {
@@ -655,8 +686,63 @@ export function VendorSection({
 
     setIsDashboardLoading(true);
     try {
-      const data = await fetchVendorDashboard(vid);
-      setDashboardData(data);
+      const [dashboard, venueResp] = await Promise.all([
+        fetchVendorDashboard(vid),
+        fetchVendorVenue().catch(() => null),
+      ]);
+
+      const merged: FullDashboardData = { ...dashboard };
+      const vendor = venueResp?.vendor ?? null;
+      const venue = venueResp?.venue ?? null;
+
+      // Display name: prefer the venue's own name, then the vendor's business
+      // name, then fall back to the dashboard value.
+      const displayName =
+        (venue?.venue_name && venue.venue_name.trim()) ||
+        (vendor?.business_name && vendor.business_name.trim()) ||
+        "";
+      if (displayName) merged.business_name = displayName;
+
+      if (vendor) {
+        if (vendor.is_claimed != null) merged.is_claimed = vendor.is_claimed;
+        if (vendor.is_live != null) merged.is_live = vendor.is_live;
+        if (vendor.plan_selected) {
+          merged.is_pro = vendor.plan_selected === "pro";
+        }
+        if (vendor.monthly_boost_active != null) {
+          merged.boost_active = vendor.monthly_boost_active;
+        }
+      }
+
+      if (venue) {
+        if (venue.google_rating != null && venue.google_rating > 0) {
+          merged.rating = venue.google_rating;
+        }
+        if (venue.address) merged.address = venue.address;
+        if (venue.venue_type) merged.category = venue.venue_type;
+        const cuisineLabel = formatTagRecord(venue.cuisine_tags);
+        if (cuisineLabel) merged.cuisine = cuisineLabel;
+        if (venue.website_url) {
+          merged.website = venue.website_url;
+          merged.website_url = venue.website_url;
+        }
+        // Prefer venue's reservation URL; fall back to vendor's.
+        const reservationUrl =
+          venue.reservation_url || vendor?.reservation_url || "";
+        if (reservationUrl) merged.reservation_url = reservationUrl;
+        if (venue.instagram_handle) merged.instagram = venue.instagram_handle;
+        if (venue.vibe_notes) {
+          merged.description = venue.vibe_notes;
+          merged.vibe_notes = venue.vibe_notes;
+        }
+        if (venue.phone) merged.phone = venue.phone;
+        if (venue.hours_text) merged.hours_text = venue.hours_text;
+        if (venue.image_primary_url) merged.image_primary_url = venue.image_primary_url;
+      } else if (vendor?.reservation_url) {
+        merged.reservation_url = vendor.reservation_url;
+      }
+
+      setDashboardData(merged);
     } catch (error) {
       setStatusMessage(
         error instanceof Error
