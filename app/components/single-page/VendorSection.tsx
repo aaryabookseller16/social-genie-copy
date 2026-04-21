@@ -20,6 +20,7 @@ import {
   fetchVendorDashboard,
   searchVendorBusinesses,
   updateVendorProfile,
+  updateVendorVenue,
   vendorOnboardingSearch,
   vendorOnboardingContact,
   vendorOnboardingConfirm,
@@ -117,7 +118,7 @@ type FullDashboardData = {
   // These are tolerated as undefined; the UI defaults to 0/"—" until the
   // backend starts returning them.
   rating?: number;
-  address?: string;
+  address?: string | null;
   logo_url?: string;
   is_claimed?: boolean;
   // Basic-tier stats (shown in both Free and Paid dashboards)
@@ -133,11 +134,18 @@ type FullDashboardData = {
   performance_points?: Array<{ label?: string; value: number }>;
   performance_min?: number;
   // Business details
-  website?: string;
-  reservation_url?: string;
+  website?: string | null;
+  website_url?: string | null;
+  reservation_url?: string | null;
   category?: string;
   cuisine?: string;
   instagram?: string;
+  // Venue details surfaced in Edit Profile form
+  description?: string | null;
+  vibe_notes?: string | null;
+  phone?: string | null;
+  hours_text?: string | null;
+  image_primary_url?: string | null;
   // Boost status (Pro)
   boost_active?: boolean;
   boost_amount?: number;
@@ -555,6 +563,7 @@ export function VendorSection({
     image_primary_url: "",
   });
   const [isProfileSaving, setIsProfileSaving] = useState(false);
+  const [isProfileLoading, setIsProfileLoading] = useState(false);
   const [profileMessage, setProfileMessage] = useState<string | null>(null);
 
   const progressStep: Record<VendorStep, number> = {
@@ -598,6 +607,37 @@ export function VendorSection({
     if (!visible || !account || step !== "claim") return;
     trackEvent(analyticsEvents.vendorClaimStarted);
   }, [account, step, visible]);
+
+  useEffect(() => {
+    if (!visible || step !== "profile" || !account) return;
+    const vid = vendorId ?? account.vendorId;
+    if (!vid) return;
+    let cancelled = false;
+    setIsProfileLoading(true);
+    fetchVendorDashboard(vid)
+      .then((v) => {
+        if (cancelled || !v) return;
+        const str = (val: unknown) =>
+          typeof val === "string" ? val : val == null ? "" : String(val);
+        setProfileForm({
+          description: str(v.description ?? v.vibe_notes),
+          phone: str(v.phone),
+          website_url: str(v.website_url ?? v.website),
+          reservation_url: str(v.reservation_url),
+          hours: str(v.hours_text),
+          image_primary_url: str(v.image_primary_url),
+        });
+      })
+      .catch(() => {
+        // Leave form empty on error
+      })
+      .finally(() => {
+        if (!cancelled) setIsProfileLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, step, account, vendorId]);
 
   useEffect(() => {
     if (!visible) return;
@@ -1000,7 +1040,7 @@ export function VendorSection({
     setProfileMessage(null);
 
     try {
-      const payload: Record<string, string> = {};
+      const payload: Parameters<typeof updateVendorVenue>[0] = {};
       if (profileForm.description.trim())
         payload.description = profileForm.description.trim();
       if (profileForm.phone.trim()) payload.phone = profileForm.phone.trim();
@@ -1008,11 +1048,12 @@ export function VendorSection({
         payload.website_url = profileForm.website_url.trim();
       if (profileForm.reservation_url.trim())
         payload.reservation_url = profileForm.reservation_url.trim();
-      if (profileForm.hours.trim()) payload.hours = profileForm.hours.trim();
+      if (profileForm.hours.trim())
+        payload.hours_text = profileForm.hours.trim();
       if (profileForm.image_primary_url.trim())
         payload.image_primary_url = profileForm.image_primary_url.trim();
 
-      await updateVendorProfile(payload);
+      await updateVendorVenue(payload);
       setProfileMessage("Profile updated successfully.");
     } catch (error) {
       setProfileMessage(
@@ -1852,7 +1893,7 @@ export function VendorSection({
       {/* ======== STEP: PROFILE EDIT ======== */}
       {step === "profile" && (
         <form
-          className="mt-6 space-y-4"
+          className={`mt-6 space-y-4 ${isProfileLoading ? "opacity-60" : ""}`}
           onSubmit={(e: FormEvent<HTMLFormElement>) => {
             e.preventDefault();
             void handleSaveProfile();

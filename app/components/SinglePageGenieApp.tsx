@@ -1982,7 +1982,7 @@ export function SinglePageGenieApp({
               {isThinking ? "Say less... I got you!" : response?.reply || statusMessage}
             </p>
 
-            {/* Non-structured responses */}
+            {/* Non-structured responses — always text, no cards/images */}
             {nonStructuredResponse ? (
               <div className="mt-5 w-full space-y-3">
                 <div className="rounded-[22px] border border-white/15 bg-black/30 px-4 py-3 text-sm leading-6 text-white/80 backdrop-blur-sm">
@@ -1991,7 +1991,8 @@ export function SinglePageGenieApp({
                     : nonStructuredResponse.response_mode === "city_missing"
                       ? "Tell Genie your city and preferences so recommendations can stay local."
                     : nonStructuredResponse.response_mode === "city_unsupported"
-                      ? `Genie is not live in ${nonStructuredResponse.city_context || "that city"} yet.`
+                      ? nonStructuredResponse.reply?.trim() ||
+                        `Genie is not live in ${nonStructuredResponse.city_context || "that city"} yet — but here is the vibe: try searching Houston for now.`
                       : nonStructuredResponse.reply}
                 </div>
                 {(nonStructuredResponse.response_mode === "city_missing" ||
