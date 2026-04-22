@@ -681,6 +681,14 @@ export async function fetchSavedVenues() {
   return (response.venues ?? []).map(mapVenue);
 }
 
+export async function fetchVenueById(venueId: string | number) {
+  const response = await apiJson<{ venue: GenieVenue }>(
+    `/api/genie/venue?id=${encodeURIComponent(String(venueId))}`,
+    { auth: false }
+  );
+  return mapVenue(response.venue);
+}
+
 export async function registerPushToken(onesignalPlayerId: string) {
   const externalUserId = readExternalUserId();
   if (!externalUserId) {

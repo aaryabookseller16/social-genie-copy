@@ -26,6 +26,7 @@ export function HomeScreen({
   config,
   inputValue,
   isSubmitting,
+  showBottomNav = false,
   pendingTranscript = false,
   onMenuOpen,
   onInputChange,
@@ -36,7 +37,13 @@ export function HomeScreen({
   onCancelTranscript,
 }: HomeScreenProps) {
   return (
-    <section className="relative flex flex-1 flex-col overflow-hidden px-1 pb-0 pt-0 sm:px-3">
+    <section
+      className={`relative flex flex-1 flex-col overflow-hidden px-1 pt-0 sm:px-3 ${
+        showBottomNav
+          ? "pb-[calc(env(safe-area-inset-bottom,0px)+5.75rem)]"
+          : "pb-0"
+      }`}
+    >
 
       <div className="relative mx-auto flex w-full max-w-sm flex-1 flex-col items-center text-center">
         <div className="flex w-full items-center justify-between">

@@ -4,7 +4,8 @@ export type SignupPromptTriggerReason =
   | "venue_tap"
   | "save_attempt"
   | "repeated_browse"
-  | "second_query";
+  | "second_query"
+  | "shared_venue_tap";
 
 export type SignupPromptState = {
   dismissCount: number;

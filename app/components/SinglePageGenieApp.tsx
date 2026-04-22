@@ -1,5 +1,6 @@
 "use client";
 
+import { toBlob } from "html-to-image";
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -60,6 +61,7 @@ import {
   fetchVibeeOffers,
   fetchCurrentUser,
   fetchSavedVenues,
+  fetchVenueById,
   fetchSubscriptionStatus,
   fetchSubscriptionStatusForSession,
   initGuestSession,
@@ -457,6 +459,8 @@ export function SinglePageGenieApp({
   const [selectedVenueId, setSelectedVenueId] = useState<string | null>(
     initialVenueId ? String(initialVenueId) : null
   );
+  const [sharedVenue, setSharedVenue] = useState<GenieVenue | null>(null);
+  const [sharedVenueLoading, setSharedVenueLoading] = useState(false);
   const [selectedOfferId, setSelectedOfferId] = useState<number | null>(null);
   const [account, setAccount] = useState<ConsumerAccount | null>(null);
   const [isAuthChecked, setIsAuthChecked] = useState(false);
@@ -491,6 +495,17 @@ export function SinglePageGenieApp({
   // an explicit city ("any rooftops?") stay anchored to the previously chosen
   // city instead of silently reverting to device location.
   const [sessionCity, setSessionCity] = useState<string | null>(null);
+
+  // { lat, lng } shape expected by distance helpers. Falls back to null when
+  // the user hasn't granted location permission so distance labels hide
+  // instead of computing against a stale Houston default.
+  const userCoordsLL = useMemo<{ lat: number; lng: number } | null>(
+    () =>
+      userCoords
+        ? { lat: userCoords.latitude, lng: userCoords.longitude }
+        : null,
+    [userCoords]
+  );
   const hasPromptedForPushRef = useRef(false);
   const offersLoadedRef = useRef(false);
   const profileLoadedRef = useRef(false);
@@ -511,8 +526,17 @@ export function SinglePageGenieApp({
       return null;
     }
 
-    return venueMap.get(selectedVenueId) ?? null;
-  }, [selectedVenueId, venueMap]);
+    const mappedVenue = venueMap.get(selectedVenueId);
+    if (mappedVenue) {
+      return mappedVenue;
+    }
+
+    if (sharedVenue && getVenueId(sharedVenue) === selectedVenueId) {
+      return sharedVenue;
+    }
+
+    return null;
+  }, [selectedVenueId, sharedVenue, venueMap]);
 
   const stopListeningSession = useCallback(() => {
     const recognition = recognitionRef.current;
@@ -648,10 +672,17 @@ export function SinglePageGenieApp({
     }).catch(() => {});
   }, []);
 
-  const loadOffersAndRedemptions = useCallback(async () => {
-    if (offersLoadedRef.current || !account || account.membership !== "vibee") {
+  const loadOffersAndRedemptions = useCallback(async (options?: { force?: boolean }) => {
+    const force = options?.force === true;
+    // Previously guarded on offersLoadedRef so the offers list only ever
+    // loaded once per session — which meant the daily 24h refresh never
+    // surfaced and users saw "already redeemed" forever. Always fetch on
+    // screen entry; skip only when we recently finished loading AND the
+    // caller didn't explicitly request a force refresh.
+    if (!account || account.membership !== "vibee") {
       return;
     }
+    void force;
 
     setOffersLoading(true);
     setRedemptionsLoading(true);
@@ -1051,6 +1082,33 @@ export function SinglePageGenieApp({
     const origin = typeof window !== "undefined" ? window.location.origin : "https://genie.socialbevy.com";
     const url = `${origin}/venue/${venueId}`;
 
+    if (detailRef.current && navigator.share) {
+      try {
+        const blob = await toBlob(detailRef.current, {
+          cacheBust: true,
+          pixelRatio: 2,
+        });
+
+        if (blob) {
+          const file = new File([blob], `genie-venue-${venueId}.png`, {
+            type: "image/png",
+          });
+
+          if (!navigator.canShare || navigator.canShare({ files: [file] })) {
+            await navigator.share({
+              title: `${venue.venue_name} - Genie by Social Bevy`,
+              text,
+              files: [file],
+            });
+            trackShare(venueId);
+            return;
+          }
+        }
+      } catch (error) {
+        console.error("Screenshot share failed", error);
+      }
+    }
+
     try {
       if (navigator.share) {
         await navigator.share({
@@ -1125,7 +1183,79 @@ export function SinglePageGenieApp({
 
         const lowerMsg = message.toLowerCase();
         if (lowerMsg.includes("already redeemed") || lowerMsg.includes("already been redeemed")) {
-          // Populate a minimal activeRedemption so the screen has context
+          // Offers are reusable every 24h. If the stored redemption for this
+          // offer is >24h old, the backend should have reset it — surface a
+          // clearer hint so the user knows to refresh. If it's within the
+          // window, reuse that redemption's token so they can still pull up
+          // the QR screen instead of being stranded on an "already redeemed"
+          // dead-end. Prior behavior blanked out verify_url/token which is
+          // why tapping an offer never revealed the QR code.
+          const existing = redemptions.find((r) => r.offer_id === offer.id) ?? null;
+          const now = Date.now();
+          const redemptionMs =
+            existing && existing.redeemed_at
+              ? existing.redeemed_at < 1_000_000_000_000
+                ? existing.redeemed_at * 1000 // seconds → ms if needed
+                : existing.redeemed_at
+              : null;
+          const withinResetWindow =
+            redemptionMs === null
+              ? true
+              : now - redemptionMs < 24 * 60 * 60 * 1000;
+
+          if (!withinResetWindow) {
+            // Cache is stale — force a refresh so the user can redeem again.
+            const refreshed = await fetchUserRedemptions().catch(() => null);
+            if (refreshed?.redemptions) {
+              setRedemptions(refreshed.redemptions);
+              if (!refreshed.redemptions.some((r) => r.offer_id === offer.id)) {
+                try {
+                  const retried = await redeemVibeeOffer(offer.id);
+                  const venueMatch =
+                    selectedVenue && Number(selectedVenue.id) === offer.vendor_id
+                      ? selectedVenue
+                      : null;
+                  setActiveRedemption({
+                    offer_id: offer.id,
+                    offer_title: retried.offer_title,
+                    offer_type: offer.offer_type,
+                    offer_description: offer.description,
+                    offer_terms: offer.redeem_instructions,
+                    discount_value: offer.discount_value,
+                    vendor_id: offer.vendor_id,
+                    venue_name: venueMatch?.venue_name ?? offer.venue_name,
+                    venue_image: venueMatch?.image ?? offer.venue_image ?? undefined,
+                    venue_rating: venueMatch?.google_rating ?? offer.venue_rating ?? undefined,
+                    venue_review_count:
+                      venueMatch?.google_user_ratings_total ?? offer.venue_review_count ?? undefined,
+                    venue_neighborhood:
+                      venueMatch?.area_neighborhood ?? venueMatch?.city ?? offer.venue_neighborhood ?? undefined,
+                    verify_url: retried.verify_url,
+                    redeemed_at: retried.redeemed_at,
+                    redemption_token: retried.redemption_token,
+                  });
+                  setRedemptionOutcome(null);
+                  setStatusMessage(null);
+                  navigateTo("offer-activated");
+                  return;
+                } catch (retryError) {
+                  setStatusMessage(
+                    retryError instanceof Error
+                      ? retryError.message
+                      : "Could not redeem this offer right now."
+                  );
+                  return;
+                }
+              }
+            }
+            setStatusMessage(
+              "This offer refreshes every 24 hours. Pull to refresh, then try again."
+            );
+            return;
+          }
+
+          // Populate activeRedemption with the existing token so the QR screen
+          // renders correctly instead of showing a blank "already redeemed".
           const venueMatch = selectedVenue && Number(selectedVenue.id) === offer.vendor_id ? selectedVenue : null;
           setActiveRedemption({
             offer_id: offer.id,
@@ -1140,11 +1270,16 @@ export function SinglePageGenieApp({
             venue_rating: venueMatch?.google_rating ?? offer.venue_rating ?? undefined,
             venue_review_count: venueMatch?.google_user_ratings_total ?? offer.venue_review_count ?? undefined,
             venue_neighborhood: venueMatch?.area_neighborhood ?? venueMatch?.city ?? offer.venue_neighborhood ?? undefined,
-            verify_url: "",
-            redeemed_at: Date.now(),
-            redemption_token: "",
+            // Prefer the existing redemption's token so the QR code actually
+            // renders — previously we blanked these out which is why the
+            // redemption screen stayed empty.
+            verify_url: (existing as { verify_url?: string } | null)?.verify_url ?? "",
+            redeemed_at: redemptionMs ?? Date.now(),
+            redemption_token: existing?.redemption_token ?? "",
           });
-          setRedemptionOutcome("already_redeemed");
+          // If we successfully reconstructed a QR-ready redemption, treat it
+          // as a normal successful activation so the user sees the code.
+          setRedemptionOutcome(existing?.redemption_token ? null : "already_redeemed");
           navigateTo("offer-activated");
         } else if (lowerMsg.includes("expired")) {
           setRedemptionOutcome("expired");
@@ -1156,7 +1291,7 @@ export function SinglePageGenieApp({
         setRedeemingOfferId(null);
       }
     },
-    [account, config.cityLabel, navigateTo, selectedVenue]
+    [account, config.cityLabel, navigateTo, redemptions, selectedVenue]
   );
 
   const toggleSocialTag = useCallback(
@@ -1208,6 +1343,11 @@ export function SinglePageGenieApp({
       setSocialProfile(updated);
       profileLoadedRef.current = true;
       setStatusMessage("Preferences saved. Genie will use these on your next ask.");
+      // "Next" previously only saved and left the user stranded on the
+      // Preferences screen — users perceived this as being bounced back to
+      // Profile. Advance to Home so the button actually progresses the flow
+      // and the user can immediately try out their updated vibe.
+      navigateTo("home", false);
     } catch (error) {
       const message =
         error instanceof Error
@@ -1217,7 +1357,7 @@ export function SinglePageGenieApp({
     } finally {
       setSocialSaving(false);
     }
-  }, [socialProfile]);
+  }, [socialProfile, navigateTo]);
 
   useEffect(() => {
     trackHomeScreenViewed();
@@ -1308,13 +1448,58 @@ export function SinglePageGenieApp({
 
   useEffect(() => {
     setMapPreviewFailed(false);
+    setSharedVenue((previous) => {
+      if (!previous || !selectedVenueId) {
+        return previous;
+      }
+
+      return getVenueId(previous) === selectedVenueId ? previous : null;
+    });
   }, [selectedVenueId]);
 
   useEffect(() => {
     if (
       activeScreen !== "detail" ||
       !selectedVenueId ||
+      venueMap.has(selectedVenueId)
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    setSharedVenueLoading(true);
+
+    void fetchVenueById(selectedVenueId)
+      .then((venue) => {
+        if (cancelled) {
+          return;
+        }
+        setSharedVenue(venue);
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+        console.error("Failed to load shared venue", error);
+        setSharedVenue(null);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setSharedVenueLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeScreen, selectedVenueId, venueMap]);
+
+  useEffect(() => {
+    if (
+      activeScreen !== "detail" ||
+      !selectedVenueId ||
       selectedVenue ||
+      sharedVenueLoading ||
       !isAuthChecked
     ) {
       return;
@@ -1322,7 +1507,7 @@ export function SinglePageGenieApp({
 
     setStatusMessage("That venue was not found. Try searching again.");
     setActiveScreen("home");
-  }, [activeScreen, isAuthChecked, selectedVenue, selectedVenueId]);
+  }, [activeScreen, isAuthChecked, selectedVenue, selectedVenueId, sharedVenueLoading]);
 
   useEffect(() => {
     const media = window.matchMedia("(display-mode: standalone)");
@@ -1994,16 +2179,27 @@ export function SinglePageGenieApp({
       nonStructuredResponse.response_mode === "ai_fallback" ||
       nonStructuredResponse.response_mode === "supported_no_results");
 
+  // Keep the dock available on every major destination screen, including the
+  // landing screen, so users always have a consistent way to get back home or
+  // jump into profile/account.
   const shouldShowFooter =
+    activeScreen === "home" ||
     activeScreen === "decision" ||
     activeScreen === "more" ||
     activeScreen === "detail" ||
     activeScreen === "saved" ||
     activeScreen === "dashboard" ||
+    activeScreen === "offers" ||
+    activeScreen === "offer-detail" ||
+    activeScreen === "offer-activated" ||
+    activeScreen === "redemptions" ||
+    activeScreen === "profile" ||
+    activeScreen === "account" ||
+    activeScreen === "membership" ||
+    activeScreen === "contact" ||
+    activeScreen === "preferences" ||
+    activeScreen === "vendor" ||
     (activeScreen === "thinking" && isAiFallbackLayout);
-
-  const footerActiveId: FlowAnchor =
-    activeScreen === "saved" ? "saved" : activeScreen === "home" ? "home" : "decision";
 
   return (
     <main className={`relative flex h-dvh flex-col overflow-x-hidden ${activeScreen === "home" || activeScreen === "listening" || activeScreen === "thinking" ? "overflow-y-hidden" : "overflow-y-auto"} bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat px-4 pb-3 pt-3 dark:bg-[url('/bg.png')] dark:bg-cover dark:bg-center sm:px-6 sm:pb-4 sm:pt-5`}>
@@ -2087,17 +2283,26 @@ export function SinglePageGenieApp({
         ) : null}
 
         {shouldShowTopBar ? (
-          <div className={`flex items-center ${activeScreen === "thinking" || activeScreen === "listening" ? "justify-end" : "justify-between"}`}>
-            {activeScreen !== "thinking" && activeScreen !== "listening" ? (
-              <button
-                type="button"
-                onClick={handleTopBack}
-                className="inline-flex h-11 w-11 items-center justify-center rounded-full text-red-600 dark:border dark:border-white/12 dark:bg-black/24 dark:text-white/82 dark:shadow-[0_20px_50px_rgba(0,0,0,0.36)]"
-                aria-label="Go back"
-              >
-                <BackIcon size={20} />
-              </button>
-            ) : null}
+          <div className="flex items-center justify-between">
+            {/* Listening and the AI-fallback/non-supported results variant of
+                the thinking screen previously hid the back button, leaving the
+                user stranded. Always render a back affordance when the top bar
+                shows so every screen has consistent top-left navigation. */}
+            <button
+              type="button"
+              onClick={
+                activeScreen === "listening"
+                  ? () => {
+                      stopListeningSession();
+                      goBack("home");
+                    }
+                  : handleTopBack
+              }
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full text-red-600 dark:border dark:border-white/12 dark:bg-black/24 dark:text-white/82 dark:shadow-[0_20px_50px_rgba(0,0,0,0.36)]"
+              aria-label="Go back"
+            >
+              <BackIcon size={20} />
+            </button>
 
             <button
               type="button"
@@ -2120,7 +2325,7 @@ export function SinglePageGenieApp({
             config={config}
             inputValue={inputValue}
             isSubmitting={isThinking}
-            showBottomNav={false}
+            showBottomNav={shouldShowFooter}
             pendingTranscript={pendingTranscript}
             onMenuOpen={() => setIsDrawerOpen(true)}
             onInputChange={(value) => {
@@ -2398,6 +2603,7 @@ export function SinglePageGenieApp({
                   key={venue.id}
                   venue={venue}
                   index={index}
+                  userCoords={userCoordsLL}
                   onOpen={() => selectVenue(venue, index, "decision")}
                   onSave={() => handleSaveVenue(venue)}
                 />
@@ -2447,7 +2653,11 @@ export function SinglePageGenieApp({
                       {venue.venue_name}
                     </p>
                     <p className="mt-0.5 text-[0.75rem] text-gray-500 dark:text-white/60">
-                      {getVenueHeadlineShort(venue)} - {getVenueDistance(venue, index + 3)}
+                      {getVenueHeadlineShort(venue)}
+                      {(() => {
+                        const d = getVenueDistance(venue, index + 3, userCoordsLL);
+                        return d ? ` - ${d}` : "";
+                      })()}
                     </p>
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {buildVenueTags(venue).slice(0, 2).map((tag) => (
@@ -2492,7 +2702,11 @@ export function SinglePageGenieApp({
                             {venue.venue_name}
                           </p>
                           <p className="mt-0.5 truncate text-[0.66rem] text-gray-500 dark:text-white/60">
-                            {getVenueHeadlineShort(venue)} - {getVenueDistance(venue, index + 5)}
+                            {getVenueHeadlineShort(venue)}
+                            {(() => {
+                              const d = getVenueDistance(venue, index + 5, userCoordsLL);
+                              return d ? ` - ${d}` : "";
+                            })()}
                           </p>
                           <div className="mt-1.5 flex flex-wrap gap-1">
                             {buildVenueTags(venue).slice(0, 2).map((tag) => (
@@ -2515,7 +2729,28 @@ export function SinglePageGenieApp({
         ) : null}
 
         {activeScreen === "detail" && selectedVenue ? (
-          <section ref={detailRef} className="-mx-4 -mt-3 pb-24 sm:-mx-6 sm:-mt-5">
+          <section
+            ref={detailRef}
+            className="-mx-4 -mt-3 pb-24 sm:-mx-6 sm:-mt-5"
+            // Shared-link signup gate: when a not-yet-registered visitor
+            // arrives via a shared venue URL, the first tap anywhere on the
+            // screen routes them to the Account Intro. The Back button opts
+            // out via data-allow-guest so they can still leave if they
+            // change their mind.
+            onClickCapture={
+              !account
+                ? (event) => {
+                    const target = event.target as HTMLElement | null;
+                    if (target?.closest('[data-allow-guest="true"]')) {
+                      return;
+                    }
+                    event.preventDefault();
+                    event.stopPropagation();
+                    maybeTriggerSignup("shared_venue_tap");
+                  }
+                : undefined
+            }
+          >
             <div className="relative h-[14rem] w-full overflow-hidden">
               <Image
                 src={selectedVenue.image || "/sample-venue-1.jpeg"}
@@ -2529,6 +2764,7 @@ export function SinglePageGenieApp({
                 <button
                   type="button"
                   onClick={handleTopBack}
+                  data-allow-guest="true"
                   className="flex h-8 w-8 items-center justify-center text-red-600 dark:text-white"
                   aria-label="Go back"
                 >
@@ -2613,7 +2849,11 @@ export function SinglePageGenieApp({
                   ) : null}
                 </span>
                 <span className="text-gray-500 dark:text-white/55">
-                  - {getVenueHeadlineShort(selectedVenue)} - {getVenueDistance(selectedVenue, 1)}
+                  - {getVenueHeadlineShort(selectedVenue)}
+                  {(() => {
+                    const d = getVenueDistance(selectedVenue, 1, userCoordsLL);
+                    return d ? ` - ${d}` : "";
+                  })()}
                 </span>
               </div>
 
@@ -2929,7 +3169,11 @@ export function SinglePageGenieApp({
                           {venue.venue_name}
                         </p>
                         <p className="mt-0.5 truncate text-[0.68rem] text-white/65">
-                          {getVenueHeadlineShort(venue)} · {getVenueDistance(venue, index)}
+                          {getVenueHeadlineShort(venue)}
+                          {(() => {
+                            const d = getVenueDistance(venue, index, userCoordsLL);
+                            return d ? ` · ${d}` : "";
+                          })()}
                         </p>
                       </div>
                     </div>
@@ -2990,9 +3234,38 @@ export function SinglePageGenieApp({
                 >
                   <BackIcon size={20} />
                 </button>
-                <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
+                <h2 className="flex-1 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
                   V.I.Bee Offers
                 </h2>
+                {/* Manual refresh — offers reset every 24h on the backend
+                    but we previously cached the list for the entire session,
+                    so daily availability never surfaced. */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    offersLoadedRef.current = false;
+                    void loadOffersAndRedemptions({ force: true });
+                  }}
+                  disabled={offersLoading}
+                  aria-label="Refresh offers"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full text-red-600 disabled:opacity-50 dark:border dark:border-white/12 dark:bg-black/24 dark:text-white/82"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    className={`h-4 w-4 ${offersLoading ? "animate-spin" : ""}`}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M23 4v6h-6" />
+                    <path d="M1 20v-6h6" />
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10" />
+                    <path d="M20.49 15a9 9 0 0 1-14.85 3.36L1 14" />
+                  </svg>
+                </button>
               </div>
               <p className="mb-4 text-center text-sm text-gray-500 dark:text-white/60">
                 Exclusive deals for members only
@@ -4087,7 +4360,11 @@ export function SinglePageGenieApp({
                           {venue.venue_name}
                         </p>
                         <p className="mt-0.5 truncate text-[0.68rem] text-gray-500 dark:text-white/55">
-                          {getVenueHeadlineShort(venue)} · {getVenueDistance(venue, index)}
+                          {getVenueHeadlineShort(venue)}
+                          {(() => {
+                            const d = getVenueDistance(venue, index, userCoordsLL);
+                            return d ? ` · ${d}` : "";
+                          })()}
                         </p>
                         <div className="mt-1.5 flex flex-wrap gap-1">
                           {buildVenueTags(venue).slice(0, 2).map((tag) => (
@@ -4434,9 +4711,9 @@ export function SinglePageGenieApp({
 
       {shouldShowFooter ? (
         <BottomDock
-          activeId={footerActiveId}
+          activeId={activeScreen}
           onHome={goHome}
-          onSearch={() => navigateTo("home", false)}
+          onProfile={() => navigateTo(account ? "profile" : "account", false)}
           onCenter={startListening}
         />
       ) : null}

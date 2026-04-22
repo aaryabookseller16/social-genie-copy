@@ -188,17 +188,26 @@ export function GenieBubble({
 export function BottomDock({
   activeId,
   onHome,
-  onSearch,
+  onProfile,
   onCenter,
 }: {
   activeId?: FlowAnchor;
   onHome: () => void;
-  onSearch: () => void;
+  onProfile: () => void;
   onCenter: () => void;
 }) {
+  const isProfileActive =
+    activeId === "account" ||
+    activeId === "profile" ||
+    activeId === "preferences" ||
+    activeId === "membership" ||
+    activeId === "contact" ||
+    activeId === "vendor";
+  const isHomeActive = !isProfileActive;
+
   return (
-    <div className="pointer-events-auto fixed bottom-0 left-1/2 z-50 w-[min(100vw,28rem)] -translate-x-1/2">
-      <div className="relative flex items-center justify-between bg-white/10 px-10 pb-[calc(env(safe-area-inset-bottom,0px)+8px)] pt-2 backdrop-blur-3xl dark:bg-black/30">
+    <div className="pointer-events-none fixed bottom-0 left-1/2 z-[80] w-[min(100vw,28rem)] -translate-x-1/2">
+      <div className="pointer-events-auto relative flex items-center justify-between bg-white/10 px-8 pb-[calc(env(safe-area-inset-bottom,0px)+8px)] pt-2 backdrop-blur-3xl dark:bg-black/30">
         {/* Red line pinned to the very top of the nav bar */}
         <Image
           src="/bottom-red-line.png"
@@ -206,42 +215,39 @@ export function BottomDock({
           aria-hidden="true"
           width={448}
           height={4}
-          className="absolute inset-x-0 top-0 w-full object-fill"
+          className="pointer-events-none absolute inset-x-0 top-0 w-full object-fill"
         />
         <button
           type="button"
           onClick={onHome}
-          className={`flex h-10 w-10 items-center justify-center ${
-            activeId === "saved" || activeId === "detail"
-              ? "opacity-35 dark:opacity-50"
-              : ""
+          className={`relative z-10 flex h-12 w-12 touch-manipulation items-center justify-center ${
+            isHomeActive ? "opacity-100" : "opacity-40 dark:opacity-45"
           }`}
           aria-label="Go home"
+          aria-current={isHomeActive ? "page" : undefined}
         >
-          {/* The home PNGs have extra internal padding vs. the search PNG —
-              bump the box to h-7/w-7 so the glyph visually matches. */}
           <Image
             src="/home_svgrepo.com.png"
-            alt="home"
+            alt=""
+            aria-hidden="true"
             width={28}
             height={28}
-            className="h-7 w-7 object-contain dark:hidden"
+            className="pointer-events-none h-7 w-7 object-contain dark:hidden"
           />
-
           <Image
             src="/home_svgrepo_dark.com.png"
-            alt="home"
+            alt=""
+            aria-hidden="true"
             width={28}
             height={28}
-            className="hidden h-7 w-7 object-contain dark:block"
+            className="pointer-events-none hidden h-7 w-7 object-contain dark:block"
           />
-
         </button>
 
         <button
           type="button"
           onClick={onCenter}
-          className="relative -mt-3 flex h-[60px] w-[60px] items-center justify-center"
+          className="relative z-10 -mt-3 flex h-[60px] w-[60px] touch-manipulation items-center justify-center"
           aria-label="Start voice search"
         >
           <Image
@@ -249,30 +255,34 @@ export function BottomDock({
             alt=""
             fill
             sizes="60px"
-            className="object-contain"
+            className="pointer-events-none object-contain"
           />
         </button>
 
         <button
           type="button"
-          onClick={onSearch}
-          className="flex h-10 w-10 items-center justify-center"
-          aria-label="Search"
+          onClick={onProfile}
+          className={`relative z-10 flex h-12 w-12 touch-manipulation items-center justify-center ${
+            isProfileActive ? "opacity-100" : "opacity-75 dark:opacity-70"
+          }`}
+          aria-label="Open account"
+          aria-current={isProfileActive ? "page" : undefined}
         >
-          {/* light mode: red search icon / dark mode: white search icon */}
           <Image
-            src="/search_red.png"
+            src="/accountIcon-red.png"
             alt=""
+            aria-hidden="true"
             width={22}
             height={22}
-            className="h-[22px] w-[22px] object-contain dark:hidden"
+            className="pointer-events-none h-[22px] w-[22px] object-contain dark:hidden"
           />
           <Image
-            src="/icons/searchIcon.png"
+            src="/accountIcon.png"
             alt=""
+            aria-hidden="true"
             width={22}
             height={22}
-            className="hidden h-[22px] w-[22px] object-contain opacity-60 dark:block"
+            className="pointer-events-none hidden h-[22px] w-[22px] object-contain dark:block"
           />
         </button>
       </div>
@@ -280,12 +290,75 @@ export function BottomDock({
   );
 }
 
-export function getVenueDistance(venue: GenieVenue, index: number) {
-  if (venue.latitude && venue.longitude) {
-    return `${(0.5 + index * 0.7).toFixed(1)} mi`;
+// Haversine-based distance between two lat/lng points. Returns miles by
+// default; kilometers for non-US/UK locales (detected via navigator.language).
+function computeDistance(
+  userLat: number,
+  userLng: number,
+  venueLat: number,
+  venueLng: number,
+  useMetric: boolean
+): number {
+  const R = useMetric ? 6371 : 3958.8; // Earth radius
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(venueLat - userLat);
+  const dLng = toRad(venueLng - userLng);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(userLat)) *
+      Math.cos(toRad(venueLat)) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function shouldUseMetric(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const locale = navigator.language || "en-US";
+  return !["en-US", "en-GB", "my-MM"].includes(locale);
+}
+
+/**
+ * Real-world distance label between the user and a venue.
+ *
+ * Previously this returned synthetic values keyed off the list index
+ * (`0.5 + index * 0.7`) — which is why the venue detail screen showed
+ * numbers that had nothing to do with the user's actual location.
+ *
+ * Now it prefers the user's real coordinates. When they aren't available
+ * (permission denied, SSR, missing venue lat/lng) it returns `null` so the
+ * UI can hide the distance entirely instead of showing a misleading number.
+ */
+export function getVenueDistance(
+  venue: GenieVenue,
+  _index: number,
+  userCoords?: { lat: number; lng: number } | null
+): string | null {
+  const venueLat = typeof venue.latitude === "number" ? venue.latitude : null;
+  const venueLng = typeof venue.longitude === "number" ? venue.longitude : null;
+  if (
+    !userCoords ||
+    !Number.isFinite(userCoords.lat) ||
+    !Number.isFinite(userCoords.lng) ||
+    venueLat === null ||
+    venueLng === null
+  ) {
+    return null;
   }
 
-  return `${(0.8 + index * 0.9).toFixed(1)} mi`;
+  const useMetric = shouldUseMetric();
+  const distance = computeDistance(
+    userCoords.lat,
+    userCoords.lng,
+    venueLat,
+    venueLng,
+    useMetric
+  );
+  const unit = useMetric ? "km" : "mi";
+  if (distance < 0.1) return `Less than 0.1 ${unit}`;
+  if (distance < 10) return `${distance.toFixed(1)} ${unit}`;
+  return `${Math.round(distance)} ${unit}`;
 }
 
 export function getVenueHeadline(venue: GenieVenue) {
@@ -407,11 +480,13 @@ export function ResultCard({
   index,
   onOpen,
   onSave,
+  userCoords,
 }: {
   venue: GenieVenue;
   index: number;
   onOpen: () => void;
   onSave?: () => void;
+  userCoords?: { lat: number; lng: number } | null;
 }) {
   void onSave;
   const tone = getVenueStatusTone(venue, index);
@@ -450,7 +525,11 @@ export function ResultCard({
             {venue.venue_name}
           </p>
           <p className="mt-1 truncate text-[0.82rem] text-gray-500 dark:text-white/60">
-            {getVenueHeadlineShort(venue)} - {getVenueDistance(venue, index)}
+            {getVenueHeadlineShort(venue)}
+            {(() => {
+              const distance = getVenueDistance(venue, index, userCoords);
+              return distance ? ` - ${distance}` : "";
+            })()}
           </p>
 
           <p className="mt-1.5 truncate text-[0.88rem] font-medium text-red-500 dark:text-[#ff9d7d]">

@@ -37,8 +37,8 @@ export type RawGenieVenue = {
   music?: string | null;
   crowd?: string | null;
   price_band?: string | null;
-  latitude?: string | null;
-  longitude?: string | null;
+  latitude?: string | number | null;
+  longitude?: string | number | null;
   phone?: string | null;
   website_url?: string | null;
   google_maps_url?: string | null;
@@ -66,9 +66,11 @@ export type RawGenieVenue = {
   } | null;
 };
 
-export type GenieVenue = RawGenieVenue & {
+export type GenieVenue = Omit<RawGenieVenue, "latitude" | "longitude"> & {
   image: string | null;
   image_url: string | null;
+  latitude: number | null;
+  longitude: number | null;
 };
 
 export type RawHandleMessageResponse = {

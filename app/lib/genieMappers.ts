@@ -23,6 +23,19 @@ export function getVenueImage(rawVenue: RawGenieVenue): string | null {
   return null;
 }
 
+function normalizeCoordinate(value: RawGenieVenue["latitude"]) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number(value.trim());
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
 export function mapVenue(rawVenue: RawGenieVenue): GenieVenue {
   const normalizedImage = getVenueImage(rawVenue);
 
@@ -30,6 +43,8 @@ export function mapVenue(rawVenue: RawGenieVenue): GenieVenue {
     ...rawVenue,
     image: normalizedImage,
     image_url: normalizedImage,
+    latitude: normalizeCoordinate(rawVenue.latitude),
+    longitude: normalizeCoordinate(rawVenue.longitude),
   };
 }
 
