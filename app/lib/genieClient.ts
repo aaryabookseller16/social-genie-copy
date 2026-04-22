@@ -19,6 +19,10 @@ export type { GenieFilters, GenieResponseEnvelope, GenieVenue };
 export type CallGenieOptions = {
   coords?: { lat: number; lng: number } | null;
   radiusMeters?: number;
+  cityContext?: string | null;
+  // When false, coords are dropped from the request even if provided — used
+  // when an explicit city in the message takes priority over device location.
+  includeCoords?: boolean;
 };
 
 export async function callGenie(
@@ -28,17 +32,20 @@ export async function callGenie(
   const config = getRuntimeConfig();
   const token = readAuthToken();
   const account = readConsumerAccount();
-  const { coords, radiusMeters } = options;
-  const hasCoords = Boolean(
-    coords && Number.isFinite(coords.lat) && Number.isFinite(coords.lng)
-  );
+  const { coords, radiusMeters, cityContext, includeCoords = true } = options;
+  const hasCoords =
+    includeCoords &&
+    Boolean(coords && Number.isFinite(coords.lat) && Number.isFinite(coords.lng));
   const body = {
     message,
     channel: "web",
     external_user_id: readExternalUserId() || (account?.id ? String(account.id) : "web_guest"),
     user_name: account?.firstName || undefined,
     session_token: readSessionToken(),
-    city_context: undefined,
+    city_context:
+      typeof cityContext === "string" && cityContext.trim().length > 0
+        ? cityContext.trim()
+        : undefined,
     lat: hasCoords ? coords!.lat : undefined,
     lng: hasCoords ? coords!.lng : undefined,
     radius_meters:

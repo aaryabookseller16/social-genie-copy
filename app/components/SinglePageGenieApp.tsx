@@ -80,6 +80,7 @@ import {
   unsaveVenueForUser,
 } from "@/app/lib/publicApiClient";
 import { getRuntimeConfig } from "@/app/lib/runtimeConfig";
+import { extractCityFromMessage, mentionsNearMe } from "@/app/lib/cityExtractor";
 import {
   readSignupPromptState,
   shouldSuppressSignupPrompt,
@@ -486,6 +487,10 @@ export function SinglePageGenieApp({
     latitude: number;
     longitude: number;
   } | null>(null);
+  // Remembers the active city for the session so follow-up queries without
+  // an explicit city ("any rooftops?") stay anchored to the previously chosen
+  // city instead of silently reverting to device location.
+  const [sessionCity, setSessionCity] = useState<string | null>(null);
   const hasPromptedForPushRef = useRef(false);
   const offersLoadedRef = useRef(false);
   const profileLoadedRef = useRef(false);
@@ -721,10 +726,23 @@ export function SinglePageGenieApp({
       city: config.cityLabel,
     }).catch(() => {});
 
+    // Location priority (see bug: previously device location always won):
+    //   1. Explicit city in the message ("happy hour in Houston") — ignore coords
+    //   2. Session city carried over from the last query
+    //   3. "near me" + device coords
+    //   4. Device coords as last-resort signal so the backend can infer a city
+    const explicitCity = extractCityFromMessage(trimmed);
+    const isNearMe = mentionsNearMe(trimmed);
+    const cityForQuery = explicitCity ?? (isNearMe ? null : sessionCity);
+    const shouldUseCoords = !cityForQuery; // city always beats coords
+    const shouldFetchCoords = shouldUseCoords;
+
     // Try to attach fresh coords on every query. If we already have them, reuse;
     // otherwise ask the browser (resolves to null quickly if denied/unavailable
-    // so we never block the query).
+    // so we never block the query). Skip entirely when an explicit/session city
+    // already determined where to search.
     const resolvedCoords = await (async () => {
+      if (!shouldFetchCoords) return null;
       if (userCoords) return userCoords;
       if (typeof window === "undefined" || !("geolocation" in navigator)) {
         return null;
@@ -762,8 +780,21 @@ export function SinglePageGenieApp({
           ? { lat: resolvedCoords.latitude, lng: resolvedCoords.longitude }
           : null,
         radiusMeters: 2500,
+        cityContext: cityForQuery ?? undefined,
+        includeCoords: shouldUseCoords,
       });
       setResponse(nextResponse);
+      // Remember the resolved city so the next query without an explicit city
+      // stays anchored to it.
+      const resolvedSessionCity =
+        explicitCity ??
+        (typeof nextResponse.city_context === "string" &&
+        nextResponse.city_context.trim().length > 0
+          ? nextResponse.city_context
+          : null);
+      if (resolvedSessionCity) {
+        setSessionCity(resolvedSessionCity);
+      }
       trackEvent(analyticsEvents.normalizedIntentReceived, {
         normalizedIntent: nextResponse.normalized_intent,
         responseMode: nextResponse.response_mode,
