@@ -2581,6 +2581,10 @@ export function SinglePageGenieApp({
 
         {activeScreen === "decision" && showResultSections ? (
           <section ref={decisionRef} className="space-y-2 pb-24">
+            <GenieBubble
+              copy={response?.reply?.trim() || "I found a few spots that match your vibe."}
+              compact
+            />
             {response?.show_intake_prompt ? (
               <div className="rounded-[22px] border border-red-200 bg-red-50/60 p-4 dark:border-white/12 dark:bg-black/20">
                 <p className="text-sm leading-6 text-gray-700 dark:text-white/82">
@@ -2595,7 +2599,6 @@ export function SinglePageGenieApp({
                 </button>
               </div>
             ) : null}
-            <GenieBubble copy="I found a few spots that match your vibe." compact />
             {/* Decisive cards */}
             <div className="flex flex-col gap-2">
               {response?.decisive.map((venue, index) => (
@@ -2630,7 +2633,13 @@ export function SinglePageGenieApp({
 
         {activeScreen === "more" && showResultSections && response?.more_nearby.length ? (
           <section ref={moreRef} className="space-y-4 pb-24">
-            <GenieBubble copy="Here are a couple more spots you might like." compact />
+            <GenieBubble
+              copy={
+                response?.reply?.trim() ||
+                "Here are a couple more spots you might like."
+              }
+              compact
+            />
             <div className="grid grid-cols-2 gap-3">
               {response.more_nearby.slice(0, 2).map((venue, index) => (
                 <button
