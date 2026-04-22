@@ -4,7 +4,6 @@ import Image from "next/image";
 
 import { GenieOrb } from "@/app/components/shared/GenieOrb";
 import { QuickChips } from "@/app/components/shared/QuickChips";
-import { ThemeToggle } from "@/app/components/shared/ThemeToggle";
 import { type RuntimeConfig } from "@/app/lib/genieTypes";
 
 type HomeScreenProps = {
@@ -46,8 +45,7 @@ export function HomeScreen({
     >
 
       <div className="relative mx-auto flex w-full max-w-sm flex-1 flex-col items-center text-center">
-        <div className="flex w-full items-center justify-between">
-          <ThemeToggle />
+        <div className="flex w-full justify-end">
           <button
             type="button"
             onClick={onMenuOpen}
