@@ -380,11 +380,12 @@ export async function saveVendorProfileChanges(payload: {
 }
 
 export async function submitContactForm(payload: {
-  first_name?: string;
-  last_name?: string;
+  first_name: string;
+  last_name: string;
   email: string;
-  subject?: string;
-  description: string;
+  topic: string;
+  message: string;
+  source?: "app" | "website" | string;
 }) {
   // Auth header is attached automatically if the user is signed in;
   // anonymous submissions are still accepted by the API route.

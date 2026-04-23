@@ -4517,13 +4517,13 @@ export function SinglePageGenieApp({
 
             {/* Form */}
             {contactSent ? (
-              <div className="rounded-[20px] border border-green-500/30 bg-green-500/10 px-4 py-6 text-center">
-                <p className="text-base font-semibold text-white">Message sent!</p>
-                <p className="mt-1 text-sm text-white/65">We&apos;ll get back to you shortly.</p>
+              <div className="rounded-[20px] border border-green-600/25 bg-green-50/80 px-4 py-6 text-center dark:border-green-500/30 dark:bg-green-500/10">
+                <p className="text-base font-semibold text-green-950 dark:text-white">Message sent!</p>
+                <p className="mt-1 text-sm text-green-800 dark:text-white/65">We&apos;ll get back to you shortly.</p>
                 <button
                   type="button"
                   onClick={() => { setContactSent(false); setContactError(null); setContactForm({ firstName: "", lastName: "", email: "", subject: "", description: "" }); }}
-                  className="mt-4 rounded-[14px] border border-white/20 bg-white/10 px-5 py-2 text-sm font-semibold text-white"
+                  className="mt-4 rounded-[14px] border border-green-700/20 bg-white/75 px-5 py-2 text-sm font-semibold text-green-900 dark:border-white/20 dark:bg-white/10 dark:text-white"
                 >
                   Send another
                 </button>
@@ -4539,8 +4539,9 @@ export function SinglePageGenieApp({
                       first_name: contactForm.firstName,
                       last_name: contactForm.lastName,
                       email: contactForm.email,
-                      subject: contactForm.subject,
-                      description: contactForm.description,
+                      topic: contactForm.subject,
+                      message: contactForm.description,
+                      source: "app",
                     });
                     setContactSent(true);
                   } catch (err) {
@@ -4560,7 +4561,7 @@ export function SinglePageGenieApp({
                     { key: "firstName", label: "First Name", placeholder: "First Name", type: "text" },
                     { key: "lastName", label: "Last Name", placeholder: "Last Name", type: "text" },
                     { key: "email", label: "Email", placeholder: "Email", type: "email" },
-                    { key: "subject", label: "Subject", placeholder: "Subject", type: "text" },
+                    { key: "subject", label: "Topic", placeholder: "Topic", type: "text" },
                   ] as Array<{ key: keyof typeof contactForm; label: string; placeholder: string; type: string }>
                 ).map(({ key, placeholder, type }) => (
                   <input
@@ -4570,19 +4571,19 @@ export function SinglePageGenieApp({
                     onChange={(e) => setContactForm((prev) => ({ ...prev, [key]: e.target.value }))}
                     placeholder={placeholder}
                     style={{ fontSize: "16px" }}
-                    className="w-full rounded-[14px] border border-white/15 bg-white/8 px-4 py-3.5 text-white placeholder:text-white/35 focus:border-white/30 focus:outline-none dark:bg-black/25"
+                    className="w-full rounded-[14px] border border-red-200/70 bg-white/65 px-4 py-3.5 text-gray-950 placeholder:text-gray-500 focus:border-red-500 focus:outline-none dark:border-white/15 dark:bg-black/25 dark:text-white dark:placeholder:text-white/35 dark:focus:border-white/30"
                   />
                 ))}
                 <textarea
                   value={contactForm.description}
                   onChange={(e) => setContactForm((prev) => ({ ...prev, description: e.target.value }))}
-                  placeholder="Short Description"
+                  placeholder="Message"
                   rows={4}
                   style={{ fontSize: "16px" }}
-                  className="w-full resize-none rounded-[14px] border border-white/15 bg-white/8 px-4 py-3.5 text-white placeholder:text-white/35 focus:border-white/30 focus:outline-none dark:bg-black/25"
+                  className="w-full resize-none rounded-[14px] border border-red-200/70 bg-white/65 px-4 py-3.5 text-gray-950 placeholder:text-gray-500 focus:border-red-500 focus:outline-none dark:border-white/15 dark:bg-black/25 dark:text-white dark:placeholder:text-white/35 dark:focus:border-white/30"
                 />
                 {contactError ? (
-                  <p className="text-center text-sm text-red-300">
+                  <p className="text-center text-sm text-red-600 dark:text-red-300">
                     {contactError}
                   </p>
                 ) : null}
