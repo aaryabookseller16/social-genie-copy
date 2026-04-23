@@ -1,9 +1,9 @@
-const CACHE_NAME = "genie-shell-v1";
+const CACHE_NAME = "genie-shell-v2";
 const APP_SHELL = [
   "/",
   "/site.webmanifest",
   "/apple-touch-icon.png",
-  "/favicon-32x32.png",
+  "/favicon-bevy.png",
   "/favicon-16x16.png",
   "/genie-pic2.png",
   "/genie-profile-pic.png",
