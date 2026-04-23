@@ -17,7 +17,6 @@ Users type into Genie’s “How can I get you social?” prompt. Genie parses t
 - All venue data comes from Xano’s *Genie Brain* table.  
 - Genie returns matches based on name, neighborhood, vibe notes, energy, music, and general descriptive text.
 
-.
 
 ### ✔ Saved Spots  
 Users can save/unsave venues. All saved venue IDs are stored in:
