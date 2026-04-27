@@ -3,16 +3,28 @@ import type { Metadata } from "next";
 import { SinglePageGenieApp } from "@/app/components/SinglePageGenieApp";
 import { mapVenue } from "@/app/lib/genieMappers";
 import { type RawGenieVenue } from "@/app/lib/genieTypes";
+import { fetchCatalogVenueById } from "@/app/lib/server/xanoCatalog";
 import { xanoFetch } from "@/app/lib/server/xanoProxy";
 
 const FALLBACK_OG_IMAGE = "https://genie.socialbevy.com/genie-profile-pic.png";
 
 async function loadVenue(id: string) {
   try {
-    const raw = await xanoFetch<RawGenieVenue>("genie/venue", {
-      params: { id },
-    });
-    return mapVenue(raw);
+    const response = await xanoFetch<{ venue?: RawGenieVenue }>(
+      "genie/ep_get_venue_dev",
+      { params: { venue_id: id } }
+    );
+    if (response.venue) {
+      return mapVenue(response.venue);
+    }
+  } catch {
+    // Primary endpoint isn't returning this venue; fall back to the catalog
+    // source the message endpoint uses so shared links can still preview.
+  }
+
+  try {
+    const raw = await fetchCatalogVenueById(id);
+    return raw ? mapVenue(raw) : null;
   } catch {
     return null;
   }

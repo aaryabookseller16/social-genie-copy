@@ -1503,6 +1503,33 @@ export function SinglePageGenieApp({
     setActiveScreen("home");
   }, [activeScreen, isAuthChecked, selectedVenue, selectedVenueId, sharedVenueLoading]);
 
+  // Keep the address bar in sync with the active screen so leaving the venue
+  // detail (e.g. tapping Home) drops the /venue/<id> path. Only the detail
+  // screen owns a deep URL — every other screen renders at "/".
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const { pathname, search, hash } = window.location;
+    const onVenuePath = pathname.startsWith("/venue/");
+    const desiredVenuePath =
+      activeScreen === "detail" && selectedVenueId
+        ? `/venue/${selectedVenueId}`
+        : null;
+
+    if (desiredVenuePath) {
+      if (pathname !== desiredVenuePath) {
+        window.history.replaceState({}, "", `${desiredVenuePath}${search}${hash}`);
+      }
+      return;
+    }
+
+    if (onVenuePath) {
+      window.history.replaceState({}, "", `/${search}${hash}`);
+    }
+  }, [activeScreen, selectedVenueId]);
+
   useEffect(() => {
     const media = window.matchMedia("(display-mode: standalone)");
     setIsStandalone(media.matches);

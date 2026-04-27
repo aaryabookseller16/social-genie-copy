@@ -80,3 +80,13 @@ export async function fetchCatalogVenuesByIds(ids: number[]) {
   const venues = await fetchCatalogVenues(500);
   return venues.filter((venue) => wanted.has(String(venue.id)));
 }
+
+export async function fetchCatalogVenueById(id: string | number) {
+  const numericId = Number(id);
+  if (!Number.isFinite(numericId)) {
+    return null;
+  }
+
+  const matches = await fetchCatalogVenuesByIds([numericId]);
+  return matches[0] ?? null;
+}
