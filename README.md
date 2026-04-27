@@ -36,7 +36,7 @@ Each venue has a full-screen detail page with:
 - Hours  
 - Save button  
 - Share button  
-
+- 
 ### ✔ Mobile-first UI  
 Genie is optimized for iPhone and mobile experience.
 
