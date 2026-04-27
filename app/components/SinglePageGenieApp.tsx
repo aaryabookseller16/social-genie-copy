@@ -1,6 +1,5 @@
 "use client";
 
-import { toBlob } from "html-to-image";
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -125,7 +124,22 @@ function getVenueId(venue: GenieVenue) {
   return String(venue.id);
 }
 
+function getAppOrigin() {
+  return typeof window !== "undefined"
+    ? window.location.origin
+    : "https://genie.socialbevy.com";
+}
 
+async function shareLink(payload: { title: string; text: string; url: string }) {
+  if (typeof navigator !== "undefined" && navigator.share) {
+    await navigator.share(payload);
+    return;
+  }
+
+  if (typeof navigator !== "undefined" && navigator.clipboard) {
+    await navigator.clipboard.writeText(`${payload.text}\n${payload.url}`);
+  }
+}
 
 function buildNativeMapsUrl(venue: GenieVenue) {
   if (venue.google_maps_url?.trim()) {
@@ -1079,51 +1093,31 @@ export function SinglePageGenieApp({
   const handleShareVenue = async (venue: GenieVenue) => {
     const venueId = getVenueId(venue);
     const text = `Check out ${venue.venue_name} on Genie by Social Bevy`;
-    const origin = typeof window !== "undefined" ? window.location.origin : "https://genie.socialbevy.com";
-    const url = `${origin}/venue/${venueId}`;
-
-    if (detailRef.current && navigator.share) {
-      try {
-        const blob = await toBlob(detailRef.current, {
-          cacheBust: true,
-          pixelRatio: 2,
-        });
-
-        if (blob) {
-          const file = new File([blob], `genie-venue-${venueId}.png`, {
-            type: "image/png",
-          });
-
-          if (!navigator.canShare || navigator.canShare({ files: [file] })) {
-            await navigator.share({
-              title: `${venue.venue_name} - Genie by Social Bevy`,
-              text,
-              files: [file],
-            });
-            trackShare(venueId);
-            return;
-          }
-        }
-      } catch (error) {
-        console.error("Screenshot share failed", error);
-      }
-    }
+    const url = `${getAppOrigin()}/venue/${venueId}`;
 
     try {
-      if (navigator.share) {
-        await navigator.share({
-          title: `${venue.venue_name} — Genie by Social Bevy`,
-          text,
-          url,
-        });
-      } else if (navigator.clipboard) {
-        await navigator.clipboard.writeText(`${text}\n${url}`);
-      }
+      await shareLink({
+        title: `${venue.venue_name} - Genie by Social Bevy`,
+        text,
+        url,
+      });
     } catch (error) {
       console.error("Share failed", error);
     }
 
     trackShare(venueId);
+  };
+
+  const handleShareApp = async () => {
+    try {
+      await shareLink({
+        title: "Genie by Social Bevy",
+        text: "Discover food, drinks, offers, and things to do with Genie by Social Bevy.",
+        url: getAppOrigin(),
+      });
+    } catch (error) {
+      console.error("App share failed", error);
+    }
   };
 
   const handleRedeemOffer = useCallback(
@@ -2328,6 +2322,7 @@ export function SinglePageGenieApp({
             showBottomNav={shouldShowFooter}
             pendingTranscript={pendingTranscript}
             onMenuOpen={() => setIsDrawerOpen(true)}
+            onShareApp={handleShareApp}
             onInputChange={(value) => {
               if (!hasTrackedTypingRef.current && value.trim().length > 0) {
                 hasTrackedTypingRef.current = true;
@@ -2740,7 +2735,7 @@ export function SinglePageGenieApp({
         {activeScreen === "detail" && selectedVenue ? (
           <section
             ref={detailRef}
-            className="-mx-4 -mt-3 pb-24 sm:-mx-6 sm:-mt-5"
+            className="-mx-4 -mt-3 pb-[calc(env(safe-area-inset-bottom,0px)+11rem)] sm:-mx-6 sm:-mt-5"
             // Shared-link signup gate: when a not-yet-registered visitor
             // arrives via a shared venue URL, the first tap anywhere on the
             // screen routes them to the Account Intro. The Back button opts
@@ -3089,28 +3084,30 @@ export function SinglePageGenieApp({
                 const isMember = account?.membership === "vibee";
                 const redeeming = redeemingOfferId === venueOffer.id;
                 return (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!account) {
-                        navigateTo("account");
-                        return;
-                      }
-                      if (!isMember) {
-                        navigateTo("account");
-                        return;
-                      }
-                      void handleRedeemOffer(venueOffer);
-                    }}
-                    disabled={redeeming}
-                    className="mt-2 w-full rounded-[18px] border border-red-500 bg-red-600 py-3.5 text-sm font-semibold text-white disabled:opacity-60 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
-                  >
-                    {redeeming
-                      ? "Redeeming..."
-                      : isMember
-                        ? "Redeem Offer"
-                        : "Upgrade to Redeem"}
-                  </button>
+                  <div className="fixed bottom-[calc(env(safe-area-inset-bottom,0px)+5.25rem)] left-1/2 z-[90] w-[min(100vw,28rem)] -translate-x-1/2 px-4 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!account) {
+                          navigateTo("account");
+                          return;
+                        }
+                        if (!isMember) {
+                          navigateTo("account");
+                          return;
+                        }
+                        void handleRedeemOffer(venueOffer);
+                      }}
+                      disabled={redeeming}
+                      className="w-full rounded-[18px] border border-red-500 bg-red-600 py-3.5 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(231,7,7,0.35)] disabled:opacity-60 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                    >
+                      {redeeming
+                        ? "Redeeming..."
+                        : isMember
+                          ? "Redeem Offer"
+                          : "Upgrade to Redeem"}
+                    </button>
+                  </div>
                 );
               })()}
             </div>
@@ -3576,9 +3573,14 @@ export function SinglePageGenieApp({
                   <button
                     type="button"
                     onClick={() => {
-                      if (navigator.share) {
-                        void navigator.share({ title: venueName, text: offer.title, url: window.location.href });
-                      }
+                      const url = matchedVenue
+                        ? `${getAppOrigin()}/venue/${getVenueId(matchedVenue)}`
+                        : getAppOrigin();
+                      void shareLink({
+                        title: `${venueName} - Genie by Social Bevy`,
+                        text: offer.title,
+                        url,
+                      });
                     }}
                     className="flex flex-1 items-center justify-center gap-1.5 rounded-full border border-[#E7070380] bg-transparent py-2 text-[0.82rem] font-semibold text-gray-900 dark:border-white/20 dark:text-white"
                   >
@@ -3631,7 +3633,7 @@ export function SinglePageGenieApp({
               )}
 
               {/* Fixed Redeem CTA */}
-              <div className="fixed bottom-0 left-1/2 z-40 w-[min(100vw,28rem)] -translate-x-1/2 px-4 pb-[calc(env(safe-area-inset-bottom,0px)+14px)] pt-3">
+              <div className="fixed bottom-[calc(env(safe-area-inset-bottom,0px)+5.25rem)] left-1/2 z-[90] w-[min(100vw,28rem)] -translate-x-1/2 px-4 pt-3">
                 <button
                   type="button"
                   onClick={() => {
