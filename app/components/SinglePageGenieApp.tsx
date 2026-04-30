@@ -2204,7 +2204,6 @@ export function SinglePageGenieApp({
   // landing screen, so users always have a consistent way to get back home or
   // jump into profile/account.
   const shouldShowFooter =
-    activeScreen === "home" ||
     activeScreen === "decision" ||
     activeScreen === "more" ||
     activeScreen === "detail" ||
