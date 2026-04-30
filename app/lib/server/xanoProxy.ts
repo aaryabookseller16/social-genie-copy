@@ -31,14 +31,33 @@ export class XanoError extends Error {
   body: unknown;
 
   constructor(status: number, body: unknown) {
-    super(
-      typeof body === "object" && body && "message" in body
-        ? String((body as Record<string, unknown>).message)
-        : `Xano request failed with status ${status}`
-    );
+    super(readXanoErrorMessage(body) || `Xano request failed with status ${status}`);
     this.status = status;
     this.body = body;
   }
+}
+
+function readXanoErrorMessage(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") {
+    return typeof payload === "string" ? payload : null;
+  }
+
+  const record = payload as Record<string, unknown>;
+  for (const key of ["message", "Message", "error", "detail"]) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+  }
+
+  for (const value of Object.values(record)) {
+    const nested = readXanoErrorMessage(value);
+    if (nested) {
+      return nested;
+    }
+  }
+
+  return null;
 }
 
 async function baseFetch<T = unknown>(

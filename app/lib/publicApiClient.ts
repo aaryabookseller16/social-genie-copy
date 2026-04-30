@@ -107,12 +107,35 @@ type JsonInit = RequestInit & {
   auth?: boolean;
 };
 
+function findErrorMessage(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") {
+    return typeof payload === "string" ? payload : null;
+  }
+
+  const record = payload as Record<string, unknown>;
+  for (const key of ["error", "message", "Message", "detail"]) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+  }
+
+  for (const value of Object.values(record)) {
+    const nested = findErrorMessage(value);
+    if (nested) {
+      return nested;
+    }
+  }
+
+  return null;
+}
+
 async function readErrorMessage(response: Response) {
   const fallback = `Request failed with status ${response.status}`;
 
   try {
-    const payload = (await response.json()) as { error?: string };
-    return payload.error || fallback;
+    const payload = await response.json();
+    return findErrorMessage(payload) || fallback;
   } catch {
     return fallback;
   }
@@ -562,8 +585,10 @@ export async function redeemVibeeOffer(offerId: number) {
     throw new Error("Sign in required to redeem offers.");
   }
 
-  return apiJson<{
-    success: boolean;
+  const result = await apiJson<{
+    success?: boolean;
+    message?: string;
+    error?: string;
     redemption_token: string;
     offer_title: string;
     redeemed_at: number;
@@ -576,6 +601,12 @@ export async function redeemVibeeOffer(offerId: number) {
       offer_id: offerId,
     }),
   });
+
+  if (result.success === false) {
+    throw new Error(result.message || result.error || "Could not redeem this offer right now.");
+  }
+
+  return result;
 }
 
 export async function fetchUserRedemptions() {

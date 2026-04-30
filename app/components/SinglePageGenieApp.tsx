@@ -182,6 +182,15 @@ function buildStaticMapUrl(venue: GenieVenue) {
   return `https://maps.googleapis.com/maps/api/staticmap?center=${encodedLocation}&zoom=15&size=1200x720&scale=2&markers=color:0xff4f4f%7C${encodedLocation}&key=${apiKey}`;
 }
 
+function isAlreadyRedeemedMessage(message: string) {
+  const normalized = message.toLowerCase().replace(/[_-]+/g, " ");
+  return (
+    normalized.includes("already redeemed") ||
+    normalized.includes("already been redeemed") ||
+    normalized.includes("offer redeemed already")
+  );
+}
+
 const socialTagOptions = {
   music_tags: [
     "R&B / Soul",
@@ -1175,82 +1184,17 @@ export function SinglePageGenieApp({
             ? error.message
             : "Could not redeem this offer right now.";
 
-        const lowerMsg = message.toLowerCase();
-        if (lowerMsg.includes("already redeemed") || lowerMsg.includes("already been redeemed")) {
-          // Offers are reusable every 24h. If the stored redemption for this
-          // offer is >24h old, the backend should have reset it — surface a
-          // clearer hint so the user knows to refresh. If it's within the
-          // window, reuse that redemption's token so they can still pull up
-          // the QR screen instead of being stranded on an "already redeemed"
-          // dead-end. Prior behavior blanked out verify_url/token which is
-          // why tapping an offer never revealed the QR code.
+        if (isAlreadyRedeemedMessage(message)) {
           const existing = redemptions.find((r) => r.offer_id === offer.id) ?? null;
-          const now = Date.now();
           const redemptionMs =
             existing && existing.redeemed_at
               ? existing.redeemed_at < 1_000_000_000_000
-                ? existing.redeemed_at * 1000 // seconds → ms if needed
+                ? existing.redeemed_at * 1000
                 : existing.redeemed_at
-              : null;
-          const withinResetWindow =
-            redemptionMs === null
-              ? true
-              : now - redemptionMs < 24 * 60 * 60 * 1000;
+              : Date.now();
+          const venueMatch =
+            selectedVenue && Number(selectedVenue.id) === offer.vendor_id ? selectedVenue : null;
 
-          if (!withinResetWindow) {
-            // Cache is stale — force a refresh so the user can redeem again.
-            const refreshed = await fetchUserRedemptions().catch(() => null);
-            if (refreshed?.redemptions) {
-              setRedemptions(refreshed.redemptions);
-              if (!refreshed.redemptions.some((r) => r.offer_id === offer.id)) {
-                try {
-                  const retried = await redeemVibeeOffer(offer.id);
-                  const venueMatch =
-                    selectedVenue && Number(selectedVenue.id) === offer.vendor_id
-                      ? selectedVenue
-                      : null;
-                  setActiveRedemption({
-                    offer_id: offer.id,
-                    offer_title: retried.offer_title,
-                    offer_type: offer.offer_type,
-                    offer_description: offer.description,
-                    offer_terms: offer.redeem_instructions,
-                    discount_value: offer.discount_value,
-                    vendor_id: offer.vendor_id,
-                    venue_name: venueMatch?.venue_name ?? offer.venue_name,
-                    venue_image: venueMatch?.image ?? offer.venue_image ?? undefined,
-                    venue_rating: venueMatch?.google_rating ?? offer.venue_rating ?? undefined,
-                    venue_review_count:
-                      venueMatch?.google_user_ratings_total ?? offer.venue_review_count ?? undefined,
-                    venue_neighborhood:
-                      venueMatch?.area_neighborhood ?? venueMatch?.city ?? offer.venue_neighborhood ?? undefined,
-                    verify_url: retried.verify_url,
-                    redeemed_at: retried.redeemed_at,
-                    redemption_token: retried.redemption_token,
-                  });
-                  setRedemptionOutcome(null);
-                  setStatusMessage(null);
-                  navigateTo("offer-activated");
-                  return;
-                } catch (retryError) {
-                  setStatusMessage(
-                    retryError instanceof Error
-                      ? retryError.message
-                      : "Could not redeem this offer right now."
-                  );
-                  return;
-                }
-              }
-            }
-            setStatusMessage(
-              "This offer refreshes every 24 hours. Pull to refresh, then try again."
-            );
-            return;
-          }
-
-          // Populate activeRedemption with the existing token so the QR screen
-          // renders correctly instead of showing a blank "already redeemed".
-          const venueMatch = selectedVenue && Number(selectedVenue.id) === offer.vendor_id ? selectedVenue : null;
           setActiveRedemption({
             offer_id: offer.id,
             offer_title: offer.title,
@@ -1262,20 +1206,29 @@ export function SinglePageGenieApp({
             venue_name: venueMatch?.venue_name ?? offer.venue_name,
             venue_image: venueMatch?.image ?? offer.venue_image ?? undefined,
             venue_rating: venueMatch?.google_rating ?? offer.venue_rating ?? undefined,
-            venue_review_count: venueMatch?.google_user_ratings_total ?? offer.venue_review_count ?? undefined,
-            venue_neighborhood: venueMatch?.area_neighborhood ?? venueMatch?.city ?? offer.venue_neighborhood ?? undefined,
-            // Prefer the existing redemption's token so the QR code actually
-            // renders — previously we blanked these out which is why the
-            // redemption screen stayed empty.
+            venue_review_count:
+              venueMatch?.google_user_ratings_total ?? offer.venue_review_count ?? undefined,
+            venue_neighborhood:
+              venueMatch?.area_neighborhood ??
+              venueMatch?.city ??
+              offer.venue_neighborhood ??
+              undefined,
             verify_url: (existing as { verify_url?: string } | null)?.verify_url ?? "",
-            redeemed_at: redemptionMs ?? Date.now(),
+            redeemed_at: redemptionMs,
             redemption_token: existing?.redemption_token ?? "",
           });
-          // If we successfully reconstructed a QR-ready redemption, treat it
-          // as a normal successful activation so the user sees the code.
-          setRedemptionOutcome(existing?.redemption_token ? null : "already_redeemed");
+          setRedemptionOutcome("already_redeemed");
+          setStatusMessage(null);
           navigateTo("offer-activated");
-        } else if (lowerMsg.includes("expired")) {
+
+          void fetchUserRedemptions()
+            .then((refreshed) => setRedemptions(refreshed.redemptions ?? []))
+            .catch(() => null);
+          return;
+        }
+
+        const lowerMsg = message.toLowerCase();
+        if (lowerMsg.includes("expired")) {
           setRedemptionOutcome("expired");
           navigateTo("offer-activated");
         } else {
@@ -3707,16 +3660,16 @@ export function SinglePageGenieApp({
 
           // Header
           const Header = (
-            <div className="mb-5 flex items-center">
+            <div className="relative mb-5 w-full">
               <button
                 type="button"
                 onClick={() => { setRedemptionOutcome(null); goBack("offer-detail"); }}
                 aria-label="Go back"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-red-600 dark:border dark:border-white/12 dark:bg-black/24 dark:text-white/82"
+                className="absolute left-0 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full text-red-600 dark:border dark:border-white/12 dark:bg-black/24 dark:text-white/82"
               >
                 <BackIcon size={20} />
               </button>
-              <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
+              <h2 className="w-full text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
                 Redeem Offer
               </h2>
             </div>
