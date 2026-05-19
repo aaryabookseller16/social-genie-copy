@@ -99,6 +99,8 @@ export async function callGenie(
       use_xano: false,
       decisive: [],
       more_nearby: [],
+      events: [],
+  query_mode: "venue",
       needs_location: false,
       show_intake_prompt: false,
       intake_prompt_copy: "",
