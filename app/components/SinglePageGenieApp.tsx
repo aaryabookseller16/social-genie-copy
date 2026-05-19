@@ -893,14 +893,6 @@ const [trialSuccess, setTrialSuccess] = useState(false);
         responseMode: nextResponse.response_mode,
       });
 
-      console.log("GENIE RESPONSE:", {
-  query_mode: nextResponse.query_mode,
-  events_count: nextResponse.events?.length,
-  events: nextResponse.events,
-  response_mode: nextResponse.response_mode,
-  decisive_count: nextResponse.decisive?.length,
-});
-
       if (nextResponse.response_mode === "structured_results") {
         const firstVenue =
           nextResponse.decisive[0] ?? nextResponse.more_nearby[0] ?? null;
