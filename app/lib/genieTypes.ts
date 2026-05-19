@@ -73,6 +73,33 @@ export type GenieVenue = Omit<RawGenieVenue, "latitude" | "longitude"> & {
   longitude: number | null;
 };
 
+export type RawGenieEvent = {
+  id: number;
+  title: string;
+  description?: string;
+  event_date?: string;
+  start_time?: string;
+  end_time?: string;
+  cover_image_url?: string;
+  public_slug?: string;
+  status?: string;
+  ticket_url?: string;
+  ticket_type?: string;
+  ticket_price_min?: number;
+  ticket_price_max?: number;
+  is_free?: boolean;
+  is_sold_out?: boolean;
+  age_requirement?: number;
+  rsvp_count?: number;
+  going_count?: number;
+  category?: string;
+  event_category?: string;
+  venue_address?: string;
+  neighborhood?: string;
+  city?: string;
+  source_type?: string;
+  discovery_source?: string[];
+};
 export type RawHandleMessageResponse = {
   reply?: string;
   session_id?: number;
@@ -83,6 +110,10 @@ export type RawHandleMessageResponse = {
   mode?: string;
   top_venues?: RawGenieVenue[];
   more_venues?: RawGenieVenue[];
+  venues?: RawGenieVenue[];
+  events?: RawGenieEvent[];
+  query_mode?: string;
+  more_nearby_venues?: RawGenieVenue[];
   decisive?: RawGenieVenue[];
   more_nearby?: RawGenieVenue[];
   debug?: Record<string, unknown> & {
@@ -105,6 +136,8 @@ export type GenieResponseEnvelope = {
   use_xano: boolean;
   decisive: GenieVenue[];
   more_nearby: GenieVenue[];
+  events: RawGenieEvent[];
+  query_mode: string;
   needs_location: boolean;
   session_id?: number;
   session_token?: string;
