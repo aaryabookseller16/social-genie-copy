@@ -130,7 +130,7 @@ async function loadRelatedEvents(eventId: number): Promise<SocialEvent[]> {
   try {
     const response = await xanoFetch<RelatedEventsResponse>(
       "genie/ep_get_related_events_dev",
-      { params: { event_id: eventId, limit: 4 } }
+      { params: { event_id: String(eventId), limit: String(4) } }
     );
     return response.related_events ?? [];
   } catch {
