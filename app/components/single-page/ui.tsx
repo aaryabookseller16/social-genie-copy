@@ -23,6 +23,9 @@ export type FlowAnchor =
   | "profile"
   | "dashboard"
   | "contact"
+  | "event-detail"
+  | "event-survey"
+  | "vibbee-trial"
   | "membership";
 
 export function BackIcon({
@@ -539,6 +542,65 @@ export function ResultCard({
           <p className="mt-1.5 flex items-center gap-1.5 text-[0.82rem] font-medium text-amber-500 dark:text-amber-300">
             <span className={`inline-block h-2 w-2 rounded-full ${statusColor}`} />
             {statusText}
+          </p>
+        </div>
+      </div>
+    </button>
+  );
+}
+export function EventResultCard({
+  evt,
+  onOpen,
+}: {
+  evt: { id: number; title: string; cover_image_url?: string; event_date?: string; start_time?: string; venue_address?: string; category?: string; is_free?: boolean; ticket_price_min?: number; ticket_url?: string; public_slug?: string };
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="w-full overflow-hidden rounded-[20px] border border-red-200 bg-white text-left shadow-[0_8px_24px_rgba(0,0,0,0.06)] transition hover:shadow-[0_10px_26px_rgba(0,0,0,0.1)] dark:border-[#6a1d1d] dark:bg-black/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.4)] dark:hover:border-[#ff7b7b]"
+    >
+      <div className="flex gap-3 p-3">
+        <div className="relative h-28 w-28 flex-none overflow-hidden rounded-2xl">
+          <Image
+            src={evt.cover_image_url || "/sample-venue-1.jpeg"}
+            alt={evt.title}
+            fill
+            className="object-cover"
+            sizes="112px"
+          />
+        </div>
+        <div className="min-w-0 flex-1 py-1">
+          <p className="truncate text-[1.1rem] font-semibold leading-tight text-gray-900 dark:text-white">
+            {evt.title}
+          </p>
+          <p className="mt-1 truncate text-[0.82rem] text-gray-500 dark:text-white/60">
+            {evt.event_date
+              ? new Date(evt.event_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+              : ""}
+            {evt.start_time ? ` · ${evt.start_time.slice(0, 5)}` : ""}
+          </p>
+          <p className="mt-1.5 truncate text-[0.88rem] font-medium text-red-500 dark:text-[#ff9d7d]">
+            {evt.venue_address ?? ""}
+          </p>
+          <p className="mt-1.5 flex items-center gap-1.5 text-[0.82rem] font-medium text-amber-500 dark:text-amber-300">
+            {evt.is_free ? (
+              <>
+                <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
+                Free entry
+              </>
+            ) : evt.ticket_price_min ? (
+              <>
+                <span className="inline-block h-2 w-2 rounded-full bg-amber-400" />
+                From ${evt.ticket_price_min}
+              </>
+            ) : evt.category ? (
+              <>
+                <span className="inline-block h-2 w-2 rounded-full bg-amber-400" />
+                {evt.category}
+              </>
+            ) : null}
           </p>
         </div>
       </div>

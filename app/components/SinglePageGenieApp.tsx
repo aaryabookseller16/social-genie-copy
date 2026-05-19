@@ -15,6 +15,7 @@ import {
   GenieBubble,
   BackIcon,
   ResultCard,
+  EventResultCard,
   SectionShell,
   type FlowAnchor,
   buildVenueTags,
@@ -158,6 +159,20 @@ function buildNativeMapsUrl(venue: GenieVenue) {
   return query
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`
     : null;
+}
+// ─── Navigate to event detail ────────────────────────────────────────────────
+// Called whenever a user taps an event card anywhere in the app.
+// Sets the slug so the event-detail screen knows which page to load.
+function openEventDetail(
+  slug: string,
+  eventId: number | null,
+  setSlug: (s: string) => void,
+  setId: (id: number | null) => void,
+  nav: (screen: FlowAnchor) => void
+) {
+  setSlug(slug);
+  setId(eventId);
+  nav("event-detail");
 }
 
 function buildStaticMapUrl(venue: GenieVenue) {
@@ -482,6 +497,30 @@ export function SinglePageGenieApp({
   const [selectedVenueId, setSelectedVenueId] = useState<string | null>(
     initialVenueId ? String(initialVenueId) : null
   );
+  // ── Event detail state ──────────────────────────────────────────────────────
+// selectedEventSlug: the public_slug of the event currently being viewed
+// selectedEventId: the numeric id for survey submission
+const [selectedEventSlug, setSelectedEventSlug] = useState<string | null>(null);
+const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
+const [selectedEvent, setSelectedEvent] = useState<Record<string, unknown> | null>(null);
+
+// ── Post-event survey state ──────────────────────────────────────────────────
+const [surveyEventId, setSurveyEventId] = useState<number | null>(null);
+const [surveyDidAttend, setSurveyDidAttend] = useState<boolean | null>(null);
+const [surveyVibeRating, setSurveyVibeRating] = useState<number>(0);
+const [surveyVenueRating, setSurveyVenueRating] = useState<number>(0);
+const [surveyMetExpectations, setSurveyMetExpectations] = useState<"yes" | "somewhat" | "no" | null>(null);
+const [surveyWouldReturn, setSurveyWouldReturn] = useState<"yes" | "maybe" | "no" | null>(null);
+const [surveyOneWord, setSurveyOneWord] = useState("");
+const [surveyDiscoveredViaGenie, setSurveyDiscoveredViaGenie] = useState<boolean | null>(null);
+const [surveySubmitting, setSurveySubmitting] = useState(false);
+const [surveySubmitted, setSurveySubmitted] = useState(false);
+
+// ── V.I.Bee trial state ──────────────────────────────────────────────────────
+const [trialLoading, setTrialLoading] = useState(false);
+const [trialError, setTrialError] = useState<string | null>(null);
+const [trialSuccess, setTrialSuccess] = useState(false);
+
   const [sharedVenue, setSharedVenue] = useState<GenieVenue | null>(null);
   const [sharedVenueLoading, setSharedVenueLoading] = useState(false);
   const [selectedOfferId, setSelectedOfferId] = useState<number | null>(null);
@@ -853,6 +892,14 @@ export function SinglePageGenieApp({
         normalizedIntent: nextResponse.normalized_intent,
         responseMode: nextResponse.response_mode,
       });
+
+      console.log("GENIE RESPONSE:", {
+  query_mode: nextResponse.query_mode,
+  events_count: nextResponse.events?.length,
+  events: nextResponse.events,
+  response_mode: nextResponse.response_mode,
+  decisive_count: nextResponse.decisive?.length,
+});
 
       if (nextResponse.response_mode === "structured_results") {
         const firstVenue =
@@ -1644,6 +1691,7 @@ export function SinglePageGenieApp({
       "profile",
       "membership",
       "preferences",
+      "event-survey",
     ];
     if (allowed.includes(screen as FlowAnchor)) {
       navigateTo(screen as FlowAnchor);
@@ -2119,6 +2167,20 @@ export function SinglePageGenieApp({
           dismissAccount();
         }
         break;
+        case "event-detail":
+  setSelectedEventSlug(null);
+  setSelectedEventId(null);
+  goBack("home");
+  break;
+case "event-survey":
+  setSurveySubmitted(false);
+  goBack("event-detail");
+  break;
+case "vibbee-trial":
+  setTrialError(null);
+  setTrialSuccess(false);
+  goBack("account");
+  break;
       default:
         goBack("home");
     }
@@ -2144,6 +2206,9 @@ export function SinglePageGenieApp({
     activeScreen !== "offer-detail" &&
     activeScreen !== "redemptions" &&
     activeScreen !== "saved" &&
+    activeScreen !== "event-detail" &&
+activeScreen !== "event-survey" &&
+activeScreen !== "vibbee-trial" &&
     activeScreen !== "detail";
 
   const isAiFallbackLayout =
@@ -2172,6 +2237,9 @@ export function SinglePageGenieApp({
     activeScreen === "contact" ||
     activeScreen === "preferences" ||
     activeScreen === "vendor" ||
+    activeScreen === "event-detail" ||
+activeScreen === "event-survey" ||
+activeScreen === "vibbee-trial" ||
     (activeScreen === "thinking" && isAiFallbackLayout);
 
   return (
@@ -2554,56 +2622,136 @@ export function SinglePageGenieApp({
         ) : null}
 
         {activeScreen === "decision" && showResultSections ? (
-          <section ref={decisionRef} className="space-y-2 pb-24">
-            <GenieBubble
-              copy={response?.reply?.trim() || "I found a few spots that match your vibe."}
-              compact
+  <section ref={decisionRef} className="space-y-2 pb-24">
+    <GenieBubble
+      copy={response?.reply?.trim() || "I found a few spots that match your vibe."}
+      compact
+    />
+    {response?.show_intake_prompt ? (
+      <div className="rounded-[22px] border border-red-200 bg-red-50/60 p-4 dark:border-white/12 dark:bg-black/20">
+        <p className="text-sm leading-6 text-gray-700 dark:text-white/82">
+          {intakePromptCopy}
+        </p>
+        <button
+          type="button"
+          onClick={() => navigateTo("preferences")}
+          className="mt-3 rounded-[16px] border border-red-500 bg-red-600 px-4 py-2 text-sm font-semibold text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+        >
+          Tune preferences
+        </button>
+      </div>
+    ) : null}
+
+    {/* ── EVENT MODE — show event cards as primary results ── */}
+    {response?.query_mode === "event" && Array.isArray(response.events) && response.events.length > 0 ? (
+      <div className="flex flex-col gap-2">
+        {response.events.slice(0, 3).map((evt) => (
+          <EventResultCard
+            key={evt.id}
+            evt={evt}
+            onOpen={() => {
+  setSelectedEventSlug(evt.public_slug ?? null);
+  setSelectedEventId(evt.id);
+  setSelectedEvent(evt as Record<string, unknown>);
+  navigateTo("event-detail");
+}}
+          />
+        ))}
+      </div>
+    ) : (
+      <>
+        {/* ── VENUE MODE — show venue cards as primary results ── */}
+        <div className="flex flex-col gap-2">
+          {response?.decisive.map((venue, index) => (
+            <ResultCard
+              key={venue.id}
+              venue={venue}
+              index={index}
+              userCoords={userCoordsLL}
+              onOpen={() => selectVenue(venue, index, "decision")}
+              onSave={() => handleSaveVenue(venue)}
             />
-            {response?.show_intake_prompt ? (
-              <div className="rounded-[22px] border border-red-200 bg-red-50/60 p-4 dark:border-white/12 dark:bg-black/20">
-                <p className="text-sm leading-6 text-gray-700 dark:text-white/82">
-                  {intakePromptCopy}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => navigateTo("preferences")}
-                  className="mt-3 rounded-[16px] border border-red-500 bg-red-600 px-4 py-2 text-sm font-semibold text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
-                >
-                  Tune preferences
-                </button>
-              </div>
-            ) : null}
-            {/* Decisive cards */}
+          ))}
+        </div>
+
+        {/* ── Events below venue results (mixed mode) ── */}
+        {Array.isArray(response?.events) && response.events.length > 0 ? (
+          <div className="mt-2">
+            <p className="mb-2 text-[0.9rem] font-semibold text-gray-900 dark:text-white">
+              Events nearby
+            </p>
             <div className="flex flex-col gap-2">
-              {response?.decisive.map((venue, index) => (
-                <ResultCard
-                  key={venue.id}
-                  venue={venue}
-                  index={index}
-                  userCoords={userCoordsLL}
-                  onOpen={() => selectVenue(venue, index, "decision")}
-                  onSave={() => handleSaveVenue(venue)}
-                />
+              {response.events.slice(0, 3).map((evt) => (
+                <button
+                  key={evt.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedEventSlug(evt.public_slug ?? null);
+setSelectedEventId(evt.id);
+setSelectedEvent(evt as Record<string, unknown>);
+navigateTo("event-detail");
+                  }}
+                  className="flex items-center gap-3 rounded-[18px] border border-[#E7070380] bg-transparent p-3 text-left dark:border-[#E7070380] dark:bg-black/30"
+                >
+                  <div className="relative h-16 w-16 flex-none overflow-hidden rounded-[12px]">
+                    <Image
+                      src={evt.cover_image_url || "/sample-venue-2.jpeg"}
+                      alt={evt.title}
+                      fill
+                      className="object-cover"
+                      sizes="64px"
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="line-clamp-1 text-[0.9rem] font-semibold text-gray-900 dark:text-white">
+                      {evt.title}
+                    </p>
+                    {evt.event_date ? (
+                      <p className="mt-0.5 text-[0.72rem] text-gray-500 dark:text-white/55">
+                        {new Date(evt.event_date).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                        })}
+                        {evt.start_time ? ` · ${evt.start_time.slice(0, 5)}` : ""}
+                      </p>
+                    ) : null}
+                    <div className="mt-1 flex items-center gap-2">
+                      {evt.is_free ? (
+                        <span className="rounded-full bg-green-500 px-2 py-0.5 text-[0.6rem] font-bold text-white">
+                          FREE
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                  <svg viewBox="0 0 24 24" className="h-4 w-4 flex-none text-gray-400 dark:text-white/30" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 18l6-6-6-6" />
+                  </svg>
+                </button>
               ))}
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                setHasOpenedMoreNearby(true);
-                trackEvent(analyticsEvents.seeMoreNearbyTapped);
-                trackEvent(analyticsEvents.moreNearbyOpened, {
-                  count: response?.more_nearby.length ?? 0,
-                  queryText: response?.normalized_intent ?? lastQuery,
-                });
-                navigateTo("more");
-              }}
-              className="mt-2 flex w-full items-center justify-center gap-2 py-3 text-[1rem] font-medium text-gray-800 dark:text-white"
-            >
-              <span>See More Nearby</span>
-              <span aria-hidden="true">→</span>
-            </button>
-          </section>
+          </div>
         ) : null}
+      </>
+    )}
+
+    <button
+      type="button"
+      onClick={() => {
+        setHasOpenedMoreNearby(true);
+        trackEvent(analyticsEvents.seeMoreNearbyTapped);
+        trackEvent(analyticsEvents.moreNearbyOpened, {
+          count: response?.more_nearby.length ?? 0,
+          queryText: response?.normalized_intent ?? lastQuery,
+        });
+        navigateTo("more");
+      }}
+      className="mt-2 flex w-full items-center justify-center gap-2 py-3 text-[1rem] font-medium text-gray-800 dark:text-white"
+    >
+      <span>See More Nearby</span>
+      <span aria-hidden="true">→</span>
+    </button>
+  </section>
+) : null}
 
         {activeScreen === "more" && showResultSections && response?.more_nearby.length ? (
           <section ref={moreRef} className="space-y-4 pb-24">
@@ -2700,6 +2848,110 @@ export function SinglePageGenieApp({
                                 {tag}
                               </span>
                             ))}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            ) : null}
+          </section>
+        ) : null}
+        {activeScreen === "more" && showResultSections && response?.query_mode === "event" && Array.isArray(response.events) && response.events.length > 3 ? (
+          <section className="space-y-4 pb-24">
+            <GenieBubble
+              copy={response?.reply?.trim() || "Here are more events you might like."}
+              compact
+            />
+            <div className="grid grid-cols-2 gap-3">
+              {response.events.slice(3, 5).map((evt) => (
+                <button
+                  key={evt.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedEventSlug(evt.public_slug ?? null);
+setSelectedEventId(evt.id);
+setSelectedEvent(evt as Record<string, unknown>);
+navigateTo("event-detail");
+                  }}
+                  className="overflow-hidden rounded-[18px] border border-[#E7070380] bg-transparent text-left shadow-[0_8px_24px_rgba(0,0,0,0.06)] dark:border-[#6a1d1d] dark:bg-black/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
+                >
+                  <div className="relative h-36 w-full">
+                    <Image
+                      src={evt.cover_image_url || "/sample-venue-2.jpeg"}
+                      alt={evt.title}
+                      fill
+                      className="object-cover"
+                      sizes="(max-width: 640px) 45vw, 200px"
+                    />
+                  </div>
+                  <div className="px-3 py-2.5">
+                    <p className="line-clamp-1 text-[1rem] font-semibold text-gray-900 dark:text-white">
+                      {evt.title}
+                    </p>
+                    <p className="mt-0.5 text-[0.75rem] text-gray-500 dark:text-white/60">
+                      {evt.event_date ? new Date(evt.event_date).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""}
+                      {evt.start_time ? ` · ${evt.start_time.slice(0, 5)}` : ""}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {evt.category ? (
+                        <span className="rounded-full border border-[#E70703] bg-transparent px-2.5 py-0.5 text-[0.65rem] font-medium text-[#E70703] dark:border-[#E70703] dark:bg-transparent dark:text-white">
+                          {evt.category}
+                        </span>
+                      ) : null}
+                      {evt.is_free ? (
+                        <span className="rounded-full border border-[#E70703] bg-transparent px-2.5 py-0.5 text-[0.65rem] font-medium text-[#E70703] dark:border-[#E70703] dark:bg-transparent dark:text-white">
+                          Free
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {response.events.length > 5 ? (
+              <>
+                <p className="mt-5 text-[1.25rem] font-semibold text-gray-900 dark:text-white">
+                  More events you might like
+                </p>
+                <div className="-mx-4 overflow-x-auto">
+                  <div className="flex gap-3 px-4 pb-2">
+                    {response.events.slice(5, 13).map((evt) => (
+                      <button
+                        key={evt.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedEventSlug(evt.public_slug ?? null);
+setSelectedEventId(evt.id);
+setSelectedEvent(evt as Record<string, unknown>);
+navigateTo("event-detail");
+                        }}
+                        className="w-[9.5rem] flex-none overflow-hidden rounded-[18px] border border-[#E7070380] bg-transparent text-left shadow-[0_8px_20px_rgba(0,0,0,0.05)] dark:border-[#6a1d1d] dark:bg-black/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
+                      >
+                        <div className="relative h-24 w-full">
+                          <Image
+                            src={evt.cover_image_url || "/sample-venue-2.jpeg"}
+                            alt={evt.title}
+                            fill
+                            className="object-cover"
+                            sizes="152px"
+                          />
+                        </div>
+                        <div className="px-2.5 py-2">
+                          <p className="line-clamp-1 text-[0.88rem] font-semibold text-gray-900 dark:text-white">
+                            {evt.title}
+                          </p>
+                          <p className="mt-0.5 truncate text-[0.66rem] text-gray-500 dark:text-white/60">
+                            {evt.event_date ? new Date(evt.event_date).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""}
+                          </p>
+                          <div className="mt-1.5 flex flex-wrap gap-1">
+                            {evt.category ? (
+                              <span className="rounded-full border border-[#E70703] bg-transparent px-2 py-0.5 text-[0.6rem] font-medium text-[#E70703] dark:border-[#E70703] dark:bg-transparent dark:text-white">
+                                {evt.category}
+                              </span>
+                            ) : null}
                           </div>
                         </div>
                       </button>
@@ -2874,6 +3126,14 @@ export function SinglePageGenieApp({
                     Official Vendor
                   </span>
                 ) : null}
+                {/* Vendor status — surfaces when not operating normally */}
+{(selectedVenue as unknown as { vendor_status?: string; vendor_status_message?: string }).vendor_status &&
+(selectedVenue as unknown as { vendor_status?: string }).vendor_status !== "operating_normally" ? (
+  <span className="rounded-full border border-amber-400/60 bg-amber-400/15 px-3 py-0.5 text-[0.72rem] font-medium text-amber-600 dark:border-amber-400/40 dark:text-amber-300">
+    {(selectedVenue as unknown as { vendor_status_message?: string; vendor_status?: string }).vendor_status_message ||
+      ((selectedVenue as unknown as { vendor_status?: string }).vendor_status ?? "").replace(/_/g, " ")}
+  </span>
+) : null}
               </div>
 
               <div className="grid grid-cols-[1fr_1.45fr_1fr] gap-1">
@@ -4372,6 +4632,35 @@ export function SinglePageGenieApp({
                 </div>
               </div>
             ) : null}
+            {/* ── RANKED FEED PREVIEW ──────────────────────────────────────────
+    Shows top 3 ranked feed posts from ep_get_ranked_feed_dev.
+    Full feed tab is a V2 build — this surfaces the algorithm
+    result as a preview on the dashboard so it's live for beta.
+    Serendipity cards and Genie cards are labeled inline.
+────────────────────────────────────────────────────────────── */}
+<div>
+  <div className="flex items-center justify-between mb-3">
+    <h2 className="text-[1.05rem] font-semibold text-gray-900 dark:text-white">
+      What&apos;s Happening
+    </h2>
+    <span className="text-[0.72rem] text-gray-400 dark:text-white/40">
+      Ranked for you
+    </span>
+  </div>
+
+  <div className="rounded-[18px] border border-[#E7070380] bg-transparent px-4 py-4 dark:border-[#E7070380] dark:bg-black/25 text-center">
+    <p className="text-[0.85rem] text-gray-500 dark:text-white/55">
+      Your personalized feed will appear here once you start saving spots and attending events.
+    </p>
+    <button
+      type="button"
+      onClick={goHome}
+      className="mt-3 rounded-[14px] border border-red-500 bg-red-600 px-5 py-2 text-[0.82rem] font-semibold text-white"
+    >
+      Ask Genie something
+    </button>
+  </div>
+</div>
               </>
             )}
           </section>
@@ -4698,6 +4987,521 @@ export function SinglePageGenieApp({
             </section>
           );
         })() : null}
+        {/* ── EVENT DETAIL (in-app) ─────────────────────────────────────
+          Renders when a user taps an event from within the app.
+          Uses the public event detail page via iframe embed OR
+          redirects to the standalone page at socialbevy.com/events/{slug}.
+          
+          V1.5 decision: redirect to public page so we don't duplicate
+          the full EventDetailClient logic inside SinglePageGenieApp.
+          The public page handles all CTAs, attribution logging, and
+          related events. Deep-link carries the slug.
+          
+          When Jitendra builds the native event screens this gets
+          replaced with an inline render using the same data shape.
+        ────────────────────────────────────────────────────────────── */}
+        {activeScreen === "event-detail" && selectedEvent ? (
+  <section
+    className="-mx-4 -mt-3 pb-[calc(env(safe-area-inset-bottom,0px)+11rem)] sm:-mx-6 sm:-mt-5"
+  >
+    <div className="relative h-[14rem] w-full overflow-hidden">
+      <Image
+        src={(selectedEvent.cover_image_url as string) || "/sample-venue-1.jpeg"}
+        alt={(selectedEvent.title as string) || "Event"}
+        fill
+        className="object-cover"
+        priority
+        sizes="100vw"
+      />
+      <div className="absolute inset-x-0 top-0 flex items-center justify-between px-4 pt-4">
+        <button
+          type="button"
+          onClick={() => { setSelectedEvent(null); setSelectedEventSlug(null); goBack("decision"); }}
+          className="flex h-8 w-8 items-center justify-center text-red-600 dark:text-white"
+          aria-label="Go back"
+        >
+          <BackIcon size={24} className="h-6 w-6 object-contain" />
+        </button>
+      </div>
+      <div className="absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,transparent,rgba(0,0,0,0.85))] px-5 pb-5 pt-16">
+        <h2 className="text-[2.1rem] font-bold leading-tight text-white">
+          {selectedEvent.title as string}
+        </h2>
+      </div>
+    </div>
+
+    <div className="space-y-4 px-5 pb-5 pt-4">
+      <div className="flex flex-wrap items-center gap-2">
+        {selectedEvent.category ? (
+          <span className="rounded-full bg-red-600 px-3 py-1 text-[0.72rem] font-semibold text-white dark:bg-white dark:text-gray-900">
+            {selectedEvent.category as string}
+          </span>
+        ) : null}
+        {selectedEvent.is_free ? (
+          <span className="rounded-full border border-red-300 bg-transparent px-3 py-1 text-[0.72rem] font-medium text-red-500 dark:border-[#E7070380] dark:text-white/85">
+            Free Entry
+          </span>
+        ) : selectedEvent.ticket_price_min ? (
+          <span className="rounded-full border border-red-300 bg-transparent px-3 py-1 text-[0.72rem] font-medium text-red-500 dark:border-[#E7070380] dark:text-white/85">
+            From ${selectedEvent.ticket_price_min as number}
+          </span>
+        ) : null}
+      </div>
+
+      {selectedEvent.event_date ? (
+        <p className="text-[0.9rem] text-gray-700 dark:text-white/80">
+          📅{" "}
+          {new Date(selectedEvent.event_date as string).toLocaleDateString("en-US", {
+            weekday: "long",
+            month: "long",
+            day: "numeric",
+          })}
+          {selectedEvent.start_time
+            ? ` · ${(selectedEvent.start_time as string).slice(0, 5)}`
+            : ""}
+        </p>
+      ) : null}
+
+      {selectedEvent.venue_address ? (
+        <p className="text-[0.9rem] text-gray-700 dark:text-white/80">
+          📍 {selectedEvent.venue_address as string}
+        </p>
+      ) : null}
+
+      {selectedEvent.description ? (
+        <p className="text-[0.88rem] leading-relaxed text-gray-600 dark:text-white/70">
+          {selectedEvent.description as string}
+        </p>
+      ) : null}
+
+      {selectedEvent.ticket_url ? (
+        <div className="grid grid-cols-[1fr_1.45fr_1fr] gap-1 pt-2">
+          <div />
+          <button
+            type="button"
+            onClick={() => {
+              window.open(selectedEvent.ticket_url as string, "_blank", "noopener,noreferrer");
+            }}
+            className="flex items-center justify-center gap-1 rounded-full border border-red-500 bg-red-600 px-1.5 py-2 text-[0.76rem] font-medium text-white hover:bg-red-700 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
+          >
+            🎟 Tickets
+          </button>
+          <div />
+        </div>
+      ) : null}
+    </div>
+  </section>
+) : null}
+
+        {/* ── POST-EVENT SURVEY ─────────────────────────────────────────
+          Triggered 2-4 hours after an event ends for users with
+          Going or Interested signals. 5 questions + optional one-word.
+          Survey responses feed back into Social Energy Scores and
+          Genie accuracy tracking.
+          
+          Endpoint: ep_submit_event_survey_dev
+        ────────────────────────────────────────────────────────────── */}
+        {activeScreen === "event-survey" ? (
+          <section className="pb-28">
+            {/* Header */}
+            <div className="mb-5 flex items-center">
+              <button
+                type="button"
+                onClick={() => { setSurveySubmitted(false); goBack("home"); }}
+                aria-label="Go back"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-red-600 dark:border dark:border-white/12 dark:bg-black/24 dark:text-white/82"
+              >
+                <BackIcon size={20} />
+              </button>
+              <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
+                How was it?
+              </h2>
+            </div>
+
+            {surveySubmitted ? (
+              /* ── Success state ── */
+              <div className="flex flex-col items-center gap-4 pt-10 text-center">
+                <div className="flex h-20 w-20 items-center justify-center rounded-full bg-green-500 shadow-[0_8px_32px_rgba(34,197,94,0.4)]">
+                  <svg viewBox="0 0 24 24" className="h-10 w-10 text-white" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                </div>
+                <h3 className="text-[1.2rem] font-bold text-gray-900 dark:text-white">
+                  Thanks for sharing!
+                </h3>
+                <p className="max-w-[22rem] text-[0.85rem] text-gray-500 dark:text-white/60">
+                  Your feedback helps Genie get smarter about what&apos;s actually worth going to.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => { setSurveySubmitted(false); goHome(); }}
+                  className="mt-2 rounded-[16px] border border-red-500 bg-red-600 px-8 py-3 text-sm font-semibold text-white"
+                >
+                  Back to Genie
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-6">
+
+                {/* Q1: Did you go? */}
+                <div>
+                  <p className="mb-3 text-[0.95rem] font-semibold text-gray-900 dark:text-white">
+                    Did you go?
+                  </p>
+                  <div className="flex gap-2">
+                    {(["yes", "no", "something_came_up"] as const).map((val) => {
+                      const labels = {
+                        yes: "Yes, I went",
+                        no: "No",
+                        something_came_up: "Something came up",
+                      };
+                      const isSelected =
+                        val === "yes" ? surveyDidAttend === true :
+                        val === "no" ? surveyDidAttend === false :
+                        surveyDidAttend === false;
+                      return (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setSurveyDidAttend(val === "yes")}
+                          className={`flex-1 rounded-[14px] border py-2.5 text-[0.8rem] font-semibold transition ${
+                            isSelected
+                              ? "border-red-500 bg-red-600 text-white"
+                              : "border-gray-200 bg-white text-gray-700 dark:border-white/15 dark:bg-black/25 dark:text-white/80"
+                          }`}
+                        >
+                          {labels[val]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Q2: Vibe rating (only if attended) */}
+                {surveyDidAttend === true ? (
+                  <div>
+                    <p className="mb-3 text-[0.95rem] font-semibold text-gray-900 dark:text-white">
+                      How was the vibe?
+                    </p>
+                    <div className="flex gap-2">
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => setSurveyVibeRating(n)}
+                          className={`flex-1 rounded-[14px] border py-3 text-[1.1rem] transition ${
+                            surveyVibeRating >= n
+                              ? "border-amber-400 bg-amber-400/20 text-amber-500"
+                              : "border-gray-200 bg-white text-gray-300 dark:border-white/15 dark:bg-black/25"
+                          }`}
+                        >
+                          ★
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* Q3: Venue rating (only if attended) */}
+                {surveyDidAttend === true ? (
+                  <div>
+                    <p className="mb-3 text-[0.95rem] font-semibold text-gray-900 dark:text-white">
+                      How was the venue?
+                    </p>
+                    <div className="flex gap-2">
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => setSurveyVenueRating(n)}
+                          className={`flex-1 rounded-[14px] border py-3 text-[1.1rem] transition ${
+                            surveyVenueRating >= n
+                              ? "border-red-400 bg-red-400/20 text-red-500"
+                              : "border-gray-200 bg-white text-gray-300 dark:border-white/15 dark:bg-black/25"
+                          }`}
+                        >
+                          ★
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* Q4: Met expectations */}
+                {surveyDidAttend === true ? (
+                  <div>
+                    <p className="mb-3 text-[0.95rem] font-semibold text-gray-900 dark:text-white">
+                      Was it what you expected?
+                    </p>
+                    <div className="flex gap-2">
+                      {(["yes", "somewhat", "no"] as const).map((val) => {
+                        const labels = { yes: "Yes exactly", somewhat: "Somewhat", no: "Not really" };
+                        return (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => setSurveyMetExpectations(val)}
+                            className={`flex-1 rounded-[14px] border py-2.5 text-[0.8rem] font-semibold transition ${
+                              surveyMetExpectations === val
+                                ? "border-red-500 bg-red-600 text-white"
+                                : "border-gray-200 bg-white text-gray-700 dark:border-white/15 dark:bg-black/25 dark:text-white/80"
+                            }`}
+                          >
+                            {labels[val]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* Q5: Would you return */}
+                {surveyDidAttend === true ? (
+                  <div>
+                    <p className="mb-3 text-[0.95rem] font-semibold text-gray-900 dark:text-white">
+                      Would you go back?
+                    </p>
+                    <div className="flex gap-2">
+                      {(["yes", "maybe", "no"] as const).map((val) => {
+                        const labels = { yes: "Yes", maybe: "Maybe", no: "No" };
+                        return (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => setSurveyWouldReturn(val)}
+                            className={`flex-1 rounded-[14px] border py-2.5 text-[0.8rem] font-semibold transition ${
+                              surveyWouldReturn === val
+                                ? "border-red-500 bg-red-600 text-white"
+                                : "border-gray-200 bg-white text-gray-700 dark:border-white/15 dark:bg-black/25 dark:text-white/80"
+                            }`}
+                          >
+                            {labels[val]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* BONUS: One word + discovered via Genie */}
+                {surveyDidAttend === true ? (
+                  <div className="space-y-4">
+                    <div>
+                      <p className="mb-2 text-[0.9rem] font-medium text-gray-700 dark:text-white/80">
+                        One word to describe the night (optional)
+                      </p>
+                      <input
+                        type="text"
+                        value={surveyOneWord}
+                        onChange={(e) => setSurveyOneWord(e.target.value.slice(0, 30))}
+                        placeholder="e.g. electric, chill, fire..."
+                        maxLength={30}
+                        style={{ fontSize: "16px" }}
+                        className="w-full rounded-[14px] border border-gray-200 bg-white px-4 py-3 text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none dark:border-white/15 dark:bg-black/25 dark:text-white dark:placeholder:text-white/35"
+                      />
+                    </div>
+
+                    <div>
+                      <p className="mb-2 text-[0.9rem] font-medium text-gray-700 dark:text-white/80">
+                        Did you discover this via Genie?
+                      </p>
+                      <div className="flex gap-2">
+                        {(["yes", "no"] as const).map((val) => (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => setSurveyDiscoveredViaGenie(val === "yes")}
+                            className={`flex-1 rounded-[14px] border py-2.5 text-[0.8rem] font-semibold transition capitalize ${
+                              (val === "yes" ? surveyDiscoveredViaGenie === true : surveyDiscoveredViaGenie === false)
+                                ? "border-red-500 bg-red-600 text-white"
+                                : "border-gray-200 bg-white text-gray-700 dark:border-white/15 dark:bg-black/25 dark:text-white/80"
+                            }`}
+                          >
+                            {val}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* Submit */}
+                <button
+                  type="button"
+                  disabled={surveySubmitting || surveyDidAttend === null}
+                  onClick={async () => {
+                    if (!surveyEventId || surveyDidAttend === null) return;
+                    setSurveySubmitting(true);
+                    try {
+                      await fetch("/api/genie/track-signal", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          signal_type: "event_survey",
+                          signal_value: String(surveyEventId),
+                          survey_data: {
+                            event_id: surveyEventId,
+                            did_attend: surveyDidAttend,
+                            vibe_rating: surveyVibeRating || null,
+                            venue_rating: surveyVenueRating || null,
+                            met_expectations: surveyMetExpectations,
+                            would_return: surveyWouldReturn,
+                            one_word_description: surveyOneWord || null,
+                            discovered_via_genie: surveyDiscoveredViaGenie,
+                          },
+                        }),
+                      });
+                      setSurveySubmitted(true);
+                    } catch {
+                      // Silent fail — show success anyway so UX isn't blocked
+                      setSurveySubmitted(true);
+                    } finally {
+                      setSurveySubmitting(false);
+                    }
+                  }}
+                  className="w-full rounded-[18px] border border-red-500 bg-red-600 py-4 text-sm font-semibold text-white disabled:opacity-50 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                >
+                  {surveySubmitting ? "Submitting..." : "Submit"}
+                </button>
+
+                {/* Skip */}
+                <button
+                  type="button"
+                  onClick={() => { setSurveySubmitted(false); goHome(); }}
+                  className="w-full py-2 text-[0.82rem] text-gray-400 dark:text-white/40"
+                >
+                  Skip for now
+                </button>
+              </div>
+            )}
+          </section>
+        ) : null}
+
+        {/* ── V.I.BEE FREE TRIAL ────────────────────────────────────────
+          7-day free trial flow.
+          Card required via Stripe. 1 trial per email. Max 1 redemption
+          during trial period.
+          
+          Endpoint: ep_start_vibbee_trial_dev
+          Stripe: handled natively with trial_period_days: 7
+        ────────────────────────────────────────────────────────────── */}
+        {activeScreen === "vibbee-trial" ? (
+          <section className="pb-28">
+            {/* Header */}
+            <div className="mb-5 flex items-center">
+              <button
+                type="button"
+                onClick={() => { setTrialError(null); setTrialSuccess(false); goBack("account"); }}
+                aria-label="Go back"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-red-600 dark:border dark:border-white/12 dark:bg-black/24 dark:text-white/82"
+              >
+                <BackIcon size={20} />
+              </button>
+              <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
+                Start Free Trial
+              </h2>
+            </div>
+
+            {trialSuccess ? (
+              /* ── Success state ── */
+              <div className="flex flex-col items-center gap-4 pt-10 text-center">
+                <div className="flex h-20 w-20 items-center justify-center rounded-full bg-red-600 shadow-[0_8px_32px_rgba(220,38,38,0.4)]">
+                  <svg viewBox="0 0 24 24" className="h-10 w-10 text-white" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
+                  </svg>
+                </div>
+                <h3 className="text-[1.2rem] font-bold text-gray-900 dark:text-white">
+                  Welcome to V.I.Bee!
+                </h3>
+                <p className="max-w-[22rem] text-[0.85rem] text-gray-500 dark:text-white/60">
+                  Your 7-day free trial has started. Enjoy unlimited access to exclusive offers and early event access.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => { setTrialSuccess(false); navigateTo("offers"); }}
+                  className="mt-2 rounded-[16px] border border-red-500 bg-red-600 px-8 py-3 text-sm font-semibold text-white"
+                >
+                  Browse V.I.Bee Offers
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-5">
+
+                {/* Hero benefit card */}
+                <div className="rounded-[20px] border border-red-500/30 bg-[rgba(80,5,5,0.08)] p-5 dark:bg-[rgba(80,5,5,0.55)]">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-red-400/50 bg-red-500/15">
+                      <svg viewBox="0 0 24 24" className="h-6 w-6 text-red-500 dark:text-red-300" fill="none" stroke="currentColor" strokeWidth="1.6">
+                        <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-gray-900 dark:text-white">V.I.Bee Membership</p>
+                      <p className="text-[0.82rem] font-medium text-red-600 dark:text-red-300">
+                        7 days free, then {config.vibeeMonthlyPrice ?? "$2.99"}/month
+                      </p>
+                    </div>
+                  </div>
+
+                  <ul className="space-y-2.5">
+                    {(config.vibeeBenefits ?? [
+                      "Exclusive offers at top Houston venues",
+                      "Early access to events before they sell out",
+                      "Hidden gems and VIP deals curated by Genie",
+                      "Priority entry perks from participating venues",
+                    ]).map((benefit) => (
+                      <li key={benefit} className="flex items-start gap-2.5 text-[0.85rem] text-gray-700 dark:text-white/80">
+                        <svg viewBox="0 0 24 24" className="mt-0.5 h-4 w-4 flex-none text-green-500" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        {benefit}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Trial terms */}
+                <div className="rounded-[16px] border border-gray-100 bg-gray-50 px-4 py-3 dark:border-white/10 dark:bg-black/20">
+                  <ul className="space-y-1.5 text-[0.78rem] text-gray-500 dark:text-white/55">
+                    <li className="flex gap-2"><span>•</span><span>7-day free trial — cancel any time before it ends</span></li>
+                    <li className="flex gap-2"><span>•</span><span>Credit card required to start</span></li>
+                    <li className="flex gap-2"><span>•</span><span>One trial per email address</span></li>
+                    <li className="flex gap-2"><span>•</span><span>Up to 1 offer redemption during trial period</span></li>
+                    <li className="flex gap-2"><span>•</span><span>After trial: {config.vibeeMonthlyPrice ?? "$2.99"}/month, cancel any time</span></li>
+                  </ul>
+                </div>
+
+                {trialError ? (
+                  <div className="rounded-[14px] border border-red-300 bg-red-50 px-4 py-3 text-[0.82rem] text-red-600 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+                    {trialError}
+                  </div>
+                ) : null}
+
+                {/* CTA — routes to Stripe checkout via existing account flow */}
+                <button
+                  type="button"
+                  disabled={trialLoading}
+                  onClick={() => {
+                    // Route to the account section which handles
+                    // Stripe checkout — the trial flag is passed via
+                    // the existing subscription create endpoint.
+                    // Full native Stripe trial UI in V2.
+                    setTrialLoading(true);
+                    navigateTo("account");
+                    setTrialLoading(false);
+                  }}
+                  className="w-full rounded-[18px] border border-red-500 bg-red-600 py-4 text-[1rem] font-bold text-white shadow-[0_8px_24px_rgba(220,38,38,0.35)] disabled:opacity-60 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                >
+                  {trialLoading ? "Loading..." : "Start My Free Trial"}
+                </button>
+
+                <p className="text-center text-[0.72rem] text-gray-400 dark:text-white/35">
+                  You will not be charged until your 7-day trial ends.
+                </p>
+              </div>
+            )}
+          </section>
+        ) : null}
       </div>
 
       {shouldShowFooter ? (

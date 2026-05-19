@@ -66,37 +66,30 @@ async function baseFetch<T = unknown>(
   init: XanoRequestInit = {}
 ): Promise<T> {
   const { method = "GET", body, authToken, params } = init;
-
   let url = `${base}/${path.replace(/^\//, "")}`;
   if (params) {
     const qs = new URLSearchParams(params).toString();
     url += `?${qs}`;
   }
-
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
   if (authToken) {
     headers.Authorization = `Bearer ${authToken}`;
   }
-
   const res = await fetch(url, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
     cache: "no-store",
   });
-
   const json = await res.json().catch(() => null);
-
   if (!res.ok) {
     throw new XanoError(res.status, json);
   }
-
   return json as T;
 }
 
-/** Genie endpoints — /api:pgMKWi2e */
 export async function xanoFetch<T = unknown>(
   path: string,
   init: XanoRequestInit = {}
