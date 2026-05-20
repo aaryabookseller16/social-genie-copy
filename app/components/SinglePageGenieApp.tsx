@@ -876,7 +876,7 @@ const [trialSuccess, setTrialSuccess] = useState(false);
         cityContext: cityForQuery ?? undefined,
         includeCoords: shouldUseCoords,
       });
-      setResponse(nextResponse);
+setResponse(nextResponse);
       // Remember the resolved city so the next query without an explicit city
       // stays anchored to it.
       const resolvedSessionCity =
