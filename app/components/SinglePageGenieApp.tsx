@@ -1882,6 +1882,7 @@ setResponse(nextResponse);
 
   const currentResponseMode = response?.response_mode;
   const showResultSections = currentResponseMode === "structured_results";
+  console.log("RENDER:", { currentResponseMode, showResultSections, activeScreen });
   const nonStructuredResponse =
     response && response.response_mode !== "structured_results"
       ? response
@@ -4996,6 +4997,7 @@ navigateTo("event-detail");
   <section
     className="-mx-4 -mt-3 pb-[calc(env(safe-area-inset-bottom,0px)+11rem)] sm:-mx-6 sm:-mt-5"
   >
+    {/* ── Hero image ── */}
     <div className="relative h-[14rem] w-full overflow-hidden">
       <Image
         src={(selectedEvent.cover_image_url as string) || "/sample-venue-1.jpeg"}
@@ -5008,12 +5010,41 @@ navigateTo("event-detail");
       <div className="absolute inset-x-0 top-0 flex items-center justify-between px-4 pt-4">
         <button
           type="button"
-          onClick={() => { setSelectedEvent(null); setSelectedEventSlug(null); goBack("decision"); }}
+          onClick={handleTopBack}
           className="flex h-8 w-8 items-center justify-center text-red-600 dark:text-white"
           aria-label="Go back"
         >
           <BackIcon size={24} className="h-6 w-6 object-contain" />
         </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              const title = selectedEvent.title as string;
+              const url = selectedEvent.ticket_url as string | undefined;
+              if (navigator.share) {
+                void navigator.share({ title, url: url ?? window.location.href });
+              } else {
+                void navigator.clipboard.writeText(url ?? window.location.href);
+              }
+            }}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-red-600 shadow-sm dark:border dark:border-white/40 dark:bg-black/30 dark:text-white dark:backdrop-blur-sm"
+            aria-label="Share"
+          >
+            <Image src="/icons/share-red.png" alt="" aria-hidden="true" width={18} height={18} className="h-[18px] w-[18px] object-contain dark:hidden" />
+            <Image src="/icons/shareIcon.png" alt="" aria-hidden="true" width={18} height={18} className="hidden h-[18px] w-[18px] object-contain dark:block" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsDrawerOpen(true)}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-red-600 shadow-sm dark:border dark:border-white/40 dark:bg-black/30 dark:text-white dark:backdrop-blur-sm"
+            aria-label="Menu"
+          >
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M5 7.5h14" /><path d="M5 12h14" /><path d="M5 16.5h14" />
+            </svg>
+          </button>
+        </div>
       </div>
       <div className="absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,transparent,rgba(0,0,0,0.85))] px-5 pb-5 pt-16">
         <h2 className="text-[2.1rem] font-bold leading-tight text-white">
@@ -5023,487 +5054,183 @@ navigateTo("event-detail");
     </div>
 
     <div className="space-y-4 px-5 pb-5 pt-4">
+
+      {/* ── Category + price badges ── */}
       <div className="flex flex-wrap items-center gap-2">
         {selectedEvent.category ? (
           <span className="rounded-full bg-red-600 px-3 py-1 text-[0.72rem] font-semibold text-white dark:bg-white dark:text-gray-900">
             {selectedEvent.category as string}
           </span>
         ) : null}
-        {selectedEvent.is_free ? (
-          <span className="rounded-full border border-red-300 bg-transparent px-3 py-1 text-[0.72rem] font-medium text-red-500 dark:border-[#E7070380] dark:text-white/85">
-            Free Entry
-          </span>
-        ) : selectedEvent.ticket_price_min ? (
-          <span className="rounded-full border border-red-300 bg-transparent px-3 py-1 text-[0.72rem] font-medium text-red-500 dark:border-[#E7070380] dark:text-white/85">
-            From ${selectedEvent.ticket_price_min as number}
-          </span>
-        ) : null}
+        <span className="rounded-full border border-red-300 bg-transparent px-3 py-1 text-[0.72rem] font-medium text-red-500 dark:border-[#E7070380] dark:text-white/85">
+          {selectedEvent.is_free
+            ? "Free Entry"
+            : selectedEvent.ticket_price_min
+              ? `From $${selectedEvent.ticket_price_min as number}`
+              : "See ticket info"}
+        </span>
       </div>
 
+      {/* ── Date + time ── */}
       {selectedEvent.event_date ? (
-        <p className="text-[0.9rem] text-gray-700 dark:text-white/80">
-          📅{" "}
-          {new Date(selectedEvent.event_date as string).toLocaleDateString("en-US", {
-            weekday: "long",
-            month: "long",
-            day: "numeric",
-          })}
-          {selectedEvent.start_time
-            ? ` · ${(selectedEvent.start_time as string).slice(0, 5)}`
-            : ""}
-        </p>
-      ) : null}
-
-      {selectedEvent.venue_address ? (
-        <p className="text-[0.9rem] text-gray-700 dark:text-white/80">
-          📍 {selectedEvent.venue_address as string}
-        </p>
-      ) : null}
-
-      {selectedEvent.description ? (
-        <p className="text-[0.88rem] leading-relaxed text-gray-600 dark:text-white/70">
-          {selectedEvent.description as string}
-        </p>
-      ) : null}
-
-      {selectedEvent.ticket_url ? (
-        <div className="grid grid-cols-[1fr_1.45fr_1fr] gap-1 pt-2">
-          <div />
-          <button
-            type="button"
-            onClick={() => {
-              window.open(selectedEvent.ticket_url as string, "_blank", "noopener,noreferrer");
-            }}
-            className="flex items-center justify-center gap-1 rounded-full border border-red-500 bg-red-600 px-1.5 py-2 text-[0.76rem] font-medium text-white hover:bg-red-700 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
-          >
-            🎟 Tickets
-          </button>
-          <div />
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.82rem] text-gray-700 dark:text-white/80">
+          <span>
+            📅{" "}
+            {new Date(selectedEvent.event_date as string).toLocaleDateString("en-US", {
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+            })}
+            {selectedEvent.start_time
+              ? ` · ${(selectedEvent.start_time as string).slice(0, 5)}`
+              : ""}
+          </span>
         </div>
       ) : null}
+
+      {/* ── Genie's Take ── */}
+      {selectedEvent.description ? (
+        <div className="flex items-start gap-3 rounded-[18px] border border-[#E7070380] bg-transparent px-4 py-3 dark:border-[#E7070380] dark:bg-black/25">
+          <div className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center overflow-hidden rounded-full">
+            <Image
+              src="/icons/Social-Genie-Home-Screen.png"
+              alt="Genie"
+              width={32}
+              height={32}
+              className="h-8 w-8 object-cover"
+            />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-red-500 dark:text-[#ff9d7d]">
+              Genie&apos;s Take
+            </p>
+            <p className="mt-1 text-[0.85rem] leading-5 text-gray-700 dark:text-white/80">
+              {selectedEvent.description as string}
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      {/* ── CTAs: Ride | Tickets | Share ── */}
+      <div className="grid grid-cols-[1fr_1.45fr_1fr] gap-1">
+        {/* Ride */}
+        <button
+          type="button"
+          onClick={() => {
+            const addr = (selectedEvent.venue_address as string) || "Houston, TX";
+            const uberUrl = `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[formatted_address]=${encodeURIComponent(addr)}`;
+            window.open(uberUrl, "_blank", "noopener,noreferrer");
+          }}
+          className="flex items-center justify-center gap-1 rounded-full border border-[#E7070380] bg-transparent px-1.5 py-1.5 text-[0.72rem] font-medium text-red-600 hover:bg-red-50 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
+        >
+          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" /><path d="M12 8v4l3 3" />
+          </svg>
+          Ride
+        </button>
+
+        {/* Tickets — primary */}
+        <button
+          type="button"
+          onClick={() => {
+            if (selectedEvent.ticket_url) {
+              window.open(selectedEvent.ticket_url as string, "_blank", "noopener,noreferrer");
+            }
+          }}
+          className="flex items-center justify-center gap-1 rounded-full border border-red-500 bg-red-600 px-1.5 py-2 text-[0.76rem] font-medium text-white hover:bg-red-700 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
+        >
+          <svg viewBox="0 0 24 24" className="h-[15px] w-[15px] flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z" />
+          </svg>
+          Tickets
+        </button>
+
+        {/* Share */}
+        <button
+          type="button"
+          onClick={() => {
+            const title = selectedEvent.title as string;
+            const url = (selectedEvent.ticket_url as string) ?? window.location.href;
+            if (navigator.share) {
+              void navigator.share({ title, url });
+            } else {
+              void navigator.clipboard.writeText(url);
+            }
+          }}
+          className="flex items-center justify-center gap-1 rounded-full border border-[#E7070380] bg-transparent px-1.5 py-1.5 text-[0.72rem] font-medium text-red-600 hover:bg-red-50 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
+        >
+          <Image src="/icons/share-red.png" alt="" aria-hidden="true" width={14} height={14} className="h-[14px] w-[14px] object-contain dark:hidden" />
+          <Image src="/icons/shareIcon.png" alt="" aria-hidden="true" width={14} height={14} className="hidden h-[14px] w-[14px] object-contain dark:block" />
+          Share
+        </button>
+      </div>
+
+      {/* ── About ── */}
+      {selectedEvent.venue_name ? (
+        <div>
+          <h3 className="text-[1.1rem] font-semibold text-gray-900 dark:text-white">Venue</h3>
+          <p className="mt-1 text-[0.88rem] leading-6 text-gray-600 dark:text-white/75">
+            {selectedEvent.venue_name as string}
+          </p>
+        </div>
+      ) : null}
+
+      {/* ── Google Map ── */}
+      {(() => {
+        const addr = (selectedEvent.venue_address as string) || (selectedEvent.venue_name as string) || "Houston, TX";
+        const embedSrc = `https://www.google.com/maps?q=${encodeURIComponent(addr)}&output=embed`;
+        const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr)}`;
+        return (
+          <div className="relative h-44 w-full overflow-hidden rounded-[18px] border border-[#E7070380] dark:border-[#E7070380]">
+            <iframe
+              title={`Map for ${selectedEvent.title as string}`}
+              src={embedSrc}
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+              className="absolute inset-0 h-full w-full border-0"
+              allowFullScreen
+            />
+            <button
+              type="button"
+              onClick={() => window.open(mapsUrl, "_blank", "noopener,noreferrer")}
+              className="absolute bottom-2 right-2 rounded-full bg-white/95 px-3 py-1 text-[0.72rem] font-semibold text-gray-800 shadow-sm hover:bg-white dark:bg-black/70 dark:text-white"
+            >
+              Open in Maps
+            </button>
+          </div>
+        );
+      })()}
+
+      {/* ── Address ── */}
+      {selectedEvent.venue_address ? (
+        <p className="text-center text-[0.95rem] font-medium text-gray-900 dark:text-white">
+          {selectedEvent.venue_address as string}
+        </p>
+      ) : null}
+
+      {/* ── Tags ── */}
+      <div className="flex flex-wrap gap-2">
+        {[
+          selectedEvent.category,
+          selectedEvent.is_free ? "Free Entry" : null,
+          selectedEvent.ticket_price_min ? `From $${selectedEvent.ticket_price_min}` : null,
+        ]
+          .filter(Boolean)
+          .map((tag) => (
+            <span
+              key={tag as string}
+              className="rounded-full border border-[#E7070380] bg-transparent px-3 py-1 text-[0.78rem] font-medium text-red-600 dark:border-[#E7070380] dark:text-white/85"
+            >
+              {tag as string}
+            </span>
+          ))}
+      </div>
+
     </div>
   </section>
 ) : null}
-
-        {/* ── POST-EVENT SURVEY ─────────────────────────────────────────
-          Triggered 2-4 hours after an event ends for users with
-          Going or Interested signals. 5 questions + optional one-word.
-          Survey responses feed back into Social Energy Scores and
-          Genie accuracy tracking.
-          
-          Endpoint: ep_submit_event_survey_dev
-        ────────────────────────────────────────────────────────────── */}
-        {activeScreen === "event-survey" ? (
-          <section className="pb-28">
-            {/* Header */}
-            <div className="mb-5 flex items-center">
-              <button
-                type="button"
-                onClick={() => { setSurveySubmitted(false); goBack("home"); }}
-                aria-label="Go back"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-red-600 dark:border dark:border-white/12 dark:bg-black/24 dark:text-white/82"
-              >
-                <BackIcon size={20} />
-              </button>
-              <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
-                How was it?
-              </h2>
-            </div>
-
-            {surveySubmitted ? (
-              /* ── Success state ── */
-              <div className="flex flex-col items-center gap-4 pt-10 text-center">
-                <div className="flex h-20 w-20 items-center justify-center rounded-full bg-green-500 shadow-[0_8px_32px_rgba(34,197,94,0.4)]">
-                  <svg viewBox="0 0 24 24" className="h-10 w-10 text-white" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                </div>
-                <h3 className="text-[1.2rem] font-bold text-gray-900 dark:text-white">
-                  Thanks for sharing!
-                </h3>
-                <p className="max-w-[22rem] text-[0.85rem] text-gray-500 dark:text-white/60">
-                  Your feedback helps Genie get smarter about what&apos;s actually worth going to.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => { setSurveySubmitted(false); goHome(); }}
-                  className="mt-2 rounded-[16px] border border-red-500 bg-red-600 px-8 py-3 text-sm font-semibold text-white"
-                >
-                  Back to Genie
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-6">
-
-                {/* Q1: Did you go? */}
-                <div>
-                  <p className="mb-3 text-[0.95rem] font-semibold text-gray-900 dark:text-white">
-                    Did you go?
-                  </p>
-                  <div className="flex gap-2">
-                    {(["yes", "no", "something_came_up"] as const).map((val) => {
-                      const labels = {
-                        yes: "Yes, I went",
-                        no: "No",
-                        something_came_up: "Something came up",
-                      };
-                      const isSelected =
-                        val === "yes" ? surveyDidAttend === true :
-                        val === "no" ? surveyDidAttend === false :
-                        surveyDidAttend === false;
-                      return (
-                        <button
-                          key={val}
-                          type="button"
-                          onClick={() => setSurveyDidAttend(val === "yes")}
-                          className={`flex-1 rounded-[14px] border py-2.5 text-[0.8rem] font-semibold transition ${
-                            isSelected
-                              ? "border-red-500 bg-red-600 text-white"
-                              : "border-gray-200 bg-white text-gray-700 dark:border-white/15 dark:bg-black/25 dark:text-white/80"
-                          }`}
-                        >
-                          {labels[val]}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Q2: Vibe rating (only if attended) */}
-                {surveyDidAttend === true ? (
-                  <div>
-                    <p className="mb-3 text-[0.95rem] font-semibold text-gray-900 dark:text-white">
-                      How was the vibe?
-                    </p>
-                    <div className="flex gap-2">
-                      {[1, 2, 3, 4, 5].map((n) => (
-                        <button
-                          key={n}
-                          type="button"
-                          onClick={() => setSurveyVibeRating(n)}
-                          className={`flex-1 rounded-[14px] border py-3 text-[1.1rem] transition ${
-                            surveyVibeRating >= n
-                              ? "border-amber-400 bg-amber-400/20 text-amber-500"
-                              : "border-gray-200 bg-white text-gray-300 dark:border-white/15 dark:bg-black/25"
-                          }`}
-                        >
-                          ★
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-
-                {/* Q3: Venue rating (only if attended) */}
-                {surveyDidAttend === true ? (
-                  <div>
-                    <p className="mb-3 text-[0.95rem] font-semibold text-gray-900 dark:text-white">
-                      How was the venue?
-                    </p>
-                    <div className="flex gap-2">
-                      {[1, 2, 3, 4, 5].map((n) => (
-                        <button
-                          key={n}
-                          type="button"
-                          onClick={() => setSurveyVenueRating(n)}
-                          className={`flex-1 rounded-[14px] border py-3 text-[1.1rem] transition ${
-                            surveyVenueRating >= n
-                              ? "border-red-400 bg-red-400/20 text-red-500"
-                              : "border-gray-200 bg-white text-gray-300 dark:border-white/15 dark:bg-black/25"
-                          }`}
-                        >
-                          ★
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-
-                {/* Q4: Met expectations */}
-                {surveyDidAttend === true ? (
-                  <div>
-                    <p className="mb-3 text-[0.95rem] font-semibold text-gray-900 dark:text-white">
-                      Was it what you expected?
-                    </p>
-                    <div className="flex gap-2">
-                      {(["yes", "somewhat", "no"] as const).map((val) => {
-                        const labels = { yes: "Yes exactly", somewhat: "Somewhat", no: "Not really" };
-                        return (
-                          <button
-                            key={val}
-                            type="button"
-                            onClick={() => setSurveyMetExpectations(val)}
-                            className={`flex-1 rounded-[14px] border py-2.5 text-[0.8rem] font-semibold transition ${
-                              surveyMetExpectations === val
-                                ? "border-red-500 bg-red-600 text-white"
-                                : "border-gray-200 bg-white text-gray-700 dark:border-white/15 dark:bg-black/25 dark:text-white/80"
-                            }`}
-                          >
-                            {labels[val]}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : null}
-
-                {/* Q5: Would you return */}
-                {surveyDidAttend === true ? (
-                  <div>
-                    <p className="mb-3 text-[0.95rem] font-semibold text-gray-900 dark:text-white">
-                      Would you go back?
-                    </p>
-                    <div className="flex gap-2">
-                      {(["yes", "maybe", "no"] as const).map((val) => {
-                        const labels = { yes: "Yes", maybe: "Maybe", no: "No" };
-                        return (
-                          <button
-                            key={val}
-                            type="button"
-                            onClick={() => setSurveyWouldReturn(val)}
-                            className={`flex-1 rounded-[14px] border py-2.5 text-[0.8rem] font-semibold transition ${
-                              surveyWouldReturn === val
-                                ? "border-red-500 bg-red-600 text-white"
-                                : "border-gray-200 bg-white text-gray-700 dark:border-white/15 dark:bg-black/25 dark:text-white/80"
-                            }`}
-                          >
-                            {labels[val]}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : null}
-
-                {/* BONUS: One word + discovered via Genie */}
-                {surveyDidAttend === true ? (
-                  <div className="space-y-4">
-                    <div>
-                      <p className="mb-2 text-[0.9rem] font-medium text-gray-700 dark:text-white/80">
-                        One word to describe the night (optional)
-                      </p>
-                      <input
-                        type="text"
-                        value={surveyOneWord}
-                        onChange={(e) => setSurveyOneWord(e.target.value.slice(0, 30))}
-                        placeholder="e.g. electric, chill, fire..."
-                        maxLength={30}
-                        style={{ fontSize: "16px" }}
-                        className="w-full rounded-[14px] border border-gray-200 bg-white px-4 py-3 text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none dark:border-white/15 dark:bg-black/25 dark:text-white dark:placeholder:text-white/35"
-                      />
-                    </div>
-
-                    <div>
-                      <p className="mb-2 text-[0.9rem] font-medium text-gray-700 dark:text-white/80">
-                        Did you discover this via Genie?
-                      </p>
-                      <div className="flex gap-2">
-                        {(["yes", "no"] as const).map((val) => (
-                          <button
-                            key={val}
-                            type="button"
-                            onClick={() => setSurveyDiscoveredViaGenie(val === "yes")}
-                            className={`flex-1 rounded-[14px] border py-2.5 text-[0.8rem] font-semibold transition capitalize ${
-                              (val === "yes" ? surveyDiscoveredViaGenie === true : surveyDiscoveredViaGenie === false)
-                                ? "border-red-500 bg-red-600 text-white"
-                                : "border-gray-200 bg-white text-gray-700 dark:border-white/15 dark:bg-black/25 dark:text-white/80"
-                            }`}
-                          >
-                            {val}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-
-                {/* Submit */}
-                <button
-                  type="button"
-                  disabled={surveySubmitting || surveyDidAttend === null}
-                  onClick={async () => {
-                    if (!surveyEventId || surveyDidAttend === null) return;
-                    setSurveySubmitting(true);
-                    try {
-                      await fetch("/api/genie/track-signal", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          signal_type: "event_survey",
-                          signal_value: String(surveyEventId),
-                          survey_data: {
-                            event_id: surveyEventId,
-                            did_attend: surveyDidAttend,
-                            vibe_rating: surveyVibeRating || null,
-                            venue_rating: surveyVenueRating || null,
-                            met_expectations: surveyMetExpectations,
-                            would_return: surveyWouldReturn,
-                            one_word_description: surveyOneWord || null,
-                            discovered_via_genie: surveyDiscoveredViaGenie,
-                          },
-                        }),
-                      });
-                      setSurveySubmitted(true);
-                    } catch {
-                      // Silent fail — show success anyway so UX isn't blocked
-                      setSurveySubmitted(true);
-                    } finally {
-                      setSurveySubmitting(false);
-                    }
-                  }}
-                  className="w-full rounded-[18px] border border-red-500 bg-red-600 py-4 text-sm font-semibold text-white disabled:opacity-50 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
-                >
-                  {surveySubmitting ? "Submitting..." : "Submit"}
-                </button>
-
-                {/* Skip */}
-                <button
-                  type="button"
-                  onClick={() => { setSurveySubmitted(false); goHome(); }}
-                  className="w-full py-2 text-[0.82rem] text-gray-400 dark:text-white/40"
-                >
-                  Skip for now
-                </button>
-              </div>
-            )}
-          </section>
-        ) : null}
-
-        {/* ── V.I.BEE FREE TRIAL ────────────────────────────────────────
-          7-day free trial flow.
-          Card required via Stripe. 1 trial per email. Max 1 redemption
-          during trial period.
-          
-          Endpoint: ep_start_vibbee_trial_dev
-          Stripe: handled natively with trial_period_days: 7
-        ────────────────────────────────────────────────────────────── */}
-        {activeScreen === "vibbee-trial" ? (
-          <section className="pb-28">
-            {/* Header */}
-            <div className="mb-5 flex items-center">
-              <button
-                type="button"
-                onClick={() => { setTrialError(null); setTrialSuccess(false); goBack("account"); }}
-                aria-label="Go back"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-red-600 dark:border dark:border-white/12 dark:bg-black/24 dark:text-white/82"
-              >
-                <BackIcon size={20} />
-              </button>
-              <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
-                Start Free Trial
-              </h2>
-            </div>
-
-            {trialSuccess ? (
-              /* ── Success state ── */
-              <div className="flex flex-col items-center gap-4 pt-10 text-center">
-                <div className="flex h-20 w-20 items-center justify-center rounded-full bg-red-600 shadow-[0_8px_32px_rgba(220,38,38,0.4)]">
-                  <svg viewBox="0 0 24 24" className="h-10 w-10 text-white" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
-                  </svg>
-                </div>
-                <h3 className="text-[1.2rem] font-bold text-gray-900 dark:text-white">
-                  Welcome to V.I.Bee!
-                </h3>
-                <p className="max-w-[22rem] text-[0.85rem] text-gray-500 dark:text-white/60">
-                  Your 7-day free trial has started. Enjoy unlimited access to exclusive offers and early event access.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => { setTrialSuccess(false); navigateTo("offers"); }}
-                  className="mt-2 rounded-[16px] border border-red-500 bg-red-600 px-8 py-3 text-sm font-semibold text-white"
-                >
-                  Browse V.I.Bee Offers
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-5">
-
-                {/* Hero benefit card */}
-                <div className="rounded-[20px] border border-red-500/30 bg-[rgba(80,5,5,0.08)] p-5 dark:bg-[rgba(80,5,5,0.55)]">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-red-400/50 bg-red-500/15">
-                      <svg viewBox="0 0 24 24" className="h-6 w-6 text-red-500 dark:text-red-300" fill="none" stroke="currentColor" strokeWidth="1.6">
-                        <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <p className="font-semibold text-gray-900 dark:text-white">V.I.Bee Membership</p>
-                      <p className="text-[0.82rem] font-medium text-red-600 dark:text-red-300">
-                        7 days free, then {config.vibeeMonthlyPrice ?? "$2.99"}/month
-                      </p>
-                    </div>
-                  </div>
-
-                  <ul className="space-y-2.5">
-                    {(config.vibeeBenefits ?? [
-                      "Exclusive offers at top Houston venues",
-                      "Early access to events before they sell out",
-                      "Hidden gems and VIP deals curated by Genie",
-                      "Priority entry perks from participating venues",
-                    ]).map((benefit) => (
-                      <li key={benefit} className="flex items-start gap-2.5 text-[0.85rem] text-gray-700 dark:text-white/80">
-                        <svg viewBox="0 0 24 24" className="mt-0.5 h-4 w-4 flex-none text-green-500" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                        {benefit}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                {/* Trial terms */}
-                <div className="rounded-[16px] border border-gray-100 bg-gray-50 px-4 py-3 dark:border-white/10 dark:bg-black/20">
-                  <ul className="space-y-1.5 text-[0.78rem] text-gray-500 dark:text-white/55">
-                    <li className="flex gap-2"><span>•</span><span>7-day free trial — cancel any time before it ends</span></li>
-                    <li className="flex gap-2"><span>•</span><span>Credit card required to start</span></li>
-                    <li className="flex gap-2"><span>•</span><span>One trial per email address</span></li>
-                    <li className="flex gap-2"><span>•</span><span>Up to 1 offer redemption during trial period</span></li>
-                    <li className="flex gap-2"><span>•</span><span>After trial: {config.vibeeMonthlyPrice ?? "$2.99"}/month, cancel any time</span></li>
-                  </ul>
-                </div>
-
-                {trialError ? (
-                  <div className="rounded-[14px] border border-red-300 bg-red-50 px-4 py-3 text-[0.82rem] text-red-600 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
-                    {trialError}
-                  </div>
-                ) : null}
-
-                {/* CTA — routes to Stripe checkout via existing account flow */}
-                <button
-                  type="button"
-                  disabled={trialLoading}
-                  onClick={() => {
-                    // Route to the account section which handles
-                    // Stripe checkout — the trial flag is passed via
-                    // the existing subscription create endpoint.
-                    // Full native Stripe trial UI in V2.
-                    setTrialLoading(true);
-                    navigateTo("account");
-                    setTrialLoading(false);
-                  }}
-                  className="w-full rounded-[18px] border border-red-500 bg-red-600 py-4 text-[1rem] font-bold text-white shadow-[0_8px_24px_rgba(220,38,38,0.35)] disabled:opacity-60 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
-                >
-                  {trialLoading ? "Loading..." : "Start My Free Trial"}
-                </button>
-
-                <p className="text-center text-[0.72rem] text-gray-400 dark:text-white/35">
-                  You will not be charged until your 7-day trial ends.
-                </p>
-              </div>
-            )}
-          </section>
-        ) : null}
-      </div>
-
-      {shouldShowFooter ? (
-        <BottomDock
-          activeId={activeScreen}
-          onHome={goHome}
-          onProfile={() => navigateTo(account ? "profile" : "account", false)}
-          onCenter={startListening}
-        />
-      ) : null}
-    </main>
+</div>
+</main>
   );
 }
+
