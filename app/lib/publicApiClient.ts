@@ -1070,6 +1070,68 @@ export function logVendorInteraction(
 }
 
 /* ------------------------------------------------------------------ */
+/*  Venue Interaction Logging                                          */
+/*  Feeds genie_user_venue_interaction + genie_behavior_signals       */
+/*  for behavioral aggregation and personalization.                   */
+/*  Fire-and-forget — never blocks UI.                                */
+/* ------------------------------------------------------------------ */
+export function logVenueInteraction(
+  interactionType: string,
+  venueId: number,
+  sourceScreen?: string
+) {
+  const sessionId = readSessionId();
+  const account = readAuthToken()
+    ? (JSON.parse(
+        localStorage.getItem("genie_consumer_account_v1") ?? "null"
+      ) as ConsumerAccount | null)
+    : null;
+  fetch("/api/genie/log-venue-interaction", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      venue_id: venueId,
+      interaction_type: interactionType,
+      user_id: account?.id ?? 0,
+      session_id: sessionId,
+      source_screen: sourceScreen ?? "",
+    }),
+    keepalive: true,
+  }).catch(() => {});
+}
+
+/* ------------------------------------------------------------------ */
+/*  Event Interaction Logging                                          */
+/*  Feeds genie_user_event_interaction + genie_behavior_signals       */
+/*  for behavioral aggregation and personalization.                   */
+/*  Fire-and-forget — never blocks UI.                                */
+/* ------------------------------------------------------------------ */
+export function logEventInteraction(
+  interactionType: string,
+  eventId: number,
+  sourceScreen?: string
+) {
+  const sessionId = readSessionId();
+  const account = readAuthToken()
+    ? (JSON.parse(
+        localStorage.getItem("genie_consumer_account_v1") ?? "null"
+      ) as ConsumerAccount | null)
+    : null;
+  fetch("/api/genie/log-event-interaction", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      event_id: eventId,
+      interaction_type: interactionType,
+      user_id: account?.id ?? 0,
+      session_id: sessionId,
+      source_screen: sourceScreen ?? "",
+    }),
+    keepalive: true,
+  }).catch(() => {});
+}
+
+/* ------------------------------------------------------------------ */
 /*  Signup Prompt                                                      */
 /* ------------------------------------------------------------------ */
 

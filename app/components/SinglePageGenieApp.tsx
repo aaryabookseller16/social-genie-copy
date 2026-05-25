@@ -68,6 +68,8 @@ import {
   initDeviceProfile,
   loginWithMagicToken,
   logVendorInteraction,
+  logVenueInteraction,
+  logEventInteraction,
   markNotificationOpened,
   mergeGuestProfile,
   persistAuthSession,
@@ -1086,6 +1088,7 @@ setResponse(nextResponse);
     try {
       if (isSaved) {
         await unsaveVenueForUser(venueId);
+        logVenueInteraction("unsave", venueId, activeScreen);
         const nextVenues = savedVenues.filter(
           (savedVenue) => getVenueId(savedVenue) !== id
         );
@@ -1093,6 +1096,7 @@ setResponse(nextResponse);
         setSavedVenueIds(syncSavedVenueIds(nextVenues));
       } else {
         await saveVenueForUser(venueId);
+        logVenueInteraction("save", venueId, activeScreen);
         const nextVenues = [venue, ...savedVenues].filter(
           (entry, index, array) =>
             array.findIndex((candidate) => getVenueId(candidate) === getVenueId(entry)) ===
@@ -1929,6 +1933,7 @@ setResponse(nextResponse);
                     venueId: getVenueId(selectedVenue),
                   });
                   logVendorInteraction("call_click", Number(selectedVenue.id));
+                  logVenueInteraction("call", Number(selectedVenue.id), "detail");
                   window.open(
                     `tel:${selectedVenue.phone}`,
                     "_self"
@@ -1952,6 +1957,7 @@ setResponse(nextResponse);
                     venueId: getVenueId(selectedVenue),
                   });
                   logVendorInteraction("reservation_click", Number(selectedVenue.id));
+                  logVenueInteraction("reservation", Number(selectedVenue.id), "detail");
                   window.open(
                     selectedVenue.reservation_url!,
                     "_blank",
@@ -1989,6 +1995,7 @@ setResponse(nextResponse);
               venueId: getVenueId(selectedVenue),
             });
             logVendorInteraction("share", Number(selectedVenue.id));
+            logVenueInteraction("share", Number(selectedVenue.id), "detail");
             void handleShareVenue(selectedVenue);
           },
         },
@@ -2647,6 +2654,7 @@ activeScreen === "vibbee-trial" ||
   setSelectedEventId(evt.id);
   setSelectedEvent(evt as Record<string, unknown>);
   navigateTo("event-detail");
+  logEventInteraction("tap", evt.id, "decision");
 }}
           />
         ))}
@@ -2661,7 +2669,7 @@ activeScreen === "vibbee-trial" ||
               venue={venue}
               index={index}
               userCoords={userCoordsLL}
-              onOpen={() => selectVenue(venue, index, "decision")}
+              onOpen={() => { selectVenue(venue, index, "decision"); logVenueInteraction("tap", Number(venue.id), "decision"); }}
               onSave={() => handleSaveVenue(venue)}
             />
           ))}
@@ -2683,6 +2691,7 @@ activeScreen === "vibbee-trial" ||
 setSelectedEventId(evt.id);
 setSelectedEvent(evt as Record<string, unknown>);
 navigateTo("event-detail");
+logEventInteraction("tap", evt.id, "more");
                   }}
                   className="flex items-center gap-3 rounded-[18px] border border-[#E7070380] bg-transparent p-3 text-left dark:border-[#E7070380] dark:bg-black/30"
                 >
@@ -2760,7 +2769,7 @@ navigateTo("event-detail");
                 <button
                   key={venue.id}
                   type="button"
-                  onClick={() => selectVenue(venue, index, "more")}
+                  onClick={() => { selectVenue(venue, index, "more"); logVenueInteraction("tap", Number(venue.id), "more"); }}
                   className="overflow-hidden rounded-[18px] border border-[#E7070380] bg-transparent text-left shadow-[0_8px_24px_rgba(0,0,0,0.06)] dark:border-[#6a1d1d] dark:bg-black/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
                 >
                   <div className="relative h-36 w-full">
@@ -3237,6 +3246,7 @@ navigateTo("event-detail");
                         venueId: getVenueId(selectedVenue),
                       });
                       logVendorInteraction("map_click", Number(selectedVenue.id));
+                      logVenueInteraction("map", Number(selectedVenue.id), "detail");
                       window.open(nativeMapsUrl, "_blank", "noopener,noreferrer");
                     }
                   })}
@@ -3373,7 +3383,7 @@ navigateTo("event-detail");
                   <button
                     key={`saved-${venue.id}`}
                     type="button"
-                    onClick={() => selectVenue(venue, index, "saved")}
+                    onClick={() => { selectVenue(venue, index, "saved"); logVenueInteraction("tap", Number(venue.id), "saved"); }}
                     className="overflow-hidden rounded-[18px] border border-white/10 bg-black/30 text-left"
                   >
                     <div className="relative h-44 w-full">
@@ -5120,6 +5130,7 @@ navigateTo("event-detail");
             const addr = (selectedEvent.venue_address as string) || "Houston, TX";
             const uberUrl = `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[formatted_address]=${encodeURIComponent(addr)}`;
             window.open(uberUrl, "_blank", "noopener,noreferrer");
+            logEventInteraction("ride_click", selectedEvent.id as number, "event-detail");
           }}
           className="flex items-center justify-center gap-1 rounded-full border border-[#E7070380] bg-transparent px-1.5 py-1.5 text-[0.72rem] font-medium text-red-600 hover:bg-red-50 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
         >
@@ -5136,6 +5147,7 @@ navigateTo("event-detail");
             if (selectedEvent.ticket_url) {
               window.open(selectedEvent.ticket_url as string, "_blank", "noopener,noreferrer");
             }
+            logEventInteraction("ticket_click", selectedEvent.id as number, "event-detail");
           }}
           className="flex items-center justify-center gap-1 rounded-full border border-red-500 bg-red-600 px-1.5 py-2 text-[0.76rem] font-medium text-white hover:bg-red-700 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
         >
@@ -5156,6 +5168,7 @@ navigateTo("event-detail");
             } else {
               void navigator.clipboard.writeText(url);
             }
+            logEventInteraction("share", selectedEvent.id as number, "event-detail");
           }}
           className="flex items-center justify-center gap-1 rounded-full border border-[#E7070380] bg-transparent px-1.5 py-1.5 text-[0.72rem] font-medium text-red-600 hover:bg-red-50 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
         >
