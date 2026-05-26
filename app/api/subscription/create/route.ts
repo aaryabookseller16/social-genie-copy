@@ -19,8 +19,6 @@ export async function POST(request: NextRequest) {
       unknown
     >;
 
-    console.log("checkout_vibee payload:", JSON.stringify({ external_user_id: body.external_user_id, email: body.email }));
-
     if (body.vendor_id) {
       const planType = String(body.plan_type ?? "founding_partner");
       const result = await xanoFetch<{
