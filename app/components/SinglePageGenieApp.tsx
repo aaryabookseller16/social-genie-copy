@@ -82,6 +82,7 @@ import {
   toConsumerAccount,
   updateSocialProfile,
   unsaveVenueForUser,
+  createSubscriptionCheckout,
 } from "@/app/lib/publicApiClient";
 import { getRuntimeConfig } from "@/app/lib/runtimeConfig";
 import { extractCityFromMessage, mentionsNearMe } from "@/app/lib/cityExtractor";
@@ -4977,13 +4978,29 @@ navigateTo("event-detail");
                         ))}
                       </ul>
                     </div>
+                    {trialError ? (
+  <div className="rounded-[14px] border border-red-300 bg-red-50 px-4 py-3 text-[0.82rem] text-red-600 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+    {trialError}
+  </div>
+) : null}
                     <button
-                      type="button"
-                      onClick={() => navigateTo("account")}
-                      className="w-full rounded-[18px] border border-red-500 bg-red-600 py-4 text-sm font-semibold text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
-                    >
-                      Upgrade to V.I.Bee Now
-                    </button>
+  type="button"
+  onClick={async () => {
+    try {
+      setTrialLoading(true);
+      const { checkout_url } = await createSubscriptionCheckout({});
+      window.location.href = checkout_url;
+    } catch {
+      setTrialError("Something went wrong. Please try again.");
+    } finally {
+      setTrialLoading(false);
+    }
+  }}
+  disabled={trialLoading}
+  className="w-full rounded-[18px] border border-red-500 bg-red-600 py-4 text-sm font-semibold text-white disabled:opacity-60 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+>
+  {trialLoading ? "Loading..." : "Become a V.I.Bee — $2.99/mo"}
+</button>
                   </>
                 ) : null}
               </div>

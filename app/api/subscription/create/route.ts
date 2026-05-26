@@ -19,6 +19,8 @@ export async function POST(request: NextRequest) {
       unknown
     >;
 
+    console.log("checkout_vibee payload:", JSON.stringify({ external_user_id: body.external_user_id, email: body.email }));
+
     if (body.vendor_id) {
       const planType = String(body.plan_type ?? "founding_partner");
       const result = await xanoFetch<{
@@ -53,12 +55,13 @@ export async function POST(request: NextRequest) {
     }>("genie/checkout_vibee", {
       method: "POST",
       body: {
-        external_user_id: body.external_user_id ?? "",
-        success_url:
-          body.success_url ??
-          `${appBase}/vibee/success?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: body.cancel_url ?? `${appBase}/?checkout=cancel`,
-      },
+  external_user_id: body.external_user_id ?? "",
+  email: body.email ?? "",
+  success_url:
+    body.success_url ??
+    `${appBase}/vibee/success?session_id={CHECKOUT_SESSION_ID}`,
+  cancel_url: body.cancel_url ?? `${appBase}/?checkout=cancel`,
+},
     });
 
     return NextResponse.json({ checkout_url: result.checkout_url });

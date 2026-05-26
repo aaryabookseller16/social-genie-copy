@@ -207,28 +207,43 @@ export function AccountSection({
     setMessage(null);
 
     try {
-      const result = await signUpUser({
-        first_name: form.firstName.trim(),
-        last_name: form.lastName.trim(),
-        email: form.email.trim(),
-      });
+  const result = await signUpUser({
+    first_name: form.firstName.trim(),
+    last_name: form.lastName.trim(),
+    email: form.email.trim(),
+  });
+  trackEvent(eventMap.submit, { membership, email: form.email });
+  trackEvent(eventMap.success, { membership, email: form.email });
+  trackEvent(analyticsEvents.signupCompleted, { membership });
 
-      setMessage(
-        result.message ||
-          "Check your email for a magic link to complete your account!"
-      );
-      trackEvent(eventMap.submit, { membership, email: form.email });
-      trackEvent(eventMap.success, { membership, email: form.email });
-      trackEvent(analyticsEvents.signupCompleted, { membership });
-    } catch (error) {
-      const nextMessage =
-        error instanceof Error ? error.message : "Could not create your account.";
+  // For V.I.Bee signups — go straight to Stripe checkout
+  // after account is created. Magic link will be sent by
+  // Xano but user lands in Stripe immediately.
+  if (membership === "vibee") {
+    setMessage("Redirecting to secure checkout...");
+    const { checkout_url } = await createSubscriptionCheckout({
+  email: form.email.trim(),
+  external_user_id: form.email.trim(),
+  success_url: `${window.location.origin}?checkout=success`,
+  cancel_url: `${window.location.origin}?checkout=cancelled`,
+});
+    window.location.href = checkout_url;
+    return;
+  }
 
-      setMessage(nextMessage);
-      trackEvent(eventMap.error, { membership, error: nextMessage });
-    } finally {
-      setIsSubmitting(false);
-    }
+  // Free signup — show magic link confirmation as before
+  setMessage(
+    result.message ||
+      "Check your email for a magic link to complete your account!"
+  );
+} catch (error) {
+  const nextMessage =
+    error instanceof Error ? error.message : "Could not create your account.";
+  setMessage(nextMessage);
+  trackEvent(eventMap.error, { membership, error: nextMessage });
+} finally {
+  setIsSubmitting(false);
+}
   };
 
   const upgradeToVibee = async () => {

@@ -469,6 +469,7 @@ export async function createSubscriptionCheckout(payload: {
   return apiJson<{ checkout_url: string }>("/api/subscription/create", {
     method: "POST",
     body: JSON.stringify({
+      email: payload.email || undefined,
       external_user_id: payload.external_user_id || externalUserId || undefined,
       success_url: payload.success_url,
       cancel_url: payload.cancel_url,
