@@ -40,6 +40,7 @@ export async function GET(request: NextRequest) {
         membership: user.membership_active ? "vibee" : "free",
         subscription_status: user.membership_active ? "active" : "inactive",
         vendor_id: user.vendor_id ?? null,
+        verified: user.verified ?? false,
       },
     });
   } catch (error) {

@@ -697,7 +697,15 @@ const [trialSuccess, setTrialSuccess] = useState(false);
   // hasn't clicked their link has no auth token. Block gated actions and show
   // the resend prompt. Returns true when the gate was shown (caller aborts).
   const maybeBlockForVerification = useCallback((): boolean => {
-    if (account || readAuthToken()) {
+    if (account) {
+      if (isAuthChecked && account.verified === false) {
+        setOnboardingEmail(account.email);
+        setVerifyGateOpen(true);
+        return true;
+      }
+      return false;
+    }
+    if (readAuthToken()) {
       return false;
     }
     const pending = readOnboardingPending();
@@ -707,7 +715,7 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     setOnboardingEmail(pending.email);
     setVerifyGateOpen(true);
     return true;
-  }, [account]);
+  }, [account, isAuthChecked]);
 
   const hydrateAuthenticatedSession = useCallback(async () => {
     const token = readAuthToken();
