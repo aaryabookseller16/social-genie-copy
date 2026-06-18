@@ -81,6 +81,10 @@ export const analyticsEvents = {
   vendorManualAddSubmitted: "vendor_manual_add_submitted",
   vendorManualAddCompleted: "vendor_manual_add_completed",
   vendorManualAddValidationError: "vendor_manual_add_validation_error",
+  onboardingRolesSelected: "onboarding_roles_selected",
+  onboardingRoleSetupContinue: "onboarding_role_setup_continue",
+  onboardingCompleted: "onboarding_completed",
+  verifyEmailResendTapped: "verify_email_resend_tapped",
 } as const;
 
 export type AnalyticsEventName =

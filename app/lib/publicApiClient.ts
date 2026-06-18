@@ -29,6 +29,7 @@ export type PublicApiUser = {
   membership: "free" | "vibee";
   subscription_status?: ConsumerSubscriptionStatus;
   vendor_id?: number | null;
+  verified?: boolean;
 };
 
 export type SocialProfile = {
@@ -182,6 +183,7 @@ export function toConsumerAccount(
     membership: status === "active" ? "vibee" : user.membership,
     subscriptionStatus: status,
     vendorId: user.vendor_id ?? null,
+    verified: user.verified ?? false,
     createdAt: Date.now(),
   };
 }
@@ -1135,6 +1137,52 @@ export function logEventInteraction(
 /* ------------------------------------------------------------------ */
 /*  Signup Prompt                                                      */
 /* ------------------------------------------------------------------ */
+
+export async function saveProducerDetails(payload: {
+  brand_name?: string;
+  producer_handle?: string;
+}) {
+  const externalUserId = readExternalUserId();
+  if (!externalUserId) throw new Error("No session found.");
+  return apiJson<{ success: boolean; brand_name: string; producer_handle: string }>(
+    "/api/genie/save-producer-details",
+    {
+      method: "POST",
+      auth: false,
+      body: JSON.stringify({ external_user_id: externalUserId, ...payload }),
+    }
+  );
+}
+
+export async function saveInfluencerDetails(payload: {
+  influencer_handle?: string;
+}) {
+  const externalUserId = readExternalUserId();
+  if (!externalUserId) throw new Error("No session found.");
+  return apiJson<{ success: boolean; influencer_handle: string }>(
+    "/api/genie/save-influencer-details",
+    {
+      method: "POST",
+      auth: false,
+      body: JSON.stringify({ external_user_id: externalUserId, ...payload }),
+    }
+  );
+}
+
+export async function setUserRoles(roles: string[]) {
+  const externalUserId = readExternalUserId();
+  if (!externalUserId) {
+    throw new Error("No session found — cannot save roles.");
+  }
+  return apiJson<{ success: boolean; roles: string[] }>(
+    "/api/genie/set-user-roles",
+    {
+      method: "POST",
+      auth: false,
+      body: JSON.stringify({ external_user_id: externalUserId, roles }),
+    }
+  );
+}
 
 export async function checkSignupPrompt() {
   const externalUserId = readExternalUserId();

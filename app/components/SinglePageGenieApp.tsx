@@ -10,6 +10,10 @@ import {
 import { DrawerMenu, type DrawerMenuActionId } from "@/app/components/single-page/DrawerMenu";
 import { ProfileSection } from "@/app/components/single-page/ProfileSection";
 import { VendorSection } from "@/app/components/single-page/VendorSection";
+import { RoleIdentifierSection } from "@/app/components/single-page/RoleIdentifierSection";
+import { RoleSetupSection } from "@/app/components/single-page/RoleSetupSection";
+import { OnboardingCompleteSection } from "@/app/components/single-page/OnboardingCompleteSection";
+import { VerifyEmailGate } from "@/app/components/single-page/VerifyEmailGate";
 import {
   BottomDock,
   GenieBubble,
@@ -48,7 +52,11 @@ import {
 import {
   readAuthToken,
   readConsumerAccount,
+  readOnboardingPending,
+  writeOnboardingPending,
+  readSelectedRoles,
   type ConsumerAccount,
+  type OnboardingRole,
 } from "@/app/lib/localState";
 import {
   type SocialProfile,
@@ -83,6 +91,9 @@ import {
   updateSocialProfile,
   unsaveVenueForUser,
   createSubscriptionCheckout,
+  setUserRoles,
+  saveProducerDetails,
+  saveInfluencerDetails,
 } from "@/app/lib/publicApiClient";
 import { getRuntimeConfig } from "@/app/lib/runtimeConfig";
 import { extractCityFromMessage, mentionsNearMe } from "@/app/lib/cityExtractor";
@@ -450,6 +461,9 @@ export function SinglePageGenieApp({
   const accountRef = useRef<HTMLElement | null>(null);
   const vendorRef = useRef<HTMLElement | null>(null);
   const profileRef = useRef<HTMLElement | null>(null);
+  const roleIdentifierRef = useRef<HTMLElement | null>(null);
+  const roleSetupRef = useRef<HTMLElement | null>(null);
+  const onboardingCompleteRef = useRef<HTMLElement | null>(null);
   const [activeScreen, setActiveScreen] = useState<FlowAnchor>(initialScreen);
   const [detailReturnScreen, setDetailReturnScreen] = useState<
     "decision" | "more" | "saved"
@@ -529,6 +543,14 @@ const [trialSuccess, setTrialSuccess] = useState(false);
   const [selectedOfferId, setSelectedOfferId] = useState<number | null>(null);
   const [account, setAccount] = useState<ConsumerAccount | null>(null);
   const [isAuthChecked, setIsAuthChecked] = useState(false);
+  // Onboarding wizard: under magic-link there is no auth session until the link
+  // is clicked, so the wizard runs on the guest session. `isOnboarding` routes
+  // the preferences "Next" button into the role steps; `onboardingEmail` feeds
+  // the completion + verification gate.
+  const [isOnboarding, setIsOnboarding] = useState(false);
+  const [onboardingEmail, setOnboardingEmail] = useState("");
+  const [onboardingRoles, setOnboardingRoles] = useState<OnboardingRole[]>([]);
+  const [verifyGateOpen, setVerifyGateOpen] = useState(false);
   const [mapPreviewFailed, setMapPreviewFailed] = useState(false);
   const [accountScreenMode, setAccountScreenMode] =
     useState<AccountScreenMode>(null);
@@ -671,6 +693,22 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     [account, activeScreen, config.signupPromptSuppressAfter, navigateTo]
   );
 
+  // Magic-link verification gate: a user who finished the onboarding wizard but
+  // hasn't clicked their link has no auth token. Block gated actions and show
+  // the resend prompt. Returns true when the gate was shown (caller aborts).
+  const maybeBlockForVerification = useCallback((): boolean => {
+    if (account || readAuthToken()) {
+      return false;
+    }
+    const pending = readOnboardingPending();
+    if (!pending || pending.verified) {
+      return false;
+    }
+    setOnboardingEmail(pending.email);
+    setVerifyGateOpen(true);
+    return true;
+  }, [account]);
+
   const hydrateAuthenticatedSession = useCallback(async () => {
     const token = readAuthToken();
     if (!token) {
@@ -793,6 +831,10 @@ const [trialSuccess, setTrialSuccess] = useState(false);
   ) => {
     const trimmed = query.trim();
     if (!trimmed) {
+      return;
+    }
+
+    if (maybeBlockForVerification()) {
       return;
     }
 
@@ -994,6 +1036,11 @@ setResponse(nextResponse);
     index: number,
     source: "decision" | "more" | "saved"
   ) => {
+    // Verification gate takes precedence: an unverified onboarded user must
+    // click their magic link before opening a detail screen.
+    if (maybeBlockForVerification()) {
+      return;
+    }
     // Account Intro gate: on the Decision screen, after the user has completed
     // at least two queries, the first venue tap by an unauthenticated user
     // takes them to the Account Intro instead of the detail view.
@@ -1058,6 +1105,10 @@ setResponse(nextResponse);
   );
 
   const handleSaveVenue = async (venue: GenieVenue) => {
+    if (maybeBlockForVerification()) {
+      return;
+    }
+
     let token = readAuthToken();
 
     if (!account || !token) {
@@ -1175,6 +1226,9 @@ setResponse(nextResponse);
 
   const handleRedeemOffer = useCallback(
     async (offer: VibeeOffer) => {
+      if (maybeBlockForVerification()) {
+        return;
+      }
       if (!account || account.membership !== "vibee") {
         setStatusMessage("Upgrade to V.I.Bee to redeem offers.");
         navigateTo("account");
@@ -1334,11 +1388,14 @@ setResponse(nextResponse);
       setSocialProfile(updated);
       profileLoadedRef.current = true;
       setStatusMessage("Preferences saved. Genie will use these on your next ask.");
-      // "Next" previously only saved and left the user stranded on the
-      // Preferences screen — users perceived this as being bounced back to
-      // Profile. Advance to Home so the button actually progresses the flow
-      // and the user can immediately try out their updated vibe.
-      navigateTo("home", false);
+      // During the onboarding wizard, "Next" advances to the role identifier
+      // (Step 3) instead of bouncing home. Outside onboarding (e.g. "Tune my
+      // preferences") it returns home so the button still progresses the flow.
+      if (isOnboarding) {
+        navigateTo("role-identifier");
+      } else {
+        navigateTo("home", false);
+      }
     } catch (error) {
       const message =
         error instanceof Error
@@ -1348,14 +1405,15 @@ setResponse(nextResponse);
     } finally {
       setSocialSaving(false);
     }
-  }, [socialProfile, navigateTo]);
+  }, [socialProfile, navigateTo, isOnboarding]);
 
   useEffect(() => {
     trackHomeScreenViewed();
     setAccount(readConsumerAccount());
     void (async () => {
       const url = new URL(window.location.href);
-      const magicToken = url.searchParams.get("token");
+      // Handle both ?token= and ?/token= (Xano sometimes prepends a slash)
+      const magicToken = url.searchParams.get("token") ?? url.searchParams.get("/token");
 
       if (magicToken) {
         try {
@@ -1370,6 +1428,12 @@ setResponse(nextResponse);
           if (external_user_id) {
             writeExternalUserId(external_user_id);
           }
+
+          // Magic link clicked → the account is verified. Clear the pending
+          // state and dismiss the wizard/gate so they never show again.
+          writeOnboardingPending(null);
+          setIsOnboarding(false);
+          setVerifyGateOpen(false);
 
           // Preserve the latest documented behavior: remove the token from the URL
           // immediately after a successful exchange.
@@ -1388,6 +1452,45 @@ setResponse(nextResponse);
             offersLoadedRef.current = false;
             profileLoadedRef.current = false;
             await mergeGuestProfile(external_user_id).catch(() => {});
+          }
+
+          // Sync onboarding role selections to genie_user now that the
+          // account row exists (magic link click creates it).
+          const savedRoles = readSelectedRoles();
+          if (savedRoles.length > 0) {
+            setUserRoles(savedRoles).catch(() => {});
+          }
+          try {
+            const rawDetails = window.localStorage.getItem(
+              "genie_onboarding_role_details_v1"
+            );
+            if (rawDetails) {
+              const details = JSON.parse(rawDetails) as {
+                brandName?: string;
+                producerHandle?: string;
+                influencerHandle?: string;
+              };
+              if (
+                (details.brandName || details.producerHandle) &&
+                savedRoles.includes("producer")
+              ) {
+                saveProducerDetails({
+                  brand_name: details.brandName,
+                  producer_handle: details.producerHandle,
+                }).catch(() => {});
+              }
+              if (
+                details.influencerHandle &&
+                savedRoles.includes("influencer")
+              ) {
+                saveInfluencerDetails({
+                  influencer_handle: details.influencerHandle,
+                }).catch(() => {});
+              }
+              window.localStorage.removeItem("genie_onboarding_role_details_v1");
+            }
+          } catch {
+            // best-effort
           }
         } catch (error) {
           console.error("Failed to exchange magic token", error);
@@ -1689,6 +1792,9 @@ setResponse(nextResponse);
       "membership",
       "preferences",
       "event-survey",
+      "role-identifier",
+      "role-setup",
+      "onboarding-complete",
     ];
     if (allowed.includes(screen as FlowAnchor)) {
       navigateTo(screen as FlowAnchor);
@@ -2210,6 +2316,9 @@ case "vibbee-trial":
     activeScreen !== "event-detail" &&
 activeScreen !== "event-survey" &&
 activeScreen !== "vibbee-trial" &&
+    activeScreen !== "role-identifier" &&
+    activeScreen !== "role-setup" &&
+    activeScreen !== "onboarding-complete" &&
     activeScreen !== "detail";
 
   const isAiFallbackLayout =
@@ -4219,7 +4328,7 @@ navigateTo("event-detail");
 
         {activeScreen === "preferences" ? (
           <section ref={preferencesRef} className="relative flex flex-1 flex-col pb-4">
-            {!account ? (
+            {!account && !isOnboarding ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-4 pt-20 text-center">
                 <p className="text-[1.1rem] font-semibold text-gray-900 dark:text-white">
                   Sign in to set preferences
@@ -4377,12 +4486,51 @@ navigateTo("event-detail");
           onOpenVendor={() => navigateTo("vendor")}
           onOpenOffers={() => navigateTo("offers")}
           onOpenPreferences={() => navigateTo("preferences")}
+          onAdvanceOnboarding={(email) => {
+            setOnboardingEmail(email);
+            setIsOnboarding(true);
+            navigateTo("preferences");
+          }}
           onAccountChange={(nextAccount) => {
             setAccount(nextAccount);
             void hydrateAuthenticatedSession();
             setAccountScreenMode(null);
             setActiveScreen("account");
           }}
+        />
+
+        <RoleIdentifierSection
+          sectionRef={roleIdentifierRef}
+          visible={activeScreen === "role-identifier"}
+          onContinue={(roles) => {
+            setOnboardingRoles(roles);
+            const hasNonConsumerRole = roles.some((role) => role !== "consumer");
+            navigateTo(hasNonConsumerRole ? "role-setup" : "onboarding-complete");
+          }}
+        />
+
+        <RoleSetupSection
+          sectionRef={roleSetupRef}
+          visible={activeScreen === "role-setup"}
+          roles={onboardingRoles.length > 0 ? onboardingRoles : readSelectedRoles()}
+          onOpenVendor={() => navigateTo("vendor")}
+          onContinue={() => navigateTo("onboarding-complete")}
+        />
+
+        <OnboardingCompleteSection
+          sectionRef={onboardingCompleteRef}
+          visible={activeScreen === "onboarding-complete"}
+          email={onboardingEmail}
+          onOpenGenie={() => {
+            setIsOnboarding(false);
+            navigateTo("home", false);
+          }}
+        />
+
+        <VerifyEmailGate
+          visible={verifyGateOpen}
+          email={onboardingEmail}
+          onClose={() => setVerifyGateOpen(false)}
         />
 
         <VendorSection

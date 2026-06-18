@@ -87,6 +87,7 @@ export function AccountSection({
   onOpenPreferences,
   onAccountChange,
   onModeChange,
+  onAdvanceOnboarding,
 }: {
   sectionRef: RefObject<HTMLElement | null>;
   visible: boolean;
@@ -98,6 +99,9 @@ export function AccountSection({
   onOpenPreferences: () => void;
   onAccountChange: (account: ConsumerAccount, message: string) => void;
   onModeChange?: (mode: AccountScreenMode) => void;
+  // Free signup sends a magic link but does not wait for it — advance the
+  // onboarding wizard (Step 2) on the guest session instead of dead-ending.
+  onAdvanceOnboarding?: (email: string) => void;
 }) {
   const [mode, setMode] = useState<AccountScreenMode>(null);
   const [form, setForm] = useState<ConsumerFormState>(createEmptyConsumerForm());
@@ -231,11 +235,16 @@ export function AccountSection({
     return;
   }
 
-  // Free signup — show magic link confirmation as before
-  setMessage(
-    result.message ||
-      "Check your email for a magic link to complete your account!"
-  );
+  // Free signup — magic link is sent, but we don't wait for it. Advance the
+  // onboarding wizard (preferences → roles → completion) on the guest session.
+  if (onAdvanceOnboarding) {
+    onAdvanceOnboarding(form.email.trim());
+  } else {
+    setMessage(
+      result.message ||
+        "Check your email for a magic link to complete your account!"
+    );
+  }
 } catch (error) {
   const nextMessage =
     error instanceof Error ? error.message : "Could not create your account.";
