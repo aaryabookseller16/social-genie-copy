@@ -5,6 +5,7 @@ import { mapVenue } from "@/app/lib/genieMappers";
 import { type RawGenieVenue } from "@/app/lib/genieTypes";
 import { fetchCatalogVenueById } from "@/app/lib/server/xanoCatalog";
 import { xanoFetch } from "@/app/lib/server/xanoProxy";
+import { VenueDetailClient } from "./VenueDetailClient";
 
 const FALLBACK_OG_IMAGE = "https://genie.socialbevy.com/genie-profile-pic.png";
 
@@ -86,5 +87,9 @@ export default async function VenuePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const venue = await loadVenue(id);
+  if (venue) {
+    return <VenueDetailClient venue={venue} />;
+  }
   return <SinglePageGenieApp initialScreen="detail" initialVenueId={id} />;
 }
