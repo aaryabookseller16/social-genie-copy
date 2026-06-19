@@ -8,6 +8,7 @@ import {
   type AccountScreenMode,
 } from "@/app/components/single-page/AccountSection";
 import { DrawerMenu, type DrawerMenuActionId } from "@/app/components/single-page/DrawerMenu";
+import { RoleSwitcherDialog } from "@/app/components/single-page/RoleSwitcherDialog";
 import { ProfileSection } from "@/app/components/single-page/ProfileSection";
 import { VendorSection } from "@/app/components/single-page/VendorSection";
 import { RoleIdentifierSection } from "@/app/components/single-page/RoleIdentifierSection";
@@ -464,7 +465,9 @@ export function SinglePageGenieApp({
   const roleIdentifierRef = useRef<HTMLElement | null>(null);
   const roleSetupRef = useRef<HTMLElement | null>(null);
   const onboardingCompleteRef = useRef<HTMLElement | null>(null);
+  const roleUnlockRef = useRef<HTMLElement | null>(null);
   const [activeScreen, setActiveScreen] = useState<FlowAnchor>(initialScreen);
+  const [isRoleSwitcherOpen, setIsRoleSwitcherOpen] = useState(false);
   const [detailReturnScreen, setDetailReturnScreen] = useState<
     "decision" | "more" | "saved"
   >("decision");
@@ -2222,6 +2225,10 @@ setResponse(nextResponse);
             "noopener,noreferrer"
           );
           break;
+        case "switch-role":
+          setIsDrawerOpen(false);
+          setIsRoleSwitcherOpen(true);
+          break;
       }
     },
     [goHome, isVibeeMember, navigateTo]
@@ -2296,6 +2303,15 @@ case "vibbee-trial":
   setTrialSuccess(false);
   goBack("account");
   break;
+      case "producer-dashboard":
+        goBack("home");
+        break;
+      case "influencer-dashboard":
+        goBack("home");
+        break;
+      case "role-unlock":
+        goBack("home");
+        break;
       default:
         goBack("home");
     }
@@ -2327,6 +2343,7 @@ activeScreen !== "vibbee-trial" &&
     activeScreen !== "role-identifier" &&
     activeScreen !== "role-setup" &&
     activeScreen !== "onboarding-complete" &&
+    activeScreen !== "role-unlock" &&
     activeScreen !== "detail";
 
   const isAiFallbackLayout =
@@ -2355,6 +2372,8 @@ activeScreen !== "vibbee-trial" &&
     activeScreen === "contact" ||
     activeScreen === "preferences" ||
     activeScreen === "vendor" ||
+    activeScreen === "producer-dashboard" ||
+    activeScreen === "influencer-dashboard" ||
     activeScreen === "event-detail" ||
 activeScreen === "event-survey" ||
 activeScreen === "vibbee-trial" ||
@@ -2374,6 +2393,25 @@ activeScreen === "vibbee-trial" ||
         isVendor={!!account?.vendorId}
         notificationsEnabled={notificationsEnabled}
         onToggleNotifications={() => setNotificationsEnabled((prev) => !prev)}
+      />
+
+      <RoleSwitcherDialog
+        visible={isRoleSwitcherOpen}
+        onClose={() => setIsRoleSwitcherOpen(false)}
+        onNavigateToRole={(role) => {
+          setIsRoleSwitcherOpen(false);
+          const targets: Record<OnboardingRole, FlowAnchor> = {
+            consumer: "dashboard",
+            vendor: "vendor",
+            producer: "producer-dashboard",
+            influencer: "influencer-dashboard",
+          };
+          navigateTo(targets[role]);
+        }}
+        onUnlockNew={() => {
+          setIsRoleSwitcherOpen(false);
+          navigateTo("role-unlock");
+        }}
       />
 
       <div className={`relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col gap-3 ${activeScreen === "home" || activeScreen === "listening" || activeScreen === "thinking" ? "min-h-0" : ""}`}>
@@ -4517,6 +4555,17 @@ navigateTo("event-detail");
           }}
         />
 
+        {activeScreen === "role-unlock" ? (
+          <RoleIdentifierSection
+            sectionRef={roleUnlockRef}
+            visible={true}
+            onContinue={() => {
+              // TODO: pending states (vendor claim, producer/influencer approval) come later
+              navigateTo("home", false);
+            }}
+          />
+        ) : null}
+
         <RoleSetupSection
           sectionRef={roleSetupRef}
           visible={activeScreen === "role-setup"}
@@ -5415,6 +5464,33 @@ navigateTo("event-detail");
     </div>
   </section>
 ) : null}
+
+{activeScreen === "producer-dashboard" ? (
+  <section className="space-y-5 pb-28">
+    <div className="flex items-center justify-between pt-1">
+      <h1 className="font-[family:var(--font-display)] text-[1.75rem] font-semibold leading-tight text-gray-900 dark:text-white">
+        Producer Dashboard
+      </h1>
+    </div>
+    <p className="text-sm text-gray-500 dark:text-white/60">
+      This is where your producer tools will live.
+    </p>
+  </section>
+) : null}
+
+{activeScreen === "influencer-dashboard" ? (
+  <section className="space-y-5 pb-28">
+    <div className="flex items-center justify-between pt-1">
+      <h1 className="font-[family:var(--font-display)] text-[1.75rem] font-semibold leading-tight text-gray-900 dark:text-white">
+        Influencer Dashboard
+      </h1>
+    </div>
+    <p className="text-sm text-gray-500 dark:text-white/60">
+      This is where your influencer tools will live.
+    </p>
+  </section>
+) : null}
+
 </div>
 </main>
   );

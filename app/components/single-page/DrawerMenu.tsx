@@ -16,6 +16,7 @@ export type DrawerMenuActionId =
   | "redemptions"
   | "how-genie-works"
   | "vendor"
+  | "switch-role"
   | "help-faq"
   | "contact"
   | "privacy"
@@ -116,6 +117,7 @@ export function DrawerMenu({
     { id: "home", label: "Home" },
     { id: "profile", label: "My Profile" },
     { id: "dashboard", label: "My Dashboard" },
+    { id: "switch-role", label: "My Roles" },
     { id: "how-genie-works", label: "How Genie Works" },
     {
       id: "vendor",
