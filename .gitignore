@@ -46,3 +46,5 @@ vendor-flow-images/
 codex-plan-gpt-4.md
 .cursor/
 .env*.local
+
+codebase-reference.md

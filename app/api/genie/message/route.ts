@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
- 
+
 import { type RawGenieVenue } from "@/app/lib/genieTypes";
-import { getAuthenticatedUser } from "@/app/lib/server/requestAuth";
-import { xanoFetch, XanoError } from "@/app/lib/server/xanoProxy";
+import { xanoFetch, XanoError, extractBearerToken } from "@/app/lib/server/xanoProxy";
  
 function mapPublicVenue(rawVenue: RawGenieVenue) {
   return {
@@ -23,36 +22,35 @@ function mapPublicVenue(rawVenue: RawGenieVenue) {
  */
 export async function POST(request: NextRequest) {
   try {
-    // Optional auth: enrich with user context when JWT is present
-    const auth = await getAuthenticatedUser(request);
- 
+    // Forward the Xano JWT when the user is authenticated (same pattern as vendor routes).
+    // For guest users this is undefined — Xano handles unauthenticated sessions via session_token.
+    const xanoToken = extractBearerToken(request);
+
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
- 
+
     const location =
       typeof body.location === "object" && body.location
         ? (body.location as Record<string, unknown>)
         : null;
- 
+
     const userObj =
       typeof body.user === "object" && body.user
         ? (body.user as Record<string, unknown>)
         : null;
- 
+
     const resolvedUserName =
       typeof body.user_name === "string"
         ? body.user_name
         : typeof userObj?.first_name === "string"
           ? (userObj.first_name as string)
-          : auth?.user.first_name ?? undefined;
- 
+          : undefined;
+
     const resolvedExternalUserId =
       typeof body.external_user_id === "string"
         ? body.external_user_id
         : typeof userObj?.user_id === "string"
           ? (userObj.user_id as string)
-          : auth
-            ? String(auth.user.id)
-            : "web_guest";
+          : "web_guest";
  
     const upstreamBody = {
       message: String(body.message ?? "").trim(),
@@ -95,10 +93,11 @@ export async function POST(request: NextRequest) {
     }
  
     const upstreamJson = await xanoFetch<Record<string, unknown>>(
-      "genie/ep_genie_chat_v2_dev", // ← updated from ep_handle_message_dev
+      "genie/ep_genie_chat_v2_dev",
       {
         method: "POST",
         body: upstreamBody,
+        authToken: xanoToken,
       }
     );
  
