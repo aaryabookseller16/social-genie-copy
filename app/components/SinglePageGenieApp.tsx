@@ -15,6 +15,7 @@ import { RoleIdentifierSection } from "@/app/components/single-page/RoleIdentifi
 import { RoleSetupSection } from "@/app/components/single-page/RoleSetupSection";
 import { OnboardingCompleteSection } from "@/app/components/single-page/OnboardingCompleteSection";
 import { VerifyEmailGate } from "@/app/components/single-page/VerifyEmailGate";
+import { InfluencerSection } from "@/app/components/single-page/InfluencerSection";
 import {
   BottomDock,
   GenieBubble,
@@ -5479,16 +5480,7 @@ navigateTo("event-detail");
 ) : null}
 
 {activeScreen === "influencer-dashboard" ? (
-  <section className="space-y-5 pb-28">
-    <div className="flex items-center justify-between pt-1">
-      <h1 className="font-[family:var(--font-display)] text-[1.75rem] font-semibold leading-tight text-gray-900 dark:text-white">
-        Influencer Dashboard
-      </h1>
-    </div>
-    <p className="text-sm text-gray-500 dark:text-white/60">
-      This is where your influencer tools will live.
-    </p>
-  </section>
+  <InfluencerSection account={account} onNavigate={navigateTo} />
 ) : null}
 
 </div>
