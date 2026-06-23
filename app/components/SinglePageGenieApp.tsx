@@ -11,6 +11,7 @@ import { DrawerMenu, type DrawerMenuActionId } from "@/app/components/single-pag
 import { RoleSwitcherDialog } from "@/app/components/single-page/RoleSwitcherDialog";
 import { ProfileSection } from "@/app/components/single-page/ProfileSection";
 import { VendorSection } from "@/app/components/single-page/VendorSection";
+import { ProducerSection } from "@/app/components/single-page/ProducerSection";
 import { RoleIdentifierSection } from "@/app/components/single-page/RoleIdentifierSection";
 import { RoleSetupSection } from "@/app/components/single-page/RoleSetupSection";
 import { OnboardingCompleteSection } from "@/app/components/single-page/OnboardingCompleteSection";
@@ -2345,6 +2346,7 @@ activeScreen !== "vibbee-trial" &&
     activeScreen !== "role-setup" &&
     activeScreen !== "onboarding-complete" &&
     activeScreen !== "role-unlock" &&
+    activeScreen !== "producer-dashboard" &&
     activeScreen !== "detail";
 
   const isAiFallbackLayout =
@@ -5467,16 +5469,10 @@ navigateTo("event-detail");
 ) : null}
 
 {activeScreen === "producer-dashboard" ? (
-  <section className="space-y-5 pb-28">
-    <div className="flex items-center justify-between pt-1">
-      <h1 className="font-[family:var(--font-display)] text-[1.75rem] font-semibold leading-tight text-gray-900 dark:text-white">
-        Producer Dashboard
-      </h1>
-    </div>
-    <p className="text-sm text-gray-500 dark:text-white/60">
-      This is where your producer tools will live.
-    </p>
-  </section>
+  <ProducerSection
+    account={account}
+    onBack={() => goBack("home")}
+  />
 ) : null}
 
 {activeScreen === "influencer-dashboard" ? (

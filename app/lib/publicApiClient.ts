@@ -1458,3 +1458,171 @@ export async function fetchInfluencerOffers(handle: string) {
     { auth: false }
   );
 }
+
+/* ------------------------------------------------------------------ */
+/*  Producer                                                           */
+/* ------------------------------------------------------------------ */
+
+export type ProducerProfile = {
+  id?: number;
+  user_id?: number;
+  display_name?: string;
+  bio?: string;
+  instagram_handle?: string;
+  instagram_url?: string;
+  tiktok_url?: string;
+  website_url?: string;
+  event_type_tags?: string[];
+  profile_photo_url?: string;
+  city?: string;
+  status?: string;
+  is_verified?: boolean;
+  follower_count?: number;
+  total_events_created?: number;
+  total_events_live?: number;
+  average_going_count?: number;
+};
+
+export type ProducerEvent = {
+  id: number;
+  title: string;
+  category?: string;
+  description?: string;
+  event_date?: string;
+  start_time?: string;
+  end_time?: string;
+  venue_name?: string;
+  venue_address?: string;
+  city?: string;
+  cover_image_url?: string;
+  ticket_url?: string;
+  ticket_price_min?: number;
+  is_free?: boolean;
+  age_requirement?: string;
+  rsvp_limit?: number;
+  rsvp_count?: number;
+  created_at?: number;
+};
+
+export type ProducerPost = {
+  id: number;
+  author_id?: number;
+  author_type?: string;
+  post_text: string;
+  image_url?: string;
+  like_count?: number;
+  comment_count?: number;
+  created_at?: number;
+};
+
+export type ProducerEventAnalytics = {
+  event_id: number;
+  rsvp_count?: number;
+  view_count?: number;
+  save_count?: number;
+  [key: string]: unknown;
+};
+
+export type ProducerAudienceAnalytics = {
+  producer_id?: number;
+  follower_count?: number;
+  total_events?: number;
+  total_going?: number;
+  total_views?: number;
+  cities?: Array<{ city: string; count: number }>;
+  [key: string]: unknown;
+};
+
+export type ProducerRsvpEntry = {
+  id: number;
+  user_id?: number;
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  rsvped_at?: number;
+  [key: string]: unknown;
+};
+
+/**
+ * Gate check: look up the current user's producer profile via JWT.
+ * Returns { profile: ProducerProfile } if found (any status), { profile: null } if not.
+ * Uses /api/producer/profile → ep_get_my_producer_profile_dev.
+ */
+export async function fetchMyProducerProfile() {
+  return apiJson<{ profile: ProducerProfile | null }>(`/api/producer/profile`);
+}
+
+export async function fetchMyEvents(page = 1, perPage = 20) {
+  return apiJson<{ success: boolean; events: ProducerEvent[]; total: number }>(
+    `/api/producer/events?page=${page}&per_page=${perPage}`
+  );
+}
+
+export async function fetchMyPosts(page = 1, perPage = 20) {
+  return apiJson<{ success: boolean; posts: ProducerPost[]; total: number }>(
+    `/api/producer/post?page=${page}&per_page=${perPage}`
+  );
+}
+
+export async function setupProducerProfile(payload: {
+  display_name: string;
+  bio?: string;
+  instagram_handle?: string;
+  event_type_tags?: string[];
+}) {
+  return apiJson<ProducerProfile>("/api/producer/profile", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createProducerEvent(payload: {
+  title: string;
+  category: string;
+  producer_id?: number;
+  description?: string;
+  event_date?: string;
+  start_time?: string;
+  end_time?: string;
+  venue_name?: string;
+  venue_address?: string;
+  city?: string;
+  cover_image_url?: string;
+  ticket_url?: string;
+  ticket_price_min?: number;
+  is_free?: boolean;
+  age_requirement?: string;
+  rsvp_limit?: number;
+  event_id?: number;
+}) {
+  return apiJson<ProducerEvent>("/api/producer/event", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchProducerEventAnalytics(eventId: number) {
+  return apiJson<ProducerEventAnalytics>(
+    `/api/producer/event-analytics?event_id=${eventId}`
+  );
+}
+
+export async function fetchProducerAudienceAnalytics() {
+  return apiJson<ProducerAudienceAnalytics>("/api/producer/audience-analytics");
+}
+
+export async function fetchProducerRsvpList(eventId: number) {
+  return apiJson<ProducerRsvpEntry[] | { rsvps?: ProducerRsvpEntry[] }>(
+    `/api/producer/rsvp-list?event_id=${eventId}`
+  );
+}
+
+export async function createProducerPost(payload: {
+  post_text: string;
+  image_url?: string;
+}) {
+  return apiJson<ProducerPost>("/api/producer/post", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
