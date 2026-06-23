@@ -1372,6 +1372,94 @@ export async function fetchStripeSessionLineItems(sessionId: string) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Influencer                                                         */
+/* ------------------------------------------------------------------ */
+
+export interface MyInfluencerProfile {
+  id?: number;
+  user_id?: number;
+  handle?: string;
+  display_name?: string;
+  bio?: string;
+  profile_image_url?: string | null;
+  instagram_handle?: string;
+  tiktok_handle?: string;
+  youtube_handle?: string;
+  content_niche?: string;
+  content_categories?: Record<string, unknown>;
+  primary_platform?: string;
+  total_followers?: number;
+  tier?: string;
+  plan_tier?: string;
+  is_verified?: boolean;
+  verified_at?: number;
+  total_redemptions?: number;
+  total_earnings?: number;
+  total_venues_partnered?: number;
+  referral_count?: number;
+  vibes_score?: number;
+}
+
+export interface InfluencerOffer {
+  id: number;
+  offer_type: string;
+  offer_title: string;
+  offer_description?: string;
+  promo_code?: string;
+  unique_code?: string;
+  discount_value?: number | string;
+  discount_type?: string;
+  max_redemptions?: number;
+  redemption_count?: number;
+  redemptions_used?: number;
+  status: string;
+  expires_at?: string | number;
+  venue_id?: number;
+  total_clicks?: number;
+}
+
+export interface InfluencerDashboardData {
+  active_codes_count?: number;
+  total_redemptions?: number;
+  total_commission_earned?: number;
+  referral_signups?: number;
+  pending_commission?: number;
+  paid_commission?: number;
+  offers?: InfluencerOffer[];
+  landing_url?: string;
+  referral_url?: string;
+}
+
+export async function fetchMyInfluencerProfile() {
+  return apiJson<MyInfluencerProfile>("/api/genie/influencer-profile");
+}
+
+export async function createInfluencerProfile(payload: {
+  display_name: string;
+  bio?: string;
+  instagram_handle?: string;
+  tiktok_handle?: string;
+  content_niche?: string;
+}) {
+  return apiJson<MyInfluencerProfile>("/api/genie/create-influencer-profile", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchInfluencerDashboard() {
+  return apiJson<InfluencerDashboardData>("/api/genie/influencer-dashboard");
+}
+
+export async function fetchInfluencerOffers(handle: string) {
+  const params = new URLSearchParams({ handle });
+  return apiJson<{ offers?: InfluencerOffer[]; success?: boolean }>(
+    `/api/genie/influencer-offers?${params.toString()}`,
+    { auth: false }
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Producer                                                           */
 /* ------------------------------------------------------------------ */
 
