@@ -97,13 +97,6 @@ export function normalizeHandleMessageResponse(
 ): GenieResponseEnvelope {
   const response = rawResponse.result ?? rawResponse;
 
-  console.log("MAPPER INPUT:", JSON.stringify({
-    response_mode: response.response_mode,
-    reply_mode: response.reply_mode,
-    use_xano: response.use_xano,
-    venues_length: Array.isArray(response.venues) ? response.venues.length : "not array",
-  }));
-
   // ── Query mode ──────────────────────────────────────────────────────────
   const queryMode =
     typeof response.query_mode === "string"

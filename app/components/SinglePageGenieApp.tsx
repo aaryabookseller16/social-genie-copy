@@ -884,7 +884,8 @@ const [trialSuccess, setTrialSuccess] = useState(false);
 
   const handleQuery = async (
     query: string,
-    source: "typed" | "chip" | "voice"
+    source: "typed" | "chip" | "voice",
+    overrideCoords?: { latitude: number; longitude: number } | null
   ) => {
     const trimmed = query.trim();
     if (!trimmed) {
@@ -933,6 +934,7 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     // so we never block the query). Skip entirely when an explicit/session city
     // already determined where to search.
     const resolvedCoords = await (async () => {
+      if (overrideCoords) return overrideCoords;
       if (!shouldFetchCoords) return null;
       if (userCoords) return userCoords;
       if (typeof window === "undefined" || !("geolocation" in navigator)) {
@@ -966,14 +968,6 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     })();
 
     try {
-      console.log("Genie call payload:", {
-        externalUserId: readExternalUserId(),
-        sessionId: readSessionId(),
-        sessionToken: readSessionToken(),
-        cityContext: cityForQuery,
-        hasCoords: Boolean(resolvedCoords),
-      });
-
       const nextResponse = await callGenie(trimmed, {
         coords: resolvedCoords
           ? { lat: resolvedCoords.latitude, lng: resolvedCoords.longitude }
@@ -982,12 +976,6 @@ const [trialSuccess, setTrialSuccess] = useState(false);
         cityContext: cityForQuery ?? undefined,
         includeCoords: shouldUseCoords,
       });
-      console.log("RAW nextResponse:", JSON.stringify({
-  response_mode: nextResponse.response_mode,
-  decisive_count: nextResponse.decisive.length,
-  more_nearby_count: nextResponse.more_nearby.length,
-  query_mode: nextResponse.query_mode,
-}));
       setResponse(nextResponse);
       setQueryMode(
         nextResponse.query_mode === "event" || nextResponse.query_mode === "both"
@@ -998,7 +986,8 @@ const [trialSuccess, setTrialSuccess] = useState(false);
       // stays anchored to it.
       const resolvedSessionCity =
         explicitCity ??
-        (typeof nextResponse.city_context === "string" &&
+        (!isNearMe &&
+        typeof nextResponse.city_context === "string" &&
         nextResponse.city_context.trim().length > 0
           ? nextResponse.city_context
           : null);
@@ -2014,7 +2003,6 @@ const [trialSuccess, setTrialSuccess] = useState(false);
 
   const currentResponseMode = response?.response_mode;
   const showResultSections = currentResponseMode === "structured_results";
-  console.log("RENDER:", { currentResponseMode, showResultSections, activeScreen });
   const nonStructuredResponse =
     response && response.response_mode !== "structured_results"
       ? response
@@ -2519,8 +2507,26 @@ activeScreen === "vibbee-trial" ||
 
               setPendingTranscript(false);
               setInputValue(prompt);
-              maybeAskLocationForIntent(prompt, "chip");
-              void handleQuery(prompt, "chip");
+              const isNearMeChip = /near me/i.test(prompt);
+              if (isNearMeChip && "geolocation" in navigator) {
+                navigator.geolocation.getCurrentPosition(
+                  (pos) => {
+                    const coords = {
+                      latitude: pos.coords.latitude,
+                      longitude: pos.coords.longitude,
+                    };
+                    setUserCoords(coords);
+                    setLocationGranted(true);
+                    void handleQuery(prompt, "chip", coords);
+                  },
+                  () => {
+                    void handleQuery(prompt, "chip");
+                  },
+                  { enableHighAccuracy: true, timeout: 8000, maximumAge: 60_000 }
+                );
+              } else {
+                void handleQuery(prompt, "chip");
+              }
             }}
             onOrbTap={startListening}
             onSubmit={() => {
