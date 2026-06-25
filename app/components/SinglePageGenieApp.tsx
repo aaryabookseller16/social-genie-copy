@@ -968,6 +968,13 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     })();
 
     try {
+      console.log("NEAR ME DEBUG:", {
+        hasCoords: Boolean(resolvedCoords),
+        lat: resolvedCoords?.latitude,
+        lng: resolvedCoords?.longitude,
+        cityContext: cityForQuery,
+        isNearMe,
+      });
       const nextResponse = await callGenie(trimmed, {
         coords: resolvedCoords
           ? { lat: resolvedCoords.latitude, lng: resolvedCoords.longitude }
