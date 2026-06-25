@@ -107,6 +107,7 @@ export type RawHandleMessageResponse = {
   use_xano?: boolean;
   needs_location?: boolean;
   reply_mode?: string;
+  response_mode?: string;
   mode?: string;
   top_venues?: RawGenieVenue[];
   more_venues?: RawGenieVenue[];

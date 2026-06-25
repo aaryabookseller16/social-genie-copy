@@ -1,21 +1,17 @@
 "use client";
  
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
  
-const MATCH_DATE = new Date("2026-06-14T21:00:00Z");
+const MATCH_DATE = new Date("2026-06-14T19:00:00Z"); // 2pm CT = 7pm UTC
  
 function useCountdown() {
-  const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
- 
+  const [t, setT] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
   useEffect(() => {
     const tick = () => {
       const diff = MATCH_DATE.getTime() - Date.now();
-      if (diff <= 0) {
-        setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 });
-        return;
-      }
-      setTimeLeft({
+      if (diff <= 0) { setT({ days: 0, hours: 0, minutes: 0, seconds: 0 }); return; }
+      setT({
         days: Math.floor(diff / 86400000),
         hours: Math.floor((diff % 86400000) / 3600000),
         minutes: Math.floor((diff % 3600000) / 60000),
@@ -26,9 +22,19 @@ function useCountdown() {
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, []);
- 
-  return timeLeft;
+  return t;
 }
+ 
+const MATCHES = [
+  { day: "14", month: "Jun", teams: "Germany vs Cura\u00e7ao", venue: "NRG Stadium · 2:00 PM", badge: "First", key: "jun14" },
+  { day: "18", month: "Jun", teams: "Group Stage Match", venue: "NRG Stadium", badge: null, key: "jun18" },
+  { day: "22", month: "Jun", teams: "Group Stage Match", venue: "NRG Stadium", badge: null, key: "jun22" },
+  { day: "26", month: "Jun", teams: "Group Stage Match", venue: "NRG Stadium", badge: null, key: "jun26" },
+  { day: "30", month: "Jun", teams: "Round of 32", venue: "NRG Stadium", badge: null, key: "jun30" },
+  { day: "4",  month: "Jul", teams: "Round of 16", venue: "NRG Stadium", badge: null, key: "jul4" },
+  { day: "TBD", month: "Jul", teams: "Knockout Round", venue: "NRG Stadium", badge: null, key: "tbd" },
+];
+ 
  
 export default function WorldCupPage() {
   const { days, hours, minutes, seconds } = useCountdown();
@@ -37,242 +43,289 @@ export default function WorldCupPage() {
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [genieBase, setGenieBase] = useState("https://genie.socialbevy.com");
+
+useEffect(() => {
+  if (window.location.hostname === "localhost") {
+    setGenieBase("http://localhost:3000");
+  }
+}, []);
+ 
+// Pre-filled Genie query URLs — land user directly in results
+const GENIE_LINKS = useMemo(() => ({
+  watchParties: `${genieBase}/?q=world+cup+watch+party+houston`,
+  beforeMatch: `${genieBase}/?q=restaurants+near+NRG+Stadium+houston`,
+  afterMatch: `${genieBase}/?q=late+night+bars+houston+after+match`,
+  explore: `${genieBase}/?q=best+neighborhoods+houston+nightlife`,
+  eado: `${genieBase}/?q=bars+and+restaurants+EaDo+houston`,
+  midtown: `${genieBase}/?q=nightlife+midtown+houston`,
+  downtown: `${genieBase}/?q=dining+downtown+houston+stadium`,
+  montrose: `${genieBase}/?q=bars+food+montrose+houston`,
+}), [genieBase]);
+
+const HOODS = [
+  { name: "EaDo", sub: "Fan Festival HQ", tags: ["Fan Fest", "Bars"], link: GENIE_LINKS.eado },
+  { name: "Midtown", sub: "Nightlife central", tags: ["Nightlife", "Late Night"], link: GENIE_LINKS.midtown },
+  { name: "Downtown", sub: "Stadium district", tags: ["Hotels", "Dining"], link: GENIE_LINKS.downtown },
+  { name: "Montrose", sub: "Bars & culture", tags: ["Vibes", "Food"], link: GENIE_LINKS.montrose },
+];
+
+const planMatchLink = (date: string) => 
+  `${genieBase}/?q=watch+party+houston+${date.replace(/\s/g, "+")}`;
  
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim() || !email.includes("@")) {
-      setError("Enter a valid email.");
-      return;
-    }
+    if (!email.trim() || !email.includes("@")) { setError("Enter a valid email."); return; }
     setSubmitting(true);
     setError(null);
     try {
       const res = await fetch("/api/worldcup/capture", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: email.trim(),
-          first_name: firstName.trim(),
-          city: "Houston",
-          acquisition_source: "worldcup_houston",
-        }),
+        body: JSON.stringify({ email: email.trim(), first_name: firstName.trim(), city: "Houston", acquisition_source: "worldcup_houston" }),
       });
       const data = await res.json() as { success: boolean; error?: string };
-      if (data.success) {
-        setSubmitted(true);
-      } else {
-        setError(data.error ?? "Something went wrong.");
-      }
-    } catch {
-      setError("Something went wrong. Try again.");
-    } finally {
-      setSubmitting(false);
-    }
+      if (data.success) { setSubmitted(true); }
+      else { setError(data.error ?? "Something went wrong."); }
+    } catch { setError("Something went wrong. Try again."); }
+    finally { setSubmitting(false); }
   };
  
   const handleShare = async () => {
+    const url = "https://genie.socialbevy.com/worldcup";
     if (navigator.share) {
-      await navigator.share({
-        title: "Genie x FIFA World Cup 2026 — Houston",
-        text: "Find your perfect World Cup watch party in Houston with Genie 🏆⚽",
-        url: "https://genie.socialbevy.com/worldcup",
-      });
+      await navigator.share({ title: "Genie × FIFA World Cup 2026 — Houston", text: "Find your perfect World Cup spot in Houston ⚽🏆", url });
     } else {
-      await navigator.clipboard.writeText("https://genie.socialbevy.com/worldcup");
-      alert("Link copied!");
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
   };
  
-  const WATCH_PARTY_URL = "https://genie.socialbevy.com/?q=world+cup+watch+party+houston";
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText("https://genie.socialbevy.com/worldcup");
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
  
   return (
-    <main className="relative min-h-dvh overflow-x-hidden bg-[#0a0f1e] text-white">
+    <main style={{ minHeight: "100dvh", background: "#060606", color: "#fff", fontFamily: "-apple-system, 'Helvetica Neue', sans-serif", maxWidth: 480, margin: "0 auto" }}>
  
-      {/* Background */}
-      <div className="pointer-events-none fixed inset-0 z-0">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_#1a3a8f22_0%,_transparent_60%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,_#c9a52222_0%,_transparent_60%)]" />
+      {/* Status bar */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 18px 4px", background: "#060606" }}>
+        <span style={{ fontSize: 11, fontWeight: 500 }}>9:41</span>
+        <div style={{ display: "flex", gap: 4, fontSize: 10 }}>
+          <span>●●●</span><span>WiFi</span><span>100%</span>
+        </div>
       </div>
  
-      <div className="relative z-10 mx-auto max-w-md px-4 pb-16 pt-8">
- 
-        {/* Logo + brand */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Image src="/favicon-bevy.png" alt="Social Bevy" width={32} height={32} className="rounded-full" />
-            <span className="text-[0.78rem] font-semibold uppercase tracking-[0.18em] text-white/60">
-              Social Bevy × Genie
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => void handleShare()}
-            className="flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[0.72rem] font-semibold text-white/80 transition hover:bg-white/15"
-          >
-            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-              <polyline points="16 6 12 2 8 6" />
-              <line x1="12" y1="2" x2="12" y2="15" />
-            </svg>
-            Share
-          </button>
+      {/* Brand bar */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Image src="/favicon-bevy.png" alt="Social Bevy" width={20} height={20} style={{ borderRadius: "50%" }} />
+          <span style={{ fontSize: 11, fontWeight: 500, color: "#858585", letterSpacing: "0.04em", textTransform: "uppercase" }}>Social Bevy × Genie</span>
         </div>
+      </div>
  
-        {/* Hero */}
-        <div className="relative mt-6 flex flex-col items-center text-center">
-          <div className="relative h-[320px] w-[260px]">
-            <Image
-              src="/Houston_Genie_Image.png"
-              alt="Houston World Cup Genie"
-              fill
-              className="object-contain"
-              priority
-            />
+      {/* Hero */}
+      <div style={{ position: "relative", height: 180, background: "linear-gradient(170deg,#1a0000 0%,#060606 100%)", overflow: "hidden", margin: "0 0 0 0" }}>
+        <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse at 60% 40%,rgba(226,30,34,0.2) 0%,transparent 70%)" }} />
+        <div style={{ position: "absolute", left: 16, bottom: 16 }}>
+          <div style={{ fontSize: 10, fontWeight: 500, color: "#E21E22", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>FIFA World Cup 2026</div>
+          <div style={{ fontSize: 26, fontWeight: 500, color: "#fff", lineHeight: 1.1 }}>
+            Houston <span style={{ color: "#E21E22" }}>is Ready.</span>
           </div>
-          <div className="-mt-4 space-y-1">
-            <p className="text-[0.72rem] font-bold uppercase tracking-[0.3em] text-[#c9a522]">
-              FIFA World Cup 2026
-            </p>
-            <h1 className="text-[2.6rem] font-bold leading-tight text-white">
-              Houston<br />is Ready.
-            </h1>
-            <p className="mt-2 text-[0.88rem] leading-relaxed text-white/65">
-              Germany vs Cura&ccedil;ao &middot; June 14, 2026<br />
-              NRG Stadium &middot; Houston, Texas
-            </p>
-          </div>
+          <div style={{ fontSize: 10, color: "#858585", marginTop: 4 }}>Germany vs Cura&ccedil;ao &middot; June 14 &middot; NRG Stadium</div>
         </div>
- 
-        {/* Countdown */}
-        <div className="mt-8 rounded-[24px] border border-[#c9a522]/30 bg-[#c9a522]/10 p-5">
-          <p className="mb-4 text-center text-[0.7rem] font-bold uppercase tracking-[0.25em] text-[#c9a522]">
-            Kickoff Countdown
-          </p>
-          <div className="grid grid-cols-4 gap-2">
-            {[
-              { value: days, label: "Days" },
-              { value: hours, label: "Hours" },
-              { value: minutes, label: "Min" },
-              { value: seconds, label: "Sec" },
-            ].map(({ value, label }) => (
-              <div key={label} className="flex flex-col items-center rounded-[16px] border border-white/10 bg-white/5 py-3">
-                <span className="text-[2.2rem] font-bold leading-none text-white tabular-nums">
-                  {String(value).padStart(2, "0")}
-                </span>
-                <span className="mt-1 text-[0.62rem] font-semibold uppercase tracking-[0.15em] text-white/45">
-                  {label}
-                </span>
-              </div>
-            ))}
-          </div>
+        <div style={{ position: "absolute", right: 16, top: "50%", transform: "translateY(-50%)", opacity: 0.06, fontSize: 80 }}>⚽</div>
+        {/* Houston Genie image */}
+        <div style={{ position: "absolute", right: 0, bottom: 0, height: 170, width: 120 }}>
+          <Image src="/genie-pic2.png" alt="Houston Genie" fill style={{ objectFit: "contain", objectPosition: "bottom right" }} />
         </div>
+      </div>
  
-        {/* Find Watch Party CTA */}
-        <div className="mt-6">
-          <a
-            href={WATCH_PARTY_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex w-full items-center justify-center gap-2 rounded-[18px] bg-[#1a3a8f] py-4 text-[1rem] font-bold text-white transition hover:opacity-90"
-          >
-            <span>⚽</span>
-            Find a Watch Party
-            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M5 12h14M12 5l7 7-7 7" />
-            </svg>
-          </a>
-          <p className="mt-2 text-center text-[0.72rem] text-white/40">
-            Powered by Genie &mdash; your AI social concierge
-          </p>
-        </div>
- 
-        {/* Divider */}
-        <div className="mt-8 flex items-center gap-3">
-          <div className="h-px flex-1 bg-white/10" />
-          <span className="text-[0.7rem] font-semibold uppercase tracking-[0.2em] text-white/35">
-            Stay in the loop
-          </span>
-          <div className="h-px flex-1 bg-white/10" />
+      {/* Countdown */}
+      <div style={{ padding: "14px 16px 0" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6, marginBottom: 14 }}>
+          {[
+            { val: days, label: "Days" },
+            { val: hours, label: "Hours" },
+            { val: minutes, label: "Min" },
+            { val: seconds, label: "Sec" },
+          ].map(({ val, label }) => (
+            <div key={label} style={{ background: "#111", borderRadius: 8, padding: "8px 4px", textAlign: "center" }}>
+              <div style={{ fontSize: 22, fontWeight: 500, color: "#fff", lineHeight: 1 }}>{String(val).padStart(2, "0")}</div>
+              <div style={{ fontSize: 9, color: "#858585", marginTop: 2, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
+            </div>
+          ))}
         </div>
  
         {/* Email capture */}
-        <div className="mt-6">
-          {submitted ? (
-            <div className="flex flex-col items-center gap-3 rounded-[20px] border border-[#c9a522]/30 bg-[#c9a522]/10 px-5 py-8 text-center">
-              <span className="text-[2.5rem]">🏆</span>
-              <p className="text-[1.4rem] font-bold text-white">
-                You&apos;re in!
-              </p>
-              <p className="text-[0.85rem] leading-relaxed text-white/65">
-                Genie will find your perfect World Cup spot in Houston. Stay tuned.
-              </p>
-              <a
-                href={WATCH_PARTY_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-2 rounded-full border border-[#c9a522] bg-[#c9a522]/20 px-6 py-2.5 text-[0.85rem] font-bold text-[#c9a522] transition hover:bg-[#c9a522]/30"
-              >
-                Ask Genie Now ⚽
+        {submitted ? (
+          <div style={{ background: "#111", border: "1px solid rgba(226,30,34,0.3)", borderRadius: 12, padding: 14, textAlign: "center", marginBottom: 4 }}>
+            <div style={{ fontSize: 20, marginBottom: 6 }}>🏆</div>
+            <div style={{ fontSize: 13, fontWeight: 500, color: "#fff", marginBottom: 4 }}>You&apos;re in!</div>
+            <div style={{ fontSize: 11, color: "#858585", marginBottom: 10 }}>Genie&apos;s match-day plan is coming your way.</div>
+            <a href={GENIE_LINKS.watchParties} target="_blank" rel="noopener noreferrer"
+              style={{ display: "inline-block", background: "#E21E22", borderRadius: 8, padding: "8px 16px", fontSize: 12, fontWeight: 500, color: "#fff", textDecoration: "none" }}>
+              Ask Genie Now ⚽
+            </a>
+          </div>
+        ) : (
+          <div style={{ background: "#111", border: "1px solid rgba(226,30,34,0.3)", borderRadius: 12, padding: 12, marginBottom: 4 }}>
+            <div style={{ fontSize: 12, fontWeight: 500, color: "#fff", marginBottom: 2 }}>Get Genie&apos;s match-day plan for Houston</div>
+            <div style={{ fontSize: 11, color: "#858585", marginBottom: 10, lineHeight: 1.4 }}>Tell us your vibe — we&apos;ll send you the perfect before, during &amp; after match guide.</div>
+            <form onSubmit={(e) => void handleSubmit(e)}>
+              <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="your@email.com"
+                  style={{ flex: 1, background: "#1a1a1a", border: "0.5px solid #333", borderRadius: 8, padding: "8px 10px", fontSize: 12, color: "#fff", outline: "none" }}
+                />
+                <button type="submit" disabled={submitting}
+                  style={{ background: "#E21E22", border: "none", borderRadius: 8, padding: "8px 12px", fontSize: 12, fontWeight: 500, color: "#fff", cursor: "pointer", whiteSpace: "nowrap", opacity: submitting ? 0.7 : 1 }}>
+                  {submitting ? "..." : "Send My Plan"}
+                </button>
+              </div>
+              {error && <div style={{ fontSize: 10, color: "#ff6b6b", marginBottom: 4 }}>{error}</div>}
+            </form>
+            <div style={{ fontSize: 10, color: "#555", textAlign: "center" }}>No spam. Unsubscribe anytime. Powered by Genie.</div>
+          </div>
+        )}
+      </div>
+ 
+      {/* Ask Genie quick grid */}
+      <div style={{ padding: "14px 16px" }}>
+        <div style={{ fontSize: 10, fontWeight: 500, color: "#E21E22", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 10 }}>Ask Genie</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          {[
+            { icon: "📺", title: "Watch Parties", sub: "Best spots to watch every match", link: GENIE_LINKS.watchParties, primary: true },
+            { icon: "🍽️", title: "Before the Match", sub: "Where to eat near NRG", link: GENIE_LINKS.beforeMatch, primary: false },
+            { icon: "🎵", title: "After the Match", sub: "Nightlife & late-night spots", link: GENIE_LINKS.afterMatch, primary: false },
+            { icon: "📍", title: "Explore Houston", sub: "Neighborhoods & vibes", link: GENIE_LINKS.explore, primary: false },
+          ].map(({ icon, title, sub, link, primary }) => (
+            <a key={title} href={link} target="_blank" rel="noopener noreferrer"
+              style={{
+                background: "#111", borderRadius: 10, padding: 12, cursor: "pointer",
+                border: primary ? "0.5px solid rgba(226,30,34,0.35)" : "0.5px solid #1e1e1e",
+                textDecoration: "none", display: "block", position: "relative"
+              }}>
+              <div style={{ fontSize: 18, marginBottom: 6 }}>{icon}</div>
+              <div style={{ fontSize: 12, fontWeight: 500, color: "#fff", marginBottom: 2 }}>{title}</div>
+              <div style={{ fontSize: 10, color: "#555", lineHeight: 1.3 }}>{sub}</div>
+              <div style={{ position: "absolute", right: 10, top: 10, fontSize: 12, color: "#333" }}>›</div>
+            </a>
+          ))}
+        </div>
+      </div>
+ 
+      <div style={{ height: "0.5px", background: "#1a1a1a", margin: "0 16px" }} />
+ 
+      {/* Match schedule */}
+      <div style={{ padding: "14px 16px" }}>
+        <div style={{ fontSize: 10, fontWeight: 500, color: "#E21E22", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 10 }}>All 7 Houston Matches</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {MATCHES.map((m, i) => (
+            <div key={m.key} style={{ display: "flex", alignItems: "center", gap: 10, background: "#111", borderRadius: 10, padding: "10px 12px" }}>
+              <div style={{ textAlign: "center", minWidth: 36 }}>
+                <div style={{ fontSize: 16, fontWeight: 500, color: i === 0 ? "#E21E22" : "#fff", lineHeight: 1 }}>{m.day}</div>
+                <div style={{ fontSize: 9, color: "#858585", textTransform: "uppercase" }}>{m.month}</div>
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12, fontWeight: 500, color: "#fff" }}>
+                  {m.teams}
+                  {m.badge && <span style={{ fontSize: 9, background: "rgba(226,30,34,0.15)", color: "#E21E22", borderRadius: 4, padding: "1px 5px", marginLeft: 6 }}>{m.badge}</span>}
+                </div>
+                <div style={{ fontSize: 10, color: "#555", marginTop: 1 }}>{m.venue}</div>
+              </div>
+              <a href={planMatchLink(m.month + " " + m.day)} target="_blank" rel="noopener noreferrer"
+                style={{ fontSize: 10, color: "#E21E22", border: "0.5px solid rgba(226,30,34,0.4)", borderRadius: 6, padding: "4px 8px", whiteSpace: "nowrap", textDecoration: "none" }}>
+                Plan It
               </a>
             </div>
-          ) : (
-            <form onSubmit={(e) => void handleSubmit(e)} className="space-y-3">
-              <p className="text-center text-[0.88rem] leading-relaxed text-white/70">
-                Get Genie&apos;s top Houston watch party picks delivered before June 14.
-              </p>
-              <input
-                type="text"
-                value={firstName}
-                onChange={(e) => setFirstName(e.target.value)}
-                placeholder="First Name (optional)"
-                style={{ fontSize: "16px" }}
-                className="w-full rounded-[14px] border border-white/15 bg-white/10 px-4 py-3 text-white placeholder:text-white/35 focus:border-[#c9a522]/60 focus:outline-none"
-              />
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Your email address"
-                style={{ fontSize: "16px" }}
-                className="w-full rounded-[14px] border border-white/15 bg-white/10 px-4 py-3 text-white placeholder:text-white/35 focus:border-[#c9a522]/60 focus:outline-none"
-              />
-              {error ? (
-                <p className="text-center text-[0.78rem] text-red-400">{error}</p>
-              ) : null}
-              <button
-                type="submit"
-                disabled={submitting}
-                className="w-full rounded-[14px] bg-[#c9a522] py-3.5 text-[0.95rem] font-bold text-[#0a0f1e] transition hover:bg-[#d4af37] disabled:opacity-60"
-              >
-                {submitting ? "Saving..." : "Get My Watch Party Picks 🏆"}
-              </button>
-              <p className="text-center text-[0.68rem] text-white/30">
-                No spam. Just Genie&apos;s best picks for the World Cup.
-              </p>
-            </form>
-          )}
+          ))}
         </div>
- 
-        {/* Bottom share */}
-        <div className="mt-8 flex flex-col items-center gap-3">
-          <button
-            type="button"
-            onClick={() => void handleShare()}
-            className="flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-5 py-2.5 text-[0.82rem] font-semibold text-white/75 transition hover:bg-white/15"
-          >
-            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-              <polyline points="16 6 12 2 8 6" />
-              <line x1="12" y1="2" x2="12" y2="15" />
-            </svg>
-            Share with your crew
-          </button>
-          <p className="text-[0.68rem] text-white/30">
-            genie.socialbevy.com/worldcup
-          </p>
-        </div>
- 
       </div>
+ 
+      <div style={{ height: "0.5px", background: "#1a1a1a", margin: "0 16px" }} />
+ 
+      {/* Neighborhoods */}
+      <div style={{ padding: "14px 16px" }}>
+        <div style={{ fontSize: 10, fontWeight: 500, color: "#E21E22", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 10 }}>Houston Neighborhoods</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+          {HOODS.map(h => (
+            <a key={h.name} href={h.link} target="_blank" rel="noopener noreferrer"
+              style={{ background: "#111", borderRadius: 10, padding: "10px 12px", cursor: "pointer", textDecoration: "none", display: "block" }}>
+              <div style={{ fontSize: 12, fontWeight: 500, color: "#fff", marginBottom: 2 }}>{h.name}</div>
+              <div style={{ fontSize: 10, color: "#858585", marginTop: 1 }}>{h.sub}</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginTop: 4 }}>
+                {h.tags.map(tag => (
+                  <span key={tag} style={{ fontSize: 9, color: "#858585", background: "#1a1a1a", borderRadius: 4, padding: "2px 6px" }}>{tag}</span>
+                ))}
+              </div>
+            </a>
+          ))}
+        </div>
+      </div>
+ 
+      <div style={{ height: "0.5px", background: "#1a1a1a", margin: "0 16px" }} />
+ 
+      {/* Stats bar */}
+      <div style={{ padding: "12px 16px" }}>
+        <div style={{ display: "flex", justifyContent: "space-around", background: "#111", borderRadius: 10, padding: 10 }}>
+          {[
+            { num: "660+", label: "Houston venues" },
+            { num: "7", label: "Match days" },
+            { num: "AI", label: "Powered by Genie" },
+          ].map(({ num, label }) => (
+            <div key={label} style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 15, fontWeight: 500, color: "#fff" }}>{num}</div>
+              <div style={{ fontSize: 9, color: "#555", marginTop: 1 }}>{label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+ 
+      {/* Share section */}
+      <div style={{ padding: "14px 16px 32px" }}>
+        <div style={{ background: "#111", borderRadius: 12, padding: 14, textAlign: "center" }}>
+          <div style={{ fontSize: 13, fontWeight: 500, color: "#fff", marginBottom: 4 }}>Send this to your crew before you land</div>
+          <div style={{ fontSize: 11, color: "#555", marginBottom: 10 }}>Share Houston&apos;s social guide for the World Cup</div>
+          <div style={{ background: "#1a1a1a", borderRadius: 8, padding: "8px 12px", fontSize: 11, color: "#858585", marginBottom: 10, letterSpacing: "0.01em" }}>
+            genie.socialbevy.com/worldcup
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+            <button onClick={() => void handleCopy()}
+              style={{ background: "#1a1a1a", border: "0.5px solid #333", borderRadius: 8, padding: 8, fontSize: 11, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              📋 {copied ? "Copied!" : "Copy Link"}
+            </button>
+            <button onClick={() => void handleShare()}
+              style={{ background: "#E21E22", border: "none", borderRadius: 8, padding: 8, fontSize: 11, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              ↑ Share
+            </button>
+          </div>
+        </div>
+      </div>
+ 
+      {/* Bottom nav */}
+      <div style={{ position: "sticky", bottom: 0, display: "flex", justifyContent: "space-around", padding: "10px 0 20px", background: "#0d0d0d", borderTop: "0.5px solid #1a1a1a" }}>
+        {[
+          { icon: "🌍", label: "World Cup", active: true, href: "/worldcup" },
+          { icon: "💬", label: "Ask Genie", active: false, href: GENIE_LINKS.watchParties },
+          { icon: "🗺️", label: "Map", active: false, href: GENIE_LINKS.explore },
+          { icon: "👤", label: "Profile", active: false, href: "https://genie.socialbevy.com" },
+        ].map(({ icon, label, active, href }) => (
+          <a key={label} href={href} target={active ? "_self" : "_blank"} rel="noopener noreferrer"
+            style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, cursor: "pointer", textDecoration: "none" }}>
+            <span style={{ fontSize: 18 }}>{icon}</span>
+            <span style={{ fontSize: 9, color: active ? "#E21E22" : "#555" }}>{label}</span>
+          </a>
+        ))}
+      </div>
+ 
     </main>
   );
 }
