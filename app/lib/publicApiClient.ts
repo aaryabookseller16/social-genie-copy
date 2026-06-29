@@ -1626,3 +1626,219 @@ export async function createProducerPost(payload: {
     body: JSON.stringify(payload),
   });
 }
+
+/* ------------------------------------------------------------------ */
+/*  Homescreen Feed                                                     */
+/* ------------------------------------------------------------------ */
+
+export type UpcomingEvent = {
+  id: number;
+  title: string;
+  cover_image_url?: string;
+  event_date?: string;
+  start_time?: string;
+  end_time?: string;
+  venue_name?: string;
+  venue_address?: string;
+  neighborhood?: string;
+  city?: string;
+  description?: string;
+  category?: string;
+  event_category?: string;
+  going_count?: number;
+  rsvp_count?: number;
+  is_free?: boolean;
+  is_sold_out?: boolean;
+  ticket_url?: string;
+  ticket_price_min?: number;
+  ticket_price_max?: number;
+  age_requirement?: number;
+  public_slug?: string;
+  status?: string;
+  is_on_fire?: boolean;
+  [key: string]: unknown;
+};
+
+export type TrendingVenue = {
+  id: number | string;
+  venue_name: string;
+  image_primary_url?: string;
+  image_fallback_url?: string;
+  cover_image_url?: string;
+  image_url?: string;
+  neighborhood?: string;
+  area_neighborhood?: string;
+  neighborhood_text?: string;
+  energy_level?: string;
+  going_count?: number;
+  is_on_fire?: boolean;
+  address?: string;
+  [key: string]: unknown;
+};
+
+export type HomescreenApiResponse = {
+  success: boolean;
+  city_id: number;
+  city_name: string;
+  weather?: Record<string, unknown>;
+  trending_venues?: TrendingVenue[];
+  upcoming_events?: UpcomingEvent[];
+  active_placements?: Record<string, unknown>[];
+  top_neighborhoods?: Record<string, unknown>[];
+  generated_at?: string;
+};
+
+export type HomescreenStory = {
+  id: number;
+  name: string;
+  image_url: string;
+};
+
+export type HomescreenFeatured = {
+  id: number;
+  type: "event" | "venue";
+  title: string;
+  image_url: string;
+};
+
+export type EventFeedItem = {
+  feed_type: "event";
+  id: number;
+  title: string;
+  venue_name?: string;
+  start_time?: string;
+  event_date?: string;
+  cover_image_url?: string;
+  going_count?: number;
+  people_you_know?: number;
+  is_on_fire?: boolean;
+  badge?: string;
+  producer?: { name: string; image_url?: string; event_count?: number };
+  reason?: string;
+  raw: UpcomingEvent;
+};
+
+export type SocialEnergyAlertItem = {
+  feed_type: "social_energy_alert";
+  id: number;
+  message: string;
+};
+
+export type SocialPostItem = {
+  feed_type: "social_post";
+  id: number;
+  author_name: string;
+  author_image_url?: string;
+  time_ago: string;
+  body: string;
+  image_url?: string;
+  comment_count?: number;
+  notification_count?: number;
+};
+
+export type OnFireVenueItem = {
+  feed_type: "on_fire_venue";
+  id: number;
+  venue_name: string;
+  venue_address?: string;
+  neighborhood?: string;
+  category?: string;
+  description?: string;
+  going_count?: number;
+};
+
+export type SuggestedProducerItem = {
+  feed_type: "suggested_producer";
+  id: number;
+  name: string;
+  image_url?: string;
+  event_count?: number;
+  producer_id?: number;
+};
+
+export type FeedItem =
+  | EventFeedItem
+  | SocialEnergyAlertItem
+  | SocialPostItem
+  | OnFireVenueItem
+  | SuggestedProducerItem;
+
+export type HomescreenData = {
+  stories: HomescreenStory[];
+  featured: HomescreenFeatured[];
+  feed: FeedItem[];
+  raw?: HomescreenApiResponse;
+};
+
+export async function fetchHomescreen(options: {
+  cityId?: number;
+  cityName?: string;
+  userId?: number;
+  lat?: number;
+  lng?: number;
+  page?: number;
+} = {}): Promise<HomescreenApiResponse> {
+  const { cityId = 1, cityName = "Houston", userId, lat, lng, page = 1 } = options;
+  const params = new URLSearchParams();
+  params.set("city_id", String(cityId));
+  params.set("city_name", cityName);
+  params.set("page", String(page));
+  if (userId) params.set("user_id", String(userId));
+  if (lat != null) params.set("lat", String(lat));
+  if (lng != null) params.set("lng", String(lng));
+  return apiJson<HomescreenApiResponse>(
+    `/api/genie/homescreen?${params.toString()}`,
+    { auth: false }
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Event Detail                                                        */
+/* ------------------------------------------------------------------ */
+
+export type EventDetailProducer = {
+  name?: string;
+  image_url?: string;
+  event_count?: number;
+};
+
+export type EventDetailMiniEvent = {
+  id: number;
+  title?: string;
+  cover_image_url?: string;
+  category?: string;
+  event_date?: string;
+  [key: string]: unknown;
+};
+
+export type EventDetailResponse = {
+  id: number;
+  title: string;
+  cover_image_url?: string;
+  event_date?: string;
+  start_time?: string;
+  end_time?: string;
+  venue_name?: string;
+  venue_address?: string;
+  description?: string;
+  category?: string;
+  ticket_url?: string;
+  is_free?: boolean;
+  ticket_price_min?: number;
+  public_slug?: string;
+  going_count?: number;
+  is_on_fire?: boolean;
+  producer?: EventDetailProducer;
+  offer_type?: string;
+  offer_title?: string;
+  offer_description?: string;
+  related_events?: EventDetailMiniEvent[];
+  venue_events?: EventDetailMiniEvent[];
+  [key: string]: unknown;
+};
+
+export async function fetchEventDetail(eventId: number): Promise<EventDetailResponse> {
+  return apiJson<EventDetailResponse>(
+    `/api/genie/event-detail?event_id=${eventId}`
+  );
+}

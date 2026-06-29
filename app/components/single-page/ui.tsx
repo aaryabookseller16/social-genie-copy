@@ -7,6 +7,7 @@ import { type GenieVenue } from "@/app/lib/genieClient";
 
 export type FlowAnchor =
   | "home"
+  | "homescreen"
   | "listening"
   | "thinking"
   | "decision"
@@ -212,7 +213,9 @@ export function BottomDock({
     activeId === "membership" ||
     activeId === "contact" ||
     activeId === "vendor";
-  const isHomeActive = !isProfileActive;
+  const isHomeActive =
+    !isProfileActive &&
+    (activeId === "homescreen" || activeId === "home" || !activeId);
 
   return (
     <div className="pointer-events-none fixed bottom-0 left-1/2 z-[80] w-[min(100vw,28rem)] -translate-x-1/2">
