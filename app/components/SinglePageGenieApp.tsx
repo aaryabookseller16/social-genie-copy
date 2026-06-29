@@ -17,6 +17,8 @@ import { RoleSetupSection } from "@/app/components/single-page/RoleSetupSection"
 import { OnboardingCompleteSection } from "@/app/components/single-page/OnboardingCompleteSection";
 import { VerifyEmailGate } from "@/app/components/single-page/VerifyEmailGate";
 import { InfluencerSection } from "@/app/components/single-page/InfluencerSection";
+import { HomescreenSection } from "@/app/components/homescreen/HomescreenSection";
+import { EventDetailSection } from "@/app/components/event-detail/EventDetailSection";
 import {
   BottomDock,
   GenieBubble,
@@ -440,7 +442,7 @@ type SinglePageGenieAppProps = {
 };
 
 export function SinglePageGenieApp({
-  initialScreen = "home",
+  initialScreen = "homescreen",
   initialVenueId = null,
 }: SinglePageGenieAppProps = {}) {
   const config = getRuntimeConfig();
@@ -452,6 +454,7 @@ export function SinglePageGenieApp({
   const moreNearbyImpressionResponseRef =
     useRef<GenieResponseEnvelope | null>(null);
   const screenHistoryRef = useRef<FlowAnchor[]>([]);
+  const pendingReturnRef = useRef<{ screen: FlowAnchor; eventId: number | null; event: Record<string, unknown> } | null>(null);
   const homeRef = useRef<HTMLElement | null>(null);
   const listeningRef = useRef<HTMLElement | null>(null);
   const thinkingRef = useRef<HTMLElement | null>(null);
@@ -644,7 +647,7 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     screenHistoryRef.current = [];
     stopListeningSession();
     setIsDrawerOpen(false);
-    setActiveScreen("home");
+    setActiveScreen("homescreen");
   }, [stopListeningSession]);
 
   const navigateTo = useCallback(
@@ -851,7 +854,7 @@ const [trialSuccess, setTrialSuccess] = useState(false);
       return;
     }
 
-    screenHistoryRef.current = ["home"];
+    screenHistoryRef.current = ["homescreen"];
     setActiveScreen("thinking");
     setLastQuery(trimmed);
     setStatusMessage(null);
@@ -2328,6 +2331,7 @@ case "vibbee-trial":
 
   const shouldShowTopBar =
     activeScreen !== "home" &&
+    activeScreen !== "homescreen" &&
     activeScreen !== "vendor" &&
     activeScreen !== "account" &&
     activeScreen !== "profile" &&
@@ -2360,6 +2364,7 @@ activeScreen !== "vibbee-trial" &&
   // landing screen, so users always have a consistent way to get back home or
   // jump into profile/account.
   const shouldShowFooter =
+    activeScreen === "homescreen" ||
     activeScreen === "decision" ||
     activeScreen === "more" ||
     activeScreen === "detail" ||
@@ -2383,7 +2388,7 @@ activeScreen === "vibbee-trial" ||
     (activeScreen === "thinking" && isAiFallbackLayout);
 
   return (
-    <main className={`relative flex h-dvh flex-col overflow-x-hidden ${activeScreen === "home" || activeScreen === "listening" || activeScreen === "thinking" ? "overflow-y-hidden" : "overflow-y-auto"} bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat px-4 pb-3 pt-3 dark:bg-[url('/bg.png')] dark:bg-cover dark:bg-center sm:px-6 sm:pb-4 sm:pt-5`}>
+    <main className={`relative flex h-dvh flex-col overflow-x-hidden ${activeScreen === "home" || activeScreen === "homescreen" || activeScreen === "listening" || activeScreen === "thinking" ? "overflow-y-hidden" : "overflow-y-auto"} bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat px-4 pb-3 pt-3 dark:bg-[url('/bg.png')] dark:bg-cover dark:bg-center sm:px-6 sm:pb-4 sm:pt-5`}>
       <div className="pointer-events-none fixed inset-0 z-0 hidden bg-black/50 dark:block" />
       <DrawerMenu
         visible={isDrawerOpen}
@@ -2417,7 +2422,7 @@ activeScreen === "vibbee-trial" ||
         }}
       />
 
-      <div className={`relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col gap-3 ${activeScreen === "home" || activeScreen === "listening" || activeScreen === "thinking" ? "min-h-0" : ""}`}>
+      <div className={`relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col gap-3 ${activeScreen === "home" || activeScreen === "homescreen" || activeScreen === "listening" || activeScreen === "thinking" ? "min-h-0" : ""}`}>
         {!locationPromptDismissed && activeScreen === "home" ? (
           <div className="flex items-start gap-3 rounded-[18px] border border-[#E7070380] bg-transparent px-3 py-2.5 shadow-sm dark:border-white/15 dark:bg-black/30">
             <span className="mt-0.5 text-red-500 dark:text-[#ff9d7d]" aria-hidden="true">
@@ -4544,7 +4549,15 @@ navigateTo("event-detail");
             setAccount(nextAccount);
             void hydrateAuthenticatedSession();
             setAccountScreenMode(null);
-            setActiveScreen("account");
+            const pending = pendingReturnRef.current;
+            if (pending) {
+              pendingReturnRef.current = null;
+              setSelectedEventId(pending.eventId);
+              setSelectedEvent(pending.event);
+              navigateTo(pending.screen);
+            } else {
+              setActiveScreen("account");
+            }
           }}
         />
 
@@ -5215,263 +5228,27 @@ navigateTo("event-detail");
             </section>
           );
         })() : null}
-        {/* ── EVENT DETAIL (in-app) ─────────────────────────────────────
-          Renders when a user taps an event from within the app.
-          Uses the public event detail page via iframe embed OR
-          redirects to the standalone page at socialbevy.com/events/{slug}.
-          
-          V1.5 decision: redirect to public page so we don't duplicate
-          the full EventDetailClient logic inside SinglePageGenieApp.
-          The public page handles all CTAs, attribution logging, and
-          related events. Deep-link carries the slug.
-          
-          When Jitendra builds the native event screens this gets
-          replaced with an inline render using the same data shape.
-        ────────────────────────────────────────────────────────────── */}
         {activeScreen === "event-detail" && selectedEvent ? (
-  <section
-    className="-mx-4 -mt-3 pb-[calc(env(safe-area-inset-bottom,0px)+11rem)] sm:-mx-6 sm:-mt-5"
-  >
-    {/* ── Hero image ── */}
-    <div className="relative h-[14rem] w-full overflow-hidden">
-      <Image
-        src={(selectedEvent.cover_image_url as string) || "/sample-venue-1.jpeg"}
-        alt={(selectedEvent.title as string) || "Event"}
-        fill
-        className="object-cover"
-        priority
-        sizes="100vw"
-      />
-      <div className="absolute inset-x-0 top-0 flex items-center justify-between px-4 pt-4">
-        <button
-          type="button"
-          onClick={handleTopBack}
-          className="flex h-8 w-8 items-center justify-center text-red-600 dark:text-white"
-          aria-label="Go back"
-        >
-          <BackIcon size={24} className="h-6 w-6 object-contain" />
-        </button>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              const title = selectedEvent.title as string;
-              const url = selectedEvent.ticket_url as string | undefined;
-              if (navigator.share) {
-                void navigator.share({ title, url: url ?? window.location.href });
-              } else {
-                void navigator.clipboard.writeText(url ?? window.location.href);
-              }
+          <EventDetailSection
+            eventId={selectedEventId}
+            initialData={selectedEvent}
+            onBack={handleTopBack}
+            logInteraction={logEventInteraction}
+            onAuthRequired={() => {
+              pendingReturnRef.current = {
+                screen: "event-detail",
+                eventId: selectedEventId,
+                event: selectedEvent,
+              };
+              navigateTo("account");
             }}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-red-600 shadow-sm dark:border dark:border-white/40 dark:bg-black/30 dark:text-white dark:backdrop-blur-sm"
-            aria-label="Share"
-          >
-            <Image src="/icons/share-red.png" alt="" aria-hidden="true" width={18} height={18} className="h-[18px] w-[18px] object-contain dark:hidden" />
-            <Image src="/icons/shareIcon.png" alt="" aria-hidden="true" width={18} height={18} className="hidden h-[18px] w-[18px] object-contain dark:block" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsDrawerOpen(true)}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-red-600 shadow-sm dark:border dark:border-white/40 dark:bg-black/30 dark:text-white dark:backdrop-blur-sm"
-            aria-label="Menu"
-          >
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M5 7.5h14" /><path d="M5 12h14" /><path d="M5 16.5h14" />
-            </svg>
-          </button>
-        </div>
-      </div>
-      <div className="absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,transparent,rgba(0,0,0,0.85))] px-5 pb-5 pt-16">
-        <h2 className="text-[2.1rem] font-bold leading-tight text-white">
-          {selectedEvent.title as string}
-        </h2>
-      </div>
-    </div>
-
-    <div className="space-y-4 px-5 pb-5 pt-4">
-
-      {/* ── Category + price badges ── */}
-      <div className="flex flex-wrap items-center gap-2">
-        {selectedEvent.category ? (
-          <span className="rounded-full bg-red-600 px-3 py-1 text-[0.72rem] font-semibold text-white dark:bg-white dark:text-gray-900">
-            {selectedEvent.category as string}
-          </span>
+          />
         ) : null}
-        <span className="rounded-full border border-red-300 bg-transparent px-3 py-1 text-[0.72rem] font-medium text-red-500 dark:border-[#E7070380] dark:text-white/85">
-          {selectedEvent.is_free
-            ? "Free Entry"
-            : selectedEvent.ticket_price_min
-              ? `From $${selectedEvent.ticket_price_min as number}`
-              : "See ticket info"}
-        </span>
-      </div>
-
-      {/* ── Date + time ── */}
-      {selectedEvent.event_date ? (
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.82rem] text-gray-700 dark:text-white/80">
-          <span>
-            📅{" "}
-            {new Date(selectedEvent.event_date as string).toLocaleDateString("en-US", {
-              weekday: "long",
-              month: "long",
-              day: "numeric",
-            })}
-            {selectedEvent.start_time
-              ? ` · ${(selectedEvent.start_time as string).slice(0, 5)}`
-              : ""}
-          </span>
-        </div>
-      ) : null}
-
-      {/* ── Genie's Take ── */}
-      {selectedEvent.description ? (
-        <div className="flex items-start gap-3 rounded-[18px] border border-[#E7070380] bg-transparent px-4 py-3 dark:border-[#E7070380] dark:bg-black/25">
-          <div className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center overflow-hidden rounded-full">
-            <Image
-              src="/icons/Social-Genie-Home-Screen.png"
-              alt="Genie"
-              width={32}
-              height={32}
-              className="h-8 w-8 object-cover"
-            />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-red-500 dark:text-[#ff9d7d]">
-              Genie&apos;s Take
-            </p>
-            <p className="mt-1 text-[0.85rem] leading-5 text-gray-700 dark:text-white/80">
-              {selectedEvent.description as string}
-            </p>
-          </div>
-        </div>
-      ) : null}
-
-      {/* ── CTAs: Ride | Tickets | Share ── */}
-      <div className="grid grid-cols-[1fr_1.45fr_1fr] gap-1">
-        {/* Ride */}
-        <button
-          type="button"
-          onClick={() => {
-            const addr = (selectedEvent.venue_address as string) || "Houston, TX";
-            const uberUrl = `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[formatted_address]=${encodeURIComponent(addr)}`;
-            window.open(uberUrl, "_blank", "noopener,noreferrer");
-            logEventInteraction("ride_click", selectedEvent.id as number, "event-detail");
-          }}
-          className="flex items-center justify-center gap-1 rounded-full border border-[#E7070380] bg-transparent px-1.5 py-1.5 text-[0.72rem] font-medium text-red-600 hover:bg-red-50 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
-        >
-          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="10" /><path d="M12 8v4l3 3" />
-          </svg>
-          Ride
-        </button>
-
-        {/* Tickets — primary */}
-        <button
-          type="button"
-          onClick={() => {
-            if (selectedEvent.ticket_url) {
-              window.open(selectedEvent.ticket_url as string, "_blank", "noopener,noreferrer");
-            }
-            logEventInteraction("ticket_click", selectedEvent.id as number, "event-detail");
-          }}
-          className="flex items-center justify-center gap-1 rounded-full border border-red-500 bg-red-600 px-1.5 py-2 text-[0.76rem] font-medium text-white hover:bg-red-700 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
-        >
-          <svg viewBox="0 0 24 24" className="h-[15px] w-[15px] flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z" />
-          </svg>
-          Tickets
-        </button>
-
-        {/* Share */}
-        <button
-          type="button"
-          onClick={() => {
-            const title = selectedEvent.title as string;
-            const url = (selectedEvent.ticket_url as string) ?? window.location.href;
-            if (navigator.share) {
-              void navigator.share({ title, url });
-            } else {
-              void navigator.clipboard.writeText(url);
-            }
-            logEventInteraction("share", selectedEvent.id as number, "event-detail");
-          }}
-          className="flex items-center justify-center gap-1 rounded-full border border-[#E7070380] bg-transparent px-1.5 py-1.5 text-[0.72rem] font-medium text-red-600 hover:bg-red-50 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
-        >
-          <Image src="/icons/share-red.png" alt="" aria-hidden="true" width={14} height={14} className="h-[14px] w-[14px] object-contain dark:hidden" />
-          <Image src="/icons/shareIcon.png" alt="" aria-hidden="true" width={14} height={14} className="hidden h-[14px] w-[14px] object-contain dark:block" />
-          Share
-        </button>
-      </div>
-
-      {/* ── About ── */}
-      {selectedEvent.venue_name ? (
-        <div>
-          <h3 className="text-[1.1rem] font-semibold text-gray-900 dark:text-white">Venue</h3>
-          <p className="mt-1 text-[0.88rem] leading-6 text-gray-600 dark:text-white/75">
-            {selectedEvent.venue_name as string}
-          </p>
-        </div>
-      ) : null}
-
-      {/* ── Google Map ── */}
-      {(() => {
-        const addr = (selectedEvent.venue_address as string) || (selectedEvent.venue_name as string) || "Houston, TX";
-        const embedSrc = `https://www.google.com/maps?q=${encodeURIComponent(addr)}&output=embed`;
-        const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr)}`;
-        return (
-          <div className="relative h-44 w-full overflow-hidden rounded-[18px] border border-[#E7070380] dark:border-[#E7070380]">
-            <iframe
-              title={`Map for ${selectedEvent.title as string}`}
-              src={embedSrc}
-              loading="lazy"
-              referrerPolicy="no-referrer-when-downgrade"
-              className="absolute inset-0 h-full w-full border-0"
-              allowFullScreen
-            />
-            <button
-              type="button"
-              onClick={() => window.open(mapsUrl, "_blank", "noopener,noreferrer")}
-              className="absolute bottom-2 right-2 rounded-full bg-white/95 px-3 py-1 text-[0.72rem] font-semibold text-gray-800 shadow-sm hover:bg-white dark:bg-black/70 dark:text-white"
-            >
-              Open in Maps
-            </button>
-          </div>
-        );
-      })()}
-
-      {/* ── Address ── */}
-      {selectedEvent.venue_address ? (
-        <p className="text-center text-[0.95rem] font-medium text-gray-900 dark:text-white">
-          {selectedEvent.venue_address as string}
-        </p>
-      ) : null}
-
-      {/* ── Tags ── */}
-      <div className="flex flex-wrap gap-2">
-        {[
-          selectedEvent.category,
-          selectedEvent.is_free ? "Free Entry" : null,
-          selectedEvent.ticket_price_min ? `From $${selectedEvent.ticket_price_min}` : null,
-        ]
-          .filter(Boolean)
-          .map((tag) => (
-            <span
-              key={tag as string}
-              className="rounded-full border border-[#E7070380] bg-transparent px-3 py-1 text-[0.78rem] font-medium text-red-600 dark:border-[#E7070380] dark:text-white/85"
-            >
-              {tag as string}
-            </span>
-          ))}
-      </div>
-
-    </div>
-  </section>
-) : null}
 
 {activeScreen === "producer-dashboard" ? (
   <ProducerSection
     account={account}
-    onBack={() => goBack("home")}
+    onBack={() => goBack("homescreen")}
   />
 ) : null}
 
@@ -5479,7 +5256,37 @@ navigateTo("event-detail");
   <InfluencerSection account={account} onNavigate={navigateTo} />
 ) : null}
 
+{activeScreen === "homescreen" ? (
+  <HomescreenSection
+    account={account}
+    navigateTo={navigateTo}
+    userCoords={userCoords}
+    onVenueOpen={(id) => {
+      setSharedVenueLoading(true);
+      setSelectedVenueId(String(id));
+      navigateTo("detail");
+    }}
+    onEventOpen={(evt) => {
+      setSelectedEventId(evt.id);
+      setSelectedEvent(evt as Record<string, unknown>);
+      navigateTo("event-detail");
+    }}
+    onMenuOpen={() => setIsDrawerOpen(true)}
+    onOrbTap={startListening}
+  />
+) : null}
+
 </div>
+
+{shouldShowFooter ? (
+  <BottomDock
+    activeId={activeScreen}
+    onHome={() => navigateTo("homescreen")}
+    onCenter={() => navigateTo("home")}
+    onProfile={() => (account ? navigateTo("dashboard") : navigateTo("account"))}
+  />
+) : null}
+
 </main>
   );
 }
