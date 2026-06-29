@@ -38,6 +38,7 @@ export async function POST(request: NextRequest) {
     if (body.event_date) payload.event_date = String(body.event_date).trim();
     if (body.start_time) payload.start_time = String(body.start_time).trim();
     if (body.end_time) payload.end_time = String(body.end_time).trim();
+    if (body.venue_id) payload.venue_id = Number(body.venue_id);
     if (body.venue_name) payload.venue_name = String(body.venue_name).trim();
     if (body.venue_address) payload.venue_address = String(body.venue_address).trim();
     if (body.city) payload.city = String(body.city).trim();

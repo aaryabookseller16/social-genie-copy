@@ -12,6 +12,7 @@ import {
   fetchProducerAudienceAnalytics,
   fetchProducerEventAnalytics,
   fetchProducerRsvpList,
+  searchVendorBusinesses,
   setupProducerProfile,
   type ProducerAudienceAnalytics,
   type ProducerEvent,
@@ -20,6 +21,7 @@ import {
   type ProducerProfile,
   type ProducerRsvpEntry,
 } from "@/app/lib/publicApiClient";
+import { type GenieVenue } from "@/app/lib/genieTypes";
 import { ActionButton } from "./ui";
 
 /* ------------------------------------------------------------------ */
@@ -367,10 +369,16 @@ export function ProducerSection({
   const [evStartTime, setEvStartTime] = useState("");
   const [evEndTime, setEvEndTime] = useState("");
   const [evVenue, setEvVenue] = useState("");
+  const [evVenueId, setEvVenueId] = useState<number | null>(null);
+  const [evVenueQuery, setEvVenueQuery] = useState("");
+  const [evVenueResults, setEvVenueResults] = useState<GenieVenue[]>([]);
+  const [evVenueSearching, setEvVenueSearching] = useState(false);
+  const [evVenueManual, setEvVenueManual] = useState(false);
   const [evCity, setEvCity] = useState("");
   const [evFree, setEvFree] = useState(false);
   const [evTicketPrice, setEvTicketPrice] = useState("");
   const [evTicketUrl, setEvTicketUrl] = useState("");
+  const [evCoverImageUrl, setEvCoverImageUrl] = useState("");
   const [evRsvpLimit, setEvRsvpLimit] = useState("");
   const [evAgeReq, setEvAgeReq] = useState("");
   const [evBusy, setEvBusy] = useState(false);
@@ -486,10 +494,15 @@ export function ProducerSection({
     setEvStartTime(ev.start_time ?? "");
     setEvEndTime(ev.end_time ?? "");
     setEvVenue(ev.venue_name ?? "");
+    setEvVenueId(null);
+    setEvVenueQuery("");
+    setEvVenueResults([]);
+    setEvVenueManual(!!(ev.venue_name));
     setEvCity(ev.city ?? "");
     setEvFree(ev.is_free ?? false);
     setEvTicketPrice(ev.ticket_price_min !== undefined ? String(ev.ticket_price_min) : "");
     setEvTicketUrl(ev.ticket_url ?? "");
+    setEvCoverImageUrl(ev.cover_image_url ?? "");
     setEvRsvpLimit(ev.rsvp_limit !== undefined ? String(ev.rsvp_limit) : "");
     setEvAgeReq(ev.age_requirement ?? "");
     setEvError(null);
@@ -600,6 +613,19 @@ export function ProducerSection({
     }
   }
 
+  async function handleVenueSearch() {
+    if (!evVenueQuery.trim()) return;
+    setEvVenueSearching(true);
+    try {
+      const results = await searchVendorBusinesses(evVenueQuery.trim(), evCity.trim() || "Houston");
+      setEvVenueResults(results);
+    } catch {
+      setEvVenueResults([]);
+    } finally {
+      setEvVenueSearching(false);
+    }
+  }
+
   async function handleEventSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!evTitle.trim()) { setEvError("Event title is required."); return; }
@@ -615,11 +641,13 @@ export function ProducerSection({
         event_date: evDate || undefined,
         start_time: evStartTime || undefined,
         end_time: evEndTime || undefined,
+        venue_id: evVenueId ?? undefined,
         venue_name: evVenue.trim() || undefined,
         city: evCity.trim() || undefined,
         is_free: evFree,
         ticket_price_min: evTicketPrice ? Number(evTicketPrice) : undefined,
         ticket_url: evTicketUrl.trim() || undefined,
+        cover_image_url: evCoverImageUrl.trim() || undefined,
         rsvp_limit: evRsvpLimit ? Number(evRsvpLimit) : undefined,
         age_requirement: evAgeReq.trim() || undefined,
         event_id: editingEventId.current ?? undefined,
@@ -1176,15 +1204,87 @@ export function ProducerSection({
             />
           </FormField>
 
-          <FormField label="Venue name">
-            <input
-              type="text"
-              value={evVenue}
-              onChange={(e) => setEvVenue(e.target.value)}
-              placeholder="e.g. The Woodlands Pavilion"
-              className={inputClass}
-              style={{ fontSize: "16px" }}
-            />
+          <FormField label="Venue">
+            {evVenueId && !evVenueManual ? (
+              /* Selected venue chip */
+              <div className="flex items-center justify-between rounded-xl border border-red-400/50 bg-red-50/50 px-3 py-2.5 dark:border-red-500/40 dark:bg-red-900/10">
+                <span className="text-[0.9rem] font-medium text-gray-900 dark:text-white">{evVenue}</span>
+                <button
+                  type="button"
+                  onClick={() => { setEvVenue(""); setEvVenueId(null); setEvVenueQuery(""); setEvVenueResults([]); }}
+                  className="ml-2 text-gray-400 hover:text-red-500 dark:text-white/40"
+                >
+                  ✕
+                </button>
+              </div>
+            ) : evVenueManual ? (
+              /* Manual text entry fallback */
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={evVenue}
+                  onChange={(e) => setEvVenue(e.target.value)}
+                  placeholder="e.g. The Woodlands Pavilion"
+                  className={inputClass}
+                  style={{ fontSize: "16px" }}
+                />
+                <button
+                  type="button"
+                  onClick={() => { setEvVenueManual(false); setEvVenue(""); setEvVenueId(null); }}
+                  className="text-[0.78rem] text-red-500 hover:underline"
+                >
+                  ← Search venues instead
+                </button>
+              </div>
+            ) : (
+              /* Venue search */
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={evVenueQuery}
+                    onChange={(e) => setEvVenueQuery(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void handleVenueSearch(); } }}
+                    placeholder="Search venue name..."
+                    className={inputClass}
+                    style={{ fontSize: "16px" }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleVenueSearch()}
+                    disabled={evVenueSearching || !evVenueQuery.trim()}
+                    className="rounded-xl border border-[#E7070380] px-3 py-2 text-[0.8rem] font-medium text-red-600 disabled:opacity-40 dark:text-red-400"
+                  >
+                    {evVenueSearching ? "…" : "Search"}
+                  </button>
+                </div>
+                {evVenueResults.length > 0 && (
+                  <div className="space-y-0.5 rounded-xl border border-gray-200 bg-white p-1 shadow-sm dark:border-white/10 dark:bg-black/40">
+                    {evVenueResults.map((v) => (
+                      <button
+                        key={v.id}
+                        type="button"
+                        onClick={() => { setEvVenue(v.venue_name); setEvVenueId(Number(v.id)); setEvVenueQuery(""); setEvVenueResults([]); }}
+                        className="w-full rounded-lg px-3 py-2.5 text-left transition hover:bg-gray-50 dark:hover:bg-white/5"
+                      >
+                        <p className="text-[0.88rem] font-medium text-gray-900 dark:text-white">{v.venue_name}</p>
+                        {v.address && <p className="text-[0.75rem] text-gray-400 dark:text-white/40">{v.address}</p>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {evVenueResults.length === 0 && evVenueQuery.trim() && !evVenueSearching && (
+                  <p className="text-[0.78rem] text-gray-400 dark:text-white/40">No venues found.</p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setEvVenueManual(true)}
+                  className="text-[0.78rem] text-gray-400 hover:text-red-500 dark:text-white/40"
+                >
+                  + Add venue manually
+                </button>
+              </div>
+            )}
           </FormField>
 
           <FormField label="City">
@@ -1235,6 +1335,25 @@ export function ProducerSection({
               className={inputClass}
               style={{ fontSize: "16px" }}
             />
+          </FormField>
+
+          <FormField label="Cover image URL">
+            <input
+              type="url"
+              value={evCoverImageUrl}
+              onChange={(e) => setEvCoverImageUrl(e.target.value)}
+              placeholder="https://… (image link)"
+              className={inputClass}
+              style={{ fontSize: "16px" }}
+            />
+            {evCoverImageUrl.trim() && (
+              <img
+                src={evCoverImageUrl.trim()}
+                alt="Cover preview"
+                className="mt-2 h-32 w-full rounded-xl object-cover"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+              />
+            )}
           </FormField>
 
           <div className="grid grid-cols-2 gap-3">
