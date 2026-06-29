@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
       );
     }
  
-    const upstreamJson = await xanoFetch<Record<string, unknown>>(
+    const upstreamRaw = await xanoFetch<Record<string, unknown>>(
       "genie/ep_genie_chat_v2_dev",
       {
         method: "POST",
@@ -100,7 +100,11 @@ export async function POST(request: NextRequest) {
         authToken: xanoToken,
       }
     );
- 
+
+    // Xano wraps the payload in { result: {...} } for authenticated requests.
+    const upstreamJson =
+      (upstreamRaw.result as Record<string, unknown>) ?? upstreamRaw;
+
     // ── Normalize venues ──────────────────────────────────────────────────
     // v2 merges primary + more_nearby into a single venues array
     const rawVenues = Array.isArray(upstreamJson.venues)

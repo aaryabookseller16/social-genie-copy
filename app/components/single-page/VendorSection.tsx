@@ -17,15 +17,23 @@ import { type ConsumerAccount, readConsumerAccount, writeConsumerAccount } from 
 import {
   createSubscriptionCheckout,
   createVendorBusiness,
+  createVendorOffer,
+  fetchMyVendorProfile,
   fetchVendorDashboard,
+  fetchVendorInfluencerCodes,
+  fetchVendorNotifPrefs,
   fetchVendorVenue,
   searchVendorBusinesses,
+  toggleVendorOffer,
+  updateVendorNotifPrefs,
   updateVendorProfile,
   updateVendorVenue,
   vendorOnboardingSearch,
   vendorOnboardingContact,
   vendorOnboardingConfirm,
+  type VendorInfluencerCode,
 } from "@/app/lib/publicApiClient";
+import { readExternalUserId } from "@/app/lib/sessionToken";
 import {
   readVendorDraft,
   writeVendorDraft,
@@ -39,6 +47,7 @@ import { ActionButton } from "./ui";
 /* ------------------------------------------------------------------ */
 
 type VendorStep =
+  | "loading"
   | "claim"
   | "finding"
   | "not-found"
@@ -52,7 +61,12 @@ type VendorStep =
   | "manual-profile"
   | "manual-contact"
   | "dashboard"
-  | "profile";
+  | "profile"
+  | "analytics"
+  | "offers"
+  | "boost"
+  | "influencer-codes"
+  | "settings";
 
 type VendorContactState = {
   firstName: string;
@@ -489,18 +503,7 @@ export function VendorSection({
   onRefreshSession?: () => void;
 }) {
   const [initialDraft] = useState(() => readVendorDraft());
-  const [step, setStep] = useState<VendorStep>(() => {
-    // If account already has a vendorId, go straight to dashboard
-    if (account?.vendorId) return "dashboard";
-    // Resume from saved step if vendor_id exists (in-progress onboarding)
-    if (initialDraft.vendorId && initialDraft.currentStep) {
-      const saved = initialDraft.currentStep as VendorStep;
-      if (["contact", "plan", "success", "dashboard", "manual-info", "manual-location", "manual-profile", "manual-contact"].includes(saved)) {
-        return saved;
-      }
-    }
-    return "claim";
-  });
+  const [step, setStep] = useState<VendorStep>("loading");
   const [searchInput, setSearchInput] = useState(
     () => initialDraft.searchText ?? ""
   );
@@ -531,7 +534,7 @@ export function VendorSection({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [vendorId, setVendorId] = useState<number | null>(
-    () => initialDraft.vendorId ?? null
+    () => initialDraft.vendorId ?? readConsumerAccount()?.vendorId ?? null
   );
   const [onboardingId, setOnboardingId] = useState<number | null>(
     () => initialDraft.onboardingId ?? null
@@ -584,7 +587,32 @@ export function VendorSection({
   const [isProfileLoading, setIsProfileLoading] = useState(false);
   const [profileMessage, setProfileMessage] = useState<string | null>(null);
 
+  // Analytics screen
+  const [analyticsPeriod, setAnalyticsPeriod] = useState<"7_days" | "30_days" | "all_time">("30_days");
+
+  // Offers screen
+  const [showCreateOffer, setShowCreateOffer] = useState(false);
+  const [offerForm, setOfferForm] = useState({ title: "", description: "", offer_type: "happy_hour", redeem_instructions: "", vibee_only: true });
+  const [isOfferSaving, setIsOfferSaving] = useState(false);
+  const [offerMessage, setOfferMessage] = useState<string | null>(null);
+
+  // Boost screen
+  const [selectedBoostTier, setSelectedBoostTier] = useState<string | null>(null);
+  const [isBoostLoading, setIsBoostLoading] = useState(false);
+
+  // Influencer codes screen
+  const [influencerCodes, setInfluencerCodes] = useState<VendorInfluencerCode[]>([]);
+  const [influencerLoading, setInfluencerLoading] = useState(false);
+  const [selectedInfluencerCode, setSelectedInfluencerCode] = useState<string | null>(null);
+
+  // Settings screen
+  const [settingsForm, setSettingsForm] = useState({ smsPhone: "", emailNotif: true, pushNotif: true, smsNotif: false });
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+
   const progressStep: Record<VendorStep, number> = {
+    loading: 0,
     claim: 1,
     finding: 1,
     "not-found": 1,
@@ -599,7 +627,58 @@ export function VendorSection({
     success: 4,
     dashboard: 4,
     profile: 4,
+    analytics: 4,
+    offers: 4,
+    boost: 4,
+    "influencer-codes": 4,
+    settings: 4,
   };
+
+  // Gate check — runs once when the section becomes visible.
+  // Mirrors the producer pattern: always ask the server, never rely solely on cache.
+  useEffect(() => {
+    if (!visible) return;
+    if (step !== "loading") return;
+    let cancelled = false;
+
+    fetchMyVendorProfile()
+      .then(({ vendor }) => {
+        if (cancelled) return;
+        if (vendor?.id) {
+          setVendorId(vendor.id);
+          persistVendorIdToAccount(vendor.id);
+          setStep("dashboard");
+        } else {
+          // Fall back to draft for in-progress onboarding
+          const draft = readVendorDraft();
+          if (draft.vendorId && draft.currentStep) {
+            const saved = draft.currentStep as VendorStep;
+            if (["contact", "plan", "success", "dashboard", "manual-info", "manual-location", "manual-profile", "manual-contact"].includes(saved)) {
+              setVendorId(draft.vendorId);
+              setStep(saved);
+              return;
+            }
+          }
+          setStep("claim");
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // Not logged in or network error — check draft then fall to claim
+        const draft = readVendorDraft();
+        if (draft.vendorId && draft.currentStep) {
+          const saved = draft.currentStep as VendorStep;
+          if (["contact", "plan", "success", "dashboard", "manual-info", "manual-location", "manual-profile", "manual-contact"].includes(saved)) {
+            setVendorId(draft.vendorId);
+            setStep(saved);
+            return;
+          }
+        }
+        setStep("claim");
+      });
+
+    return () => { cancelled = true; };
+  }, [visible, step]);
 
   useEffect(() => {
     if (!account) {
@@ -670,15 +749,45 @@ export function VendorSection({
     };
   }, [visible, step, account, vendorId]);
 
+  // Influencer codes loader
   useEffect(() => {
-    if (!visible) return;
-    const vid = account?.vendorId || initialDraft.vendorId;
+    if (!visible || step !== "influencer-codes") return;
+    const vid = vendorId ?? account?.vendorId;
     if (!vid) return;
-    if (step === "claim") {
-      setVendorId(vid);
-      setStep("dashboard");
-    }
-  }, [visible, account, step, initialDraft.vendorId]);
+    let cancelled = false;
+    setInfluencerLoading(true);
+    fetchVendorInfluencerCodes(vid)
+      .then((res) => {
+        if (!cancelled) setInfluencerCodes(res?.codes ?? []);
+      })
+      .catch(() => {
+        // Gracefully fall back to empty — endpoint may not exist yet
+        if (!cancelled) setInfluencerCodes([]);
+      })
+      .finally(() => { if (!cancelled) setInfluencerLoading(false); });
+    return () => { cancelled = true; };
+  }, [visible, step, vendorId, account]);
+
+  // Settings — pre-load notification preferences
+  useEffect(() => {
+    if (!visible || step !== "settings" || settingsLoaded) return;
+    const extId = readExternalUserId();
+    if (!extId) return;
+    let cancelled = false;
+    fetchVendorNotifPrefs(extId)
+      .then((prefs) => {
+        if (cancelled) return;
+        setSettingsForm({
+          smsPhone: prefs.sms_phone ?? "",
+          emailNotif: prefs.email_notifications ?? true,
+          pushNotif: prefs.push_notifications ?? true,
+          smsNotif: prefs.sms_notifications ?? false,
+        });
+        setSettingsLoaded(true);
+      })
+      .catch(() => { /* keep defaults */ });
+    return () => { cancelled = true; };
+  }, [visible, step, account, settingsLoaded]);
 
   const loadDashboard = useCallback(async () => {
     const vid = vendorId ?? account?.vendorId;
@@ -858,6 +967,11 @@ export function VendorSection({
         onContinueHome();
         break;
       case "profile":
+      case "analytics":
+      case "offers":
+      case "boost":
+      case "influencer-codes":
+      case "settings":
         setStep("dashboard");
         break;
       case "finding":
@@ -1151,6 +1265,7 @@ export function VendorSection({
   };
 
   const stepTitle: Record<VendorStep, string> = {
+    loading: "",
     claim:
       searchInput.trim().length >= 2
         ? "Select your business"
@@ -1168,9 +1283,23 @@ export function VendorSection({
     success: "",
     dashboard: "",
     profile: "Edit Profile",
+    analytics: "Analytics",
+    offers: "Manage Offers",
+    boost: "Boost Your Listing",
+    "influencer-codes": "Influencer Codes",
+    settings: "Settings",
   };
 
   const isPro = Boolean(dashboardData?.is_pro);
+
+  if (step === "loading") {
+    return (
+      <section ref={sectionRef} className="flex min-h-[40vh] flex-col items-center justify-center gap-4 pb-28">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-red-200 border-t-red-600 dark:border-white/10 dark:border-t-red-500" />
+        <p className="text-sm text-gray-500 dark:text-white/50">Checking your profile…</p>
+      </section>
+    );
+  }
 
   return (
     <section
@@ -1292,6 +1421,32 @@ export function VendorSection({
                 We&apos;ll match your business so you don&apos;t have to start
                 from scratch
               </p>
+            )}
+
+          {!isSearching &&
+            suggestions.length === 0 &&
+            searchInput.trim().length >= 2 && (
+              <div className="space-y-2 pt-1">
+                <p className="text-center text-[13px] text-gray-400 dark:text-white/42">
+                  No results for &ldquo;{searchInput}&rdquo;
+                </p>
+                <ActionButton
+                  onClick={() => {
+                    setEntryMode("manual");
+                    setManualInfo((c) => ({ ...c, businessName: searchInput }));
+                    writeVendorDraft({
+                      ...readVendorDraft(),
+                      isManualEntry: true,
+                      currentStep: "manual-info",
+                    });
+                    setStep("manual-info");
+                    trackEvent(analyticsEvents.vendorManualAddStarted);
+                  }}
+                  className="w-full"
+                >
+                  Add my business manually
+                </ActionButton>
+              </div>
             )}
         </div>
       )}
@@ -1424,8 +1579,6 @@ export function VendorSection({
         >
           <VendorInput label="Business Name" value={manualInfo.businessName} placeholder="Business Name" onChange={(v) => setManualInfo((c) => ({ ...c, businessName: v }))} />
           <SelectInput label="Category / Type" value={manualInfo.category} placeholder="restaurant, bar, & grill" options={["Restaurant", "Bar", "Lounge", "Club", "Cafe", "Food Truck", "Other"]} onChange={(v) => setManualInfo((c) => ({ ...c, category: v }))} />
-          <VendorInput label="Cuisine" value={manualInfo.cuisine} placeholder="Seafood, Mexican, Italian" onChange={(v) => setManualInfo((c) => ({ ...c, cuisine: v }))} />
-          <VendorInput label="Phone" value={manualInfo.phone} placeholder="Phone" onChange={(v) => setManualInfo((c) => ({ ...c, phone: v }))} />
           <VendorInput label="Website" value={manualInfo.website} placeholder="Website" type="url" onChange={(v) => setManualInfo((c) => ({ ...c, website: v }))} />
           <VendorInput label="Reservation Link (if available)" value={manualInfo.reservationUrl} placeholder="Reservation URL" type="url" onChange={(v) => setManualInfo((c) => ({ ...c, reservationUrl: v }))} />
           <VendorInput label="Instagram" value={manualInfo.instagram} placeholder="Instagram" onChange={(v) => setManualInfo((c) => ({ ...c, instagram: v }))} />
@@ -1467,9 +1620,6 @@ export function VendorSection({
         >
           <VendorInput label="Short Description / Vibe" value={manualProfile.shortDescription} placeholder="Short Description / Vibe" onChange={(v) => setManualProfile((c) => ({ ...c, shortDescription: v }))} />
           <SelectInput label="Price Band" value={manualProfile.priceBand} placeholder="$, $$, $$$, $$$$ - (Optional)" options={["$", "$$", "$$$", "$$$$"]} onChange={(v) => setManualProfile((c) => ({ ...c, priceBand: v }))} />
-          <VendorInput label="Music" value={manualProfile.music} placeholder="Music" onChange={(v) => setManualProfile((c) => ({ ...c, music: v }))} />
-          <VendorInput label="Hookah" value={manualProfile.hookah} placeholder="Hookah" onChange={(v) => setManualProfile((c) => ({ ...c, hookah: v }))} />
-          <VendorInput label="Happy Hour" value={manualProfile.happyHour} placeholder="Happy Hour" onChange={(v) => setManualProfile((c) => ({ ...c, happyHour: v }))} />
           <VendorInput label="Main Photo - Required" value={manualProfile.mainPhotoUrl} placeholder="Main Photo URL" type="url" onChange={(v) => setManualProfile((c) => ({ ...c, mainPhotoUrl: v }))} />
           <ActionButton type="submit" className="w-full">Next</ActionButton>
         </form>
@@ -1813,6 +1963,34 @@ export function VendorSection({
                     </div>
                   </div>
 
+                  {/* ── Quick Actions grid ── */}
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { label: "Analytics", icon: (
+                        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 4-6"/></svg>
+                      ), step: "analytics" as VendorStep },
+                      { label: "Manage Offers", icon: (
+                        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>
+                      ), step: "offers" as VendorStep },
+                      { label: "Influencer Codes", icon: (
+                        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                      ), step: "influencer-codes" as VendorStep },
+                      { label: "Settings", icon: (
+                        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                      ), step: "settings" as VendorStep },
+                    ].map(({ label, icon, step: target }) => (
+                      <button
+                        key={target}
+                        type="button"
+                        onClick={() => setStep(target)}
+                        className="flex items-center gap-3 rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 text-left transition hover:bg-white/10 dark:bg-black/20 dark:hover:bg-black/30"
+                      >
+                        <span className="text-red-500 dark:text-[#ff7b7b]">{icon}</span>
+                        <span className="text-[0.88rem] font-medium text-gray-800 dark:text-white">{label}</span>
+                      </button>
+                    ))}
+                  </div>
+
                   {/* ── Bottom section: Pro → Boost status | Free → Upgrade + Boost CTAs ── */}
                   {isPro ? (
                     <div className="space-y-3">
@@ -1843,36 +2021,7 @@ export function VendorSection({
                         </button>
                       </div>
                       <ActionButton
-                        onClick={() => {
-                          void (async () => {
-                            if (!d.vendor_id) {
-                              setStatusMessage(
-                                "Vendor profile is still loading. Please try again in a moment."
-                              );
-                              return;
-                            }
-                            try {
-                              const { checkout_url } =
-                                await createSubscriptionCheckout({
-                                  vendor_id: d.vendor_id,
-                                  plan_type: "founding_partner",
-                                });
-                              if (!checkout_url) {
-                                setStatusMessage(
-                                  "Boost is unavailable right now. Please try again later."
-                                );
-                                return;
-                              }
-                              window.location.href = checkout_url;
-                            } catch (err) {
-                              const message =
-                                err instanceof Error && err.message
-                                  ? err.message
-                                  : "Could not start boost.";
-                              setStatusMessage(message);
-                            }
-                          })();
-                        }}
+                        onClick={() => setStep("boost")}
                         className="w-full"
                       >
                         Boost your listing
@@ -1884,71 +2033,13 @@ export function VendorSection({
                         Unlock more insights & boost your business
                       </p>
                       <ActionButton
-                        onClick={() => {
-                          void (async () => {
-                            if (!d.vendor_id) {
-                              setStatusMessage(
-                                "Vendor profile is still loading. Please try again in a moment."
-                              );
-                              return;
-                            }
-                            try {
-                              const { checkout_url } =
-                                await createSubscriptionCheckout({
-                                  vendor_id: d.vendor_id,
-                                  plan_type: "founding_partner",
-                                });
-                              if (!checkout_url) {
-                                setStatusMessage(
-                                  "Upgrade is unavailable right now. Please try again later."
-                                );
-                                return;
-                              }
-                              window.location.href = checkout_url;
-                            } catch (err) {
-                              const message =
-                                err instanceof Error && err.message
-                                  ? err.message
-                                  : "Could not start upgrade.";
-                              setStatusMessage(message);
-                            }
-                          })();
-                        }}
+                        onClick={() => setStep("boost")}
                         className="w-full"
                       >
                         Upgrade to Pro
                       </ActionButton>
                       <ActionButton
-                        onClick={() => {
-                          void (async () => {
-                            if (!d.vendor_id) {
-                              setStatusMessage(
-                                "Vendor profile is still loading. Please try again in a moment."
-                              );
-                              return;
-                            }
-                            try {
-                              const { checkout_url } =
-                                await createSubscriptionCheckout({
-                                  vendor_id: d.vendor_id,
-                                  plan_type: "founding_partner",
-                                });
-                              if (!checkout_url) {
-                                setStatusMessage(
-                                  "Boost is unavailable right now. Please try again later."
-                                );
-                                return;
-                              }
-                              window.location.href = checkout_url;
-                            } catch (err) {
-                              const message =
-                                err instanceof Error && err.message
-                                  ? err.message
-                                  : "Could not start boost.";
-                              setStatusMessage(message);
-                            }
-                          })();
-                        }}
+                        onClick={() => setStep("boost")}
                         variant="secondary"
                         className="w-full"
                       >
@@ -2022,6 +2113,464 @@ export function VendorSection({
             </div>
           )}
         </form>
+      )}
+
+      {/* ======== STEP: ANALYTICS ======== */}
+      {step === "analytics" && (() => {
+        const DUMMY_PERIODS: Record<string, { label: string; points: number[] }> = {
+          "7_days":  { label: "Last 7 Days",  points: [12, 19, 25, 30, 28, 45, 38] },
+          "30_days": { label: "Last 30 Days", points: [8,12,15,20,18,25,22,30,28,35,40,38,42,45,50,48,52,55,49,60,58,62,65,70,68,72,75,80,78,85] },
+          "all_time":{ label: "All Time",     points: [5,8,12,18,25,30,28,35,40,38,42,50,55,60,65,70,75,80,85,90,95,100,98,105,110,115,120,125,130,135] },
+        };
+        const saves   = DUMMY_PERIODS[analyticsPeriod].points.map((v) => Math.round(v * 0.3));
+        const checkins = DUMMY_PERIODS[analyticsPeriod].points.map((v) => Math.round(v * 0.12));
+        const peakHours = [
+          { hour: "12pm", count: 8 }, { hour: "3pm", count: 14 },
+          { hour: "5pm", count: 22 }, { hour: "7pm", count: 35 },
+          { hour: "9pm", count: 41 }, { hour: "11pm", count: 27 },
+        ];
+        const barMax = Math.max(...peakHours.map((h) => h.count));
+        const periodPoints = DUMMY_PERIODS[analyticsPeriod].points;
+        return (
+          <div className="mt-2 space-y-6 pb-24">
+            {/* Period selector */}
+            <div className="flex gap-2">
+              {(["7_days","30_days","all_time"] as const).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setAnalyticsPeriod(p)}
+                  className={`flex-1 rounded-xl py-2 text-[0.8rem] font-semibold transition ${
+                    analyticsPeriod === p
+                      ? "bg-red-600 text-white"
+                      : "border border-[#E7070380] text-gray-500 dark:text-white/60"
+                  }`}
+                >
+                  {p === "7_days" ? "7 Days" : p === "30_days" ? "30 Days" : "All Time"}
+                </button>
+              ))}
+            </div>
+
+            {/* Line chart: Genie Appearances */}
+            <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 dark:bg-black/20">
+              <p className="mb-2 text-[0.82rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Genie Appearances</p>
+              <PerformanceChart points={periodPoints.map((v) => ({ value: v }))} headLabel={DUMMY_PERIODS[analyticsPeriod].label} />
+              <p className="mt-1 text-right text-[1.1rem] font-bold text-gray-900 dark:text-white">{periodPoints.reduce((a,b) => a+b,0).toLocaleString()} total</p>
+            </div>
+
+            {/* Line chart: Saves */}
+            <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 dark:bg-black/20">
+              <p className="mb-2 text-[0.82rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Saves</p>
+              <PerformanceChart points={saves.map((v) => ({ value: v }))} headLabel={DUMMY_PERIODS[analyticsPeriod].label} />
+              <p className="mt-1 text-right text-[1.1rem] font-bold text-gray-900 dark:text-white">{saves.reduce((a,b) => a+b,0).toLocaleString()} total</p>
+            </div>
+
+            {/* Line chart: Check-ins */}
+            <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 dark:bg-black/20">
+              <p className="mb-2 text-[0.82rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Check-ins</p>
+              <PerformanceChart points={checkins.map((v) => ({ value: v }))} headLabel={DUMMY_PERIODS[analyticsPeriod].label} />
+              <p className="mt-1 text-right text-[1.1rem] font-bold text-gray-900 dark:text-white">{checkins.reduce((a,b) => a+b,0).toLocaleString()} total</p>
+            </div>
+
+            {/* Bar chart: Peak Hours */}
+            <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 dark:bg-black/20">
+              <p className="mb-4 text-[0.82rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Peak Hours</p>
+              <div className="flex items-end gap-2" style={{ height: 100 }}>
+                {peakHours.map((h) => (
+                  <div key={h.hour} className="flex flex-1 flex-col items-center gap-1">
+                    <div
+                      className="w-full rounded-t-md bg-red-500/70 dark:bg-[#ff5a5a]/70"
+                      style={{ height: `${(h.count / barMax) * 80}px` }}
+                    />
+                    <span className="text-[0.65rem] text-gray-400 dark:text-white/50">{h.hour}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ======== STEP: OFFERS ======== */}
+      {step === "offers" && (() => {
+        const offers = dashboardData?.offers ?? [];
+        return (
+          <div className="mt-2 space-y-4 pb-24">
+            {/* Offer list */}
+            {offers.length === 0 && !showCreateOffer && (
+              <p className="text-center text-[0.88rem] text-gray-400 dark:text-white/50 py-4">
+                No offers yet. Create your first offer below.
+              </p>
+            )}
+            <div className="space-y-3">
+              {offers.map((offer) => (
+                <div
+                  key={offer.id}
+                  className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 dark:bg-black/20"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[0.9rem] font-semibold text-gray-900 dark:text-white">{offer.title}</p>
+                      <div className="mt-1 flex items-center gap-2">
+                        <span className={`inline-block rounded-full px-2 py-0.5 text-[0.7rem] font-semibold ${
+                          offer.active
+                            ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                            : "bg-gray-100 text-gray-500 dark:bg-white/10 dark:text-white/40"
+                        }`}>
+                          {offer.active ? "Active" : "Inactive"}
+                        </span>
+                        <span className="text-[0.72rem] text-gray-400 dark:text-white/40 capitalize">{offer.offer_type?.replace(/_/g," ")}</span>
+                      </div>
+                      {offer.redeem_instructions && (
+                        <p className="mt-1.5 text-[0.78rem] text-gray-500 dark:text-white/50">{offer.redeem_instructions}</p>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void toggleVendorOffer(offer.id, !offer.active)
+                            .then(() => void loadDashboard())
+                            .catch(() => setOfferMessage("Could not update offer."));
+                        }}
+                        className="rounded-lg border border-[#E7070380] px-2.5 py-1 text-[0.72rem] font-medium text-gray-600 dark:text-white/70 hover:bg-red-50 dark:hover:bg-white/5"
+                      >
+                        {offer.active ? "Deactivate" : "Reactivate"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {offerMessage && (
+              <p className={`text-sm ${offerMessage.includes("created") || offerMessage.includes("success") ? "text-green-500" : "text-red-500"}`}>{offerMessage}</p>
+            )}
+
+            {/* Create offer toggle */}
+            {!showCreateOffer ? (
+              <ActionButton onClick={() => setShowCreateOffer(true)} className="w-full">
+                + Create New Offer
+              </ActionButton>
+            ) : (
+              <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-5 dark:bg-black/20 space-y-4">
+                <p className="text-[0.95rem] font-semibold text-gray-900 dark:text-white">New Offer</p>
+                <VendorInput value={offerForm.title} placeholder="Offer title *" onChange={(v) => setOfferForm((c) => ({ ...c, title: v }))} />
+                <div>
+                  <label className="mb-1.5 block text-[13px] font-medium text-gray-500 dark:text-white/55">Description</label>
+                  <textarea
+                    value={offerForm.description}
+                    onChange={(e) => setOfferForm((c) => ({ ...c, description: e.target.value }))}
+                    placeholder="Describe the offer..."
+                    rows={2}
+                    className="w-full resize-none rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-[15px] text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30"
+                  />
+                </div>
+                <SelectInput
+                  value={offerForm.offer_type}
+                  placeholder="Offer type"
+                  label="Type"
+                  options={["happy_hour","bogo","discount","freebie","special_event"]}
+                  onChange={(v) => setOfferForm((c) => ({ ...c, offer_type: v }))}
+                />
+                <VendorInput value={offerForm.redeem_instructions} placeholder="Redeem instructions" onChange={(v) => setOfferForm((c) => ({ ...c, redeem_instructions: v }))} />
+                <div className="flex items-center justify-between">
+                  <label className="text-[13px] font-medium text-gray-700 dark:text-white/70">V.I.Bee members only</label>
+                  <button
+                    type="button"
+                    onClick={() => setOfferForm((c) => ({ ...c, vibee_only: !c.vibee_only }))}
+                    className={`relative h-6 w-11 rounded-full transition-colors ${offerForm.vibee_only ? "bg-red-600" : "bg-gray-300 dark:bg-white/20"}`}
+                  >
+                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${offerForm.vibee_only ? "translate-x-5" : "translate-x-0.5"}`} />
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  <ActionButton
+                    onClick={() => {
+                      if (!offerForm.title.trim()) { setOfferMessage("Title is required."); return; }
+                      const vid = vendorId ?? dashboardData?.vendor_id;
+                      if (!vid) { setOfferMessage("Vendor not found."); return; }
+                      setIsOfferSaving(true);
+                      setOfferMessage(null);
+                      createVendorOffer({
+                        vendor_id: vid,
+                        title: offerForm.title,
+                        description: offerForm.description,
+                        offer_type: offerForm.offer_type as Parameters<typeof createVendorOffer>[0]["offer_type"],
+                        redeem_instructions: offerForm.redeem_instructions,
+                        vibee_only: offerForm.vibee_only,
+                      })
+                        .then(() => {
+                          setShowCreateOffer(false);
+                          setOfferForm({ title: "", description: "", offer_type: "happy_hour", redeem_instructions: "", vibee_only: true });
+                          setOfferMessage("Offer created successfully!");
+                          void loadDashboard();
+                        })
+                        .catch((err) => {
+                          setOfferMessage(err instanceof Error ? err.message : "Could not create offer.");
+                        })
+                        .finally(() => setIsOfferSaving(false));
+                    }}
+                    disabled={isOfferSaving}
+                    className="flex-1"
+                  >
+                    {isOfferSaving ? "Saving..." : "Create Offer"}
+                  </ActionButton>
+                  <ActionButton variant="secondary" onClick={() => { setShowCreateOffer(false); setOfferMessage(null); }} className="flex-1">
+                    Cancel
+                  </ActionButton>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ======== STEP: BOOST ======== */}
+      {step === "boost" && (() => {
+        const tiers = [
+          { id: "boost_3day",   label: "3-Day Boost",   price: "$9.99",  desc: "Quick visibility spike for a weekend or event" },
+          { id: "boost_7day",   label: "7-Day Boost",   price: "$19.99", desc: "Week-long push — great for new menu launches" },
+          { id: "boost_14day",  label: "14-Day Boost",  price: "$34.99", desc: "Two-week momentum for sustained discovery" },
+          { id: "boost_monthly",label: "Monthly Boost", price: "$59.99", desc: "30 days of top placement in Genie results" },
+        ];
+        return (
+          <div className="mt-2 space-y-4 pb-24">
+            <p className="text-[0.9rem] text-gray-500 dark:text-white/60">
+              Boost puts your listing at the top of Genie results for your area. Pick a duration:
+            </p>
+            <div className="space-y-3">
+              {tiers.map((tier) => (
+                <button
+                  key={tier.id}
+                  type="button"
+                  onClick={() => setSelectedBoostTier(tier.id)}
+                  className={`w-full rounded-2xl border px-4 py-4 text-left transition ${
+                    selectedBoostTier === tier.id
+                      ? "border-red-500 bg-red-50 dark:border-red-500 dark:bg-red-900/20"
+                      : "border-[#E7070380] bg-white/5 dark:bg-black/20"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <p className="text-[0.95rem] font-semibold text-gray-900 dark:text-white">{tier.label}</p>
+                    <p className="text-[1.1rem] font-bold text-red-600 dark:text-[#ff7b7b]">{tier.price}</p>
+                  </div>
+                  <p className="mt-1 text-[0.8rem] text-gray-500 dark:text-white/55">{tier.desc}</p>
+                </button>
+              ))}
+            </div>
+            <ActionButton
+              onClick={() => {
+                if (!selectedBoostTier) { setStatusMessage("Please select a boost duration."); return; }
+                setIsBoostLoading(true);
+                const vid = vendorId ?? dashboardData?.vendor_id;
+                if (!vid) { setStatusMessage("Vendor not found. Please try again."); setIsBoostLoading(false); return; }
+                void createSubscriptionCheckout({ vendor_id: vid, plan_type: "founding_partner" })
+                  .then(({ checkout_url }) => { window.location.href = checkout_url; })
+                  .catch((err) => { setStatusMessage(err instanceof Error ? err.message : "Could not start checkout."); })
+                  .finally(() => setIsBoostLoading(false));
+              }}
+              disabled={isBoostLoading || !selectedBoostTier}
+              className="w-full"
+            >
+              {isBoostLoading ? "Redirecting to Stripe..." : "Purchase Boost"}
+            </ActionButton>
+            <p className="text-center text-[0.75rem] text-gray-400 dark:text-white/40">
+              You&apos;ll be taken to Stripe to complete your purchase securely.
+            </p>
+          </div>
+        );
+      })()}
+
+      {/* ======== STEP: INFLUENCER CODES ======== */}
+      {step === "influencer-codes" && (() => {
+        const codes = influencerCodes;
+        const selected = codes.find((c) => c.code === selectedInfluencerCode) ?? null;
+        return (
+          <div className="mt-2 space-y-4 pb-24">
+            <p className="text-[0.82rem] text-gray-400 dark:text-white/50">
+              Influencer codes driving traffic to your listing. Tap a code to see redemption history.
+            </p>
+
+            {influencerLoading && (
+              <div className="flex justify-center py-8">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-red-500 border-t-transparent" />
+              </div>
+            )}
+
+            {/* Code list */}
+            {!influencerLoading && !selected && (
+              <>
+                {codes.length === 0 ? (
+                  <p className="text-center text-[0.88rem] text-gray-400 dark:text-white/50 py-6">
+                    No influencer codes yet.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {codes.map((c) => (
+                      <button
+                        key={c.code}
+                        type="button"
+                        onClick={() => setSelectedInfluencerCode(c.code)}
+                        className="w-full rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 text-left transition hover:bg-white/10 dark:bg-black/20 dark:hover:bg-black/30"
+                      >
+                        <div className="flex items-center justify-between">
+                          <p className="text-[0.95rem] font-semibold text-gray-900 dark:text-white font-mono">{c.code}</p>
+                          <svg viewBox="0 0 24 24" className="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" strokeWidth="2"><path d="m9 6 6 6-6 6"/></svg>
+                        </div>
+                        <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+                          <div>
+                            <p className="text-[1rem] font-bold text-gray-900 dark:text-white">{c.redeemed}</p>
+                            <p className="text-[0.68rem] text-gray-400 dark:text-white/50">Redeemed</p>
+                          </div>
+                          <div>
+                            <p className="text-[1rem] font-bold text-gray-900 dark:text-white">{c.new_users}</p>
+                            <p className="text-[0.68rem] text-gray-400 dark:text-white/50">New Users</p>
+                          </div>
+                          <div>
+                            <p className="text-[1rem] font-bold text-gray-900 dark:text-white">{c.vibee_conversions}</p>
+                            <p className="text-[0.68rem] text-gray-400 dark:text-white/50">V.I.Bee Conv.</p>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Detail view */}
+            {selected && (
+              <div className="space-y-4">
+                <button type="button" onClick={() => setSelectedInfluencerCode(null)} className="flex items-center gap-1.5 text-[0.85rem] text-red-500">
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H6m0 0 5-5m-5 5 5 5"/></svg>
+                  All Codes
+                </button>
+                <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 dark:bg-black/20">
+                  <p className="text-[1.1rem] font-bold font-mono text-gray-900 dark:text-white">{selected.code}</p>
+                  <div className="mt-3 grid grid-cols-3 gap-3 text-center">
+                    {[{ label: "Redeemed", val: selected.redeemed },{ label: "New Users", val: selected.new_users },{ label: "V.I.Bee", val: selected.vibee_conversions }].map(({ label, val }) => (
+                      <div key={label} className="rounded-xl border border-[#E7070380] py-3 dark:border-[#E7070380]">
+                        <p className="text-[1.2rem] font-bold text-gray-900 dark:text-white">{val}</p>
+                        <p className="text-[0.68rem] text-gray-400 dark:text-white/50">{label}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {(selected.history ?? []).length > 0 && (
+                  <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 dark:bg-black/20">
+                    <p className="mb-3 text-[0.82rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Redemption History</p>
+                    <div className="space-y-2">
+                      {(selected.history ?? []).map((date, i) => (
+                        <div key={i} className="flex items-center justify-between border-t border-red-100/30 pt-2 dark:border-white/10">
+                          <p className="text-[0.85rem] text-gray-700 dark:text-white/80">Redemption #{selected.redeemed - i}</p>
+                          <p className="text-[0.8rem] text-gray-400 dark:text-white/50">{date}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ======== STEP: SETTINGS ======== */}
+      {step === "settings" && (
+        <div className="mt-2 space-y-5 pb-24">
+          {/* Plan info */}
+          <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 dark:bg-black/20">
+            <p className="text-[0.82rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Current Plan</p>
+            <div className="mt-2 flex items-center justify-between">
+              <p className="text-[1rem] font-semibold text-gray-900 dark:text-white capitalize">
+                {dashboardData?.plan_selected ?? "Basic"}
+              </p>
+              <span className={`rounded-full px-3 py-1 text-[0.75rem] font-bold ${
+                dashboardData?.is_pro
+                  ? "bg-red-600 text-white"
+                  : "bg-gray-200 text-gray-600 dark:bg-white/10 dark:text-white/60"
+              }`}>
+                {dashboardData?.is_pro ? "PRO" : "FREE"}
+              </span>
+            </div>
+            {!dashboardData?.is_pro && (
+              <button type="button" onClick={() => setStep("boost")} className="mt-3 text-[0.82rem] font-medium text-red-500 hover:underline">
+                Upgrade to Pro →
+              </button>
+            )}
+          </div>
+
+          {/* Notifications */}
+          <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 dark:bg-black/20 space-y-4">
+            <p className="text-[0.82rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Notifications</p>
+            {([
+              { key: "emailNotif", label: "Email notifications" },
+              { key: "pushNotif",  label: "Push notifications" },
+              { key: "smsNotif",   label: "SMS notifications" },
+            ] as const).map(({ key, label }) => (
+              <div key={key} className="flex items-center justify-between">
+                <p className="text-[0.9rem] text-gray-700 dark:text-white/80">{label}</p>
+                <button
+                  type="button"
+                  onClick={() => setSettingsForm((c) => ({ ...c, [key]: !c[key] }))}
+                  className={`relative h-6 w-11 rounded-full transition-colors ${settingsForm[key] ? "bg-red-600" : "bg-gray-300 dark:bg-white/20"}`}
+                >
+                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${settingsForm[key] ? "translate-x-5" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+            ))}
+            <VendorInput
+              value={settingsForm.smsPhone}
+              placeholder="SMS phone number"
+              type="tel"
+              onChange={(v) => setSettingsForm((c) => ({ ...c, smsPhone: v }))}
+              label="SMS Number"
+            />
+          </div>
+
+          {/* Account info */}
+          <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 dark:bg-black/20 space-y-3">
+            <p className="text-[0.82rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Account</p>
+            <DetailRow label="Email" value={dashboardData?.email ?? account?.email} />
+            <DetailRow label="Business" value={dashboardData?.business_name} withDivider />
+          </div>
+
+          {settingsMessage && (
+            <p className={`text-sm ${settingsMessage.includes("saved") ? "text-green-500" : "text-red-500"}`}>{settingsMessage}</p>
+          )}
+
+          <ActionButton
+            onClick={() => {
+              const extId = readExternalUserId();
+              if (!extId) { setSettingsMessage("Account not found. Please log in again."); return; }
+              setIsSavingSettings(true);
+              setSettingsMessage(null);
+              updateVendorNotifPrefs({
+                external_user_id: extId,
+                email_notifications: settingsForm.emailNotif,
+                push_notifications: settingsForm.pushNotif,
+                sms_notifications: settingsForm.smsNotif,
+                sms_phone: settingsForm.smsPhone || undefined,
+              })
+                .then(() => setSettingsMessage("Settings saved successfully!"))
+                .catch((err) => setSettingsMessage(err instanceof Error ? err.message : "Could not save settings."))
+                .finally(() => setIsSavingSettings(false));
+            }}
+            disabled={isSavingSettings}
+            className="w-full"
+          >
+            {isSavingSettings ? "Saving..." : "Save Settings"}
+          </ActionButton>
+
+          <ActionButton
+            variant="secondary"
+            onClick={onContinueHome}
+            className="w-full"
+          >
+            Back to Home
+          </ActionButton>
+        </div>
       )}
 
       {statusMessage && (

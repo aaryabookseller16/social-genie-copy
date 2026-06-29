@@ -861,9 +861,14 @@ export async function createVendorBusiness(payload: {
     "/api/vendor/create",
     {
       method: "POST",
-      auth: false,
       body: JSON.stringify(payload),
     }
+  );
+}
+
+export async function fetchMyVendorProfile() {
+  return apiJson<{ vendor: { id: number; business_name?: string; is_live?: boolean; onboarding_completed?: boolean } | null }>(
+    `/api/vendor/profile`
   );
 }
 
@@ -1340,6 +1345,85 @@ export async function fetchVendorProfileCompleteness(vendorId: number) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Vendor Offers (list / toggle / delete)                            */
+/* ------------------------------------------------------------------ */
+
+export type VendorOfferItem = {
+  id: number;
+  title: string;
+  description?: string;
+  offer_type: string;
+  active?: boolean;
+  vibee_only?: boolean;
+  redeem_instructions?: string | null;
+  discount_value?: string | null;
+};
+
+export async function fetchVendorOffers(vendorId: number) {
+  const params = new URLSearchParams({ vendor_id: String(vendorId) });
+  return apiJson<VendorOfferItem[]>(`/api/vendor/offers?${params.toString()}`);
+}
+
+export async function toggleVendorOffer(offerId: number, active: boolean) {
+  return apiJson<{ success: boolean }>("/api/vendor/offers", {
+    method: "PATCH",
+    body: JSON.stringify({ offer_id: offerId, active }),
+  });
+}
+
+export async function deleteVendorOffer(offerId: number) {
+  return apiJson<{ success: boolean }>(
+    `/api/vendor/offers?offer_id=${offerId}`,
+    { method: "DELETE" }
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Vendor Influencer Codes                                            */
+/* ------------------------------------------------------------------ */
+
+export type VendorInfluencerCode = {
+  code: string;
+  redeemed: number;
+  new_users: number;
+  vibee_conversions: number;
+  history?: string[];
+};
+
+export async function fetchVendorInfluencerCodes(vendorId: number) {
+  const params = new URLSearchParams({ vendor_id: String(vendorId) });
+  return apiJson<{ codes: VendorInfluencerCode[] }>(
+    `/api/vendor/influencer-codes?${params.toString()}`
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Vendor Notification Preferences                                    */
+/* ------------------------------------------------------------------ */
+
+export type VendorNotifPrefs = {
+  external_user_id: string;
+  email_notifications: boolean;
+  push_notifications: boolean;
+  sms_notifications: boolean;
+  sms_phone?: string;
+};
+
+export async function fetchVendorNotifPrefs(externalUserId: string) {
+  const params = new URLSearchParams({ external_user_id: externalUserId });
+  return apiJson<Partial<VendorNotifPrefs>>(
+    `/api/vendor/notifications?${params.toString()}`
+  );
+}
+
+export async function updateVendorNotifPrefs(prefs: VendorNotifPrefs) {
+  return apiJson<{ success: boolean }>("/api/vendor/notifications", {
+    method: "POST",
+    body: JSON.stringify(prefs),
+  });
+}
+
+/* ------------------------------------------------------------------ */
 /*  Stripe Products & Sessions                                         */
 /* ------------------------------------------------------------------ */
 
@@ -1584,6 +1668,7 @@ export async function createProducerEvent(payload: {
   event_date?: string;
   start_time?: string;
   end_time?: string;
+  venue_id?: number;
   venue_name?: string;
   venue_address?: string;
   city?: string;
