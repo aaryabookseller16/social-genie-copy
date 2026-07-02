@@ -17,6 +17,7 @@ import { RoleSetupSection } from "@/app/components/single-page/RoleSetupSection"
 import { OnboardingCompleteSection } from "@/app/components/single-page/OnboardingCompleteSection";
 import { VerifyEmailGate } from "@/app/components/single-page/VerifyEmailGate";
 import { InfluencerSection } from "@/app/components/single-page/InfluencerSection";
+import { NotificationsScreen } from "@/app/components/single-page/NotificationsScreen";
 import { HomescreenSection } from "@/app/components/homescreen/HomescreenSection";
 import { EventDetailSection } from "@/app/components/event-detail/EventDetailSection";
 import {
@@ -99,6 +100,7 @@ import {
   setUserRoles,
   saveProducerDetails,
   saveInfluencerDetails,
+  fetchUnreadNotifCount,
 } from "@/app/lib/publicApiClient";
 import { getRuntimeConfig } from "@/app/lib/runtimeConfig";
 import { extractCityFromMessage, mentionsNearMe } from "@/app/lib/cityExtractor";
@@ -472,6 +474,7 @@ export function SinglePageGenieApp({
   const onboardingCompleteRef = useRef<HTMLElement | null>(null);
   const roleUnlockRef = useRef<HTMLElement | null>(null);
   const [activeScreen, setActiveScreen] = useState<FlowAnchor>(initialScreen);
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
   const [isRoleSwitcherOpen, setIsRoleSwitcherOpen] = useState(false);
   const [detailReturnScreen, setDetailReturnScreen] = useState<
     "decision" | "more" | "saved"
@@ -822,6 +825,13 @@ const [trialSuccess, setTrialSuccess] = useState(false);
       setOffersLoading(false);
       setRedemptionsLoading(false);
     }
+  }, [account]);
+
+  useEffect(() => {
+    if (!account) return;
+    fetchUnreadNotifCount()
+      .then((r) => setUnreadNotifCount(r.unread_count ?? 0))
+      .catch(() => {});
   }, [account]);
 
   const loadSocialPreferences = useCallback(async () => {
@@ -2351,6 +2361,7 @@ activeScreen !== "vibbee-trial" &&
     activeScreen !== "onboarding-complete" &&
     activeScreen !== "role-unlock" &&
     activeScreen !== "producer-dashboard" &&
+    activeScreen !== "notifications" &&
     activeScreen !== "detail";
 
   const isAiFallbackLayout =
@@ -5273,6 +5284,15 @@ navigateTo("event-detail");
     }}
     onMenuOpen={() => setIsDrawerOpen(true)}
     onOrbTap={startListening}
+    onNotifications={() => navigateTo("notifications")}
+    unreadNotifCount={unreadNotifCount}
+  />
+) : null}
+
+{activeScreen === "notifications" ? (
+  <NotificationsScreen
+    onBack={() => goBack("homescreen")}
+    onClearUnread={() => setUnreadNotifCount(0)}
   />
 ) : null}
 

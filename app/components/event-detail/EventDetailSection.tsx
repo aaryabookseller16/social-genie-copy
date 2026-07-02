@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import {
   fetchEventDetail,
+  followProducer,
   type EventDetailResponse,
 } from "@/app/lib/publicApiClient";
+import { readAuthToken } from "@/app/lib/localState";
 
 type Props = {
   eventId: number | null;
@@ -44,6 +46,14 @@ function BackIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M19 12H5M12 5l-7 7 7 7" />
+    </svg>
+  );
+}
+
+function VerifiedBadge() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4 flex-none text-red-400" fill="currentColor" aria-label="Verified">
+      <path fillRule="evenodd" d="M8.603 3.799A4.49 4.49 0 0112 2.25c1.357 0 2.573.6 3.397 1.549a4.49 4.49 0 013.498 1.307 4.491 4.491 0 011.307 3.497A4.49 4.49 0 0121.75 12a4.49 4.49 0 01-1.549 3.397 4.491 4.491 0 01-1.307 3.497 4.491 4.491 0 01-3.497 1.307A4.49 4.49 0 0112 21.75a4.49 4.49 0 01-3.397-1.549 4.49 4.49 0 01-3.498-1.307 4.491 4.491 0 01-1.307-3.497A4.49 4.49 0 012.25 12c0-1.357.6-2.573 1.549-3.397a4.49 4.49 0 011.307-3.497 4.492 4.492 0 013.497-1.307zm7.007 6.387a.75.75 0 10-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 00-1.06 1.06l2.25 2.25a.75.75 0 001.14-.094l3.75-5.25z" clipRule="evenodd" />
     </svg>
   );
 }
@@ -183,6 +193,37 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [authRequired, setAuthRequired] = useState(false);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followBusy, setFollowBusy] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
+
+  // Seed follow state from the embedded producer once data / initialData is ready.
+  // Read `is_following` from whichever source actually provides it: the event-detail
+  // API may omit it, so fall back to the value embedded in the tapped event (initialData).
+  useEffect(() => {
+    const fromApi = (data?.producer as { is_following?: boolean } | undefined)?.is_following;
+    const fromInitial = (initialData.producer as { is_following?: boolean } | undefined)?.is_following;
+    setIsFollowing(fromApi ?? fromInitial ?? false);
+  }, [data, initialData]);
+
+  async function handleFollow(producerId?: number) {
+    if (!producerId || followBusy) return;
+    if (!readAuthToken()) {
+      onAuthRequired?.();
+      return;
+    }
+    setFollowBusy(true);
+    const optimistic = !isFollowing;
+    setIsFollowing(optimistic);
+    try {
+      const res = await followProducer(producerId, "event-detail");
+      setIsFollowing(res.action === "followed");
+    } catch {
+      setIsFollowing(!optimistic);
+    } finally {
+      setFollowBusy(false);
+    }
+  }
 
   const load = () => {
     if (!eventId) { setLoading(false); return; }
@@ -219,8 +260,12 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
   const venueAddr  = (ev.venue_address as string) || "";
   const description = (ev.description as string) || "";
   const category   = (ev.category as string) || (ev.event_category as string) || "";
-  const producer   = ev.producer as { name?: string; image_url?: string; event_count?: number } | undefined;
+  const producer   = ev.producer as { id?: number; name?: string; image_url?: string; event_count?: number; is_verified?: boolean; is_following?: boolean } | undefined;
+  const producerId = producer?.id ?? (ev.producer_id as number | undefined);
   const ticketUrl  = ev.ticket_url as string | undefined;
+  const isFree     = ev.is_free === true;
+  const ticketHref = ticketUrl || (ev.public_slug ? `/events/${ev.public_slug as string}` : null);
+  const ticketLabel = ticketUrl ? "Buy Tickets" : isFree ? "RSVP – Free" : ticketHref ? "Get Tickets" : "Tickets Unavailable";
   const mapAddr    = venueAddr || venueName || "Houston, TX";
   const relatedEvents = (ev.related_events as Record<string, unknown>[]) ?? [];
   const venueEvents   = (ev.venue_events   as Record<string, unknown>[]) ?? [];
@@ -231,7 +276,7 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
       {/* ── Hero ── */}
       <div className="relative h-[55vw] min-h-[220px] max-h-[340px] w-full flex-none overflow-hidden">
         <Image src={coverImg} alt={evTitle} fill className="object-cover" priority sizes="100vw" />
-        <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/80 to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-[#1a0202] via-[#1a0202]/55 to-transparent" />
 
         {/* Back */}
         <button
@@ -247,10 +292,15 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
         <div className="absolute right-4 top-4 flex items-center gap-2">
           <button
             type="button"
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/30 bg-black/30 text-white backdrop-blur-sm"
-            aria-label="Save event"
+            onClick={() => {
+              if (!readAuthToken()) { onAuthRequired?.(); return; }
+              logInteraction?.(isSaved ? "unsave" : "save", ev.id as number, "event-detail");
+              setIsSaved((v) => !v);
+            }}
+            className={`flex h-9 w-9 items-center justify-center rounded-full border border-white/30 bg-black/30 backdrop-blur-sm ${isSaved ? "text-red-500" : "text-white"}`}
+            aria-label={isSaved ? "Unsave event" : "Save event"}
           >
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill={isSaved ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
             </svg>
           </button>
@@ -270,7 +320,10 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
       </div>
 
       {/* ── Content ── */}
-      <div className="flex flex-col gap-5 px-4 pt-4 sm:px-6">
+      <div className="flex flex-col">
+
+      {/* ── Top block on red gradient (title + meta + CTAs) ── */}
+      <div className="flex flex-col gap-5 bg-gradient-to-b from-[#1a0202] via-[#2a0606] to-transparent px-4 pb-8 pt-4 sm:px-6">
 
         {/* Title */}
         <h1 className="text-[1.85rem] font-bold leading-tight text-white">{evTitle}</h1>
@@ -329,16 +382,17 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
         <div className="flex gap-2">
           <button
             type="button"
+            disabled={!ticketHref}
             onClick={() => {
-              if (ticketUrl) window.open(ticketUrl, "_blank", "noopener,noreferrer");
+              if (ticketHref) window.open(ticketHref, "_blank", "noopener,noreferrer");
               logInteraction?.("ticket_click", ev.id as number, "event-detail");
             }}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-red-600 px-3 py-2.5 text-[0.8rem] font-semibold text-white transition-transform hover:bg-red-700 active:scale-95"
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-red-600 px-3 py-2.5 text-[0.8rem] font-semibold text-white transition-transform hover:bg-red-700 active:scale-95 disabled:pointer-events-none disabled:opacity-50"
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4 flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z" />
             </svg>
-            Buy Tickets
+            {ticketLabel}
           </button>
           <button
             type="button"
@@ -381,6 +435,11 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
           </button>
         </div>
 
+      </div>
+
+      {/* ── Remaining sections ── */}
+      <div className="flex flex-col gap-5 px-4 pt-1 sm:px-6">
+
         {/* ── V.I.Bee Offer ── */}
         <div className="rounded-[14px] border border-white/10 bg-black/30 px-4 py-3">
           <div className="flex items-center justify-between">
@@ -402,17 +461,17 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
           <div>
             <h3 className="mb-2 text-[1rem] font-semibold text-white">Event Details</h3>
             <p className="line-clamp-5 text-[0.83rem] leading-6 text-white/65">{description}</p>
-            <button
-              type="button"
-              onClick={() => {
-                if (ev.public_slug) {
-                  window.open(`/events/${ev.public_slug as string}`, "_blank", "noopener,noreferrer");
+            {ev.public_slug && description.length > 240 ? (
+              <button
+                type="button"
+                onClick={() =>
+                  window.open(`/events/${ev.public_slug as string}`, "_blank", "noopener,noreferrer")
                 }
-              }}
-              className="mt-1 text-[0.8rem] font-medium text-red-400"
-            >
-              Read more...
-            </button>
+                className="mt-1 text-[0.8rem] font-medium text-red-400"
+              >
+                Read more...
+              </button>
+            ) : null}
           </div>
         ) : null}
 
@@ -437,20 +496,51 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
           <div>
             <h3 className="mb-3 text-[1rem] font-semibold text-white">Event Producers</h3>
             <div className="flex items-center gap-3">
-              <div className="h-12 w-12 flex-none overflow-hidden rounded-full border border-white/10 bg-black/40">
-                {producer.image_url ? (
-                  <Image src={producer.image_url} alt={producer.name ?? "Producer"} width={48} height={48} className="h-12 w-12 object-cover" />
-                ) : (
-                  <div className="flex h-12 w-12 items-center justify-center bg-red-900/50 text-[0.7rem] font-bold text-white/70">
-                    {(producer.name ?? "?").slice(0, 2).toUpperCase()}
-                  </div>
-                )}
-              </div>
+              {producerId ? (
+                <a href={`/p/${producerId}`} aria-label={`View ${producer.name ?? "producer"} profile`} className="h-12 w-12 flex-none overflow-hidden rounded-full border border-white/10 bg-black/40">
+                  {producer.image_url ? (
+                    <Image src={producer.image_url} alt={producer.name ?? "Producer"} width={48} height={48} className="h-12 w-12 object-cover" />
+                  ) : (
+                    <div className="flex h-12 w-12 items-center justify-center bg-red-900/50 text-[0.7rem] font-bold text-white/70">
+                      {(producer.name ?? "?").slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
+                </a>
+              ) : (
+                <div className="h-12 w-12 flex-none overflow-hidden rounded-full border border-white/10 bg-black/40">
+                  {producer.image_url ? (
+                    <Image src={producer.image_url} alt={producer.name ?? "Producer"} width={48} height={48} className="h-12 w-12 object-cover" />
+                  ) : (
+                    <div className="flex h-12 w-12 items-center justify-center bg-red-900/50 text-[0.7rem] font-bold text-white/70">
+                      {(producer.name ?? "?").slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="flex flex-1 flex-col gap-0.5">
                 <div className="flex items-center gap-2">
-                  <span className="text-[0.9rem] font-semibold text-white">{producer.name}</span>
-                  <button type="button" className="rounded-full border border-red-500 px-2.5 py-0.5 text-[0.68rem] font-semibold text-red-400">
-                    Follow
+                  {producerId ? (
+                    <a href={`/p/${producerId}`} className="flex items-center gap-1 text-[0.9rem] font-semibold text-white hover:text-red-300">
+                      {producer.name}
+                      {producer.is_verified ? <VerifiedBadge /> : null}
+                    </a>
+                  ) : (
+                    <span className="flex items-center gap-1 text-[0.9rem] font-semibold text-white">
+                      {producer.name}
+                      {producer.is_verified ? <VerifiedBadge /> : null}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void handleFollow(producerId)}
+                    disabled={followBusy || !producerId}
+                    className={`rounded-full px-2.5 py-0.5 text-[0.68rem] font-semibold transition disabled:opacity-60 ${
+                      isFollowing
+                        ? "border border-red-500 bg-transparent text-red-400"
+                        : "bg-red-600 text-white hover:bg-red-500"
+                    }`}
+                  >
+                    {isFollowing ? "Following" : "Follow"}
                   </button>
                 </div>
                 <p className="flex items-center gap-1 text-[0.75rem] text-white/55">
@@ -493,6 +583,7 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
           </div>
         ) : null}
 
+      </div>
       </div>
     </section>
   );

@@ -1712,6 +1712,149 @@ export async function createProducerPost(payload: {
   });
 }
 
+export type ProducerNotifPrefs = {
+  notify_new_follower?: boolean;
+  notify_post_like?: boolean;
+  notify_post_comment?: boolean;
+  notify_going_match?: boolean;
+  notify_venue_energy_alert?: boolean;
+  notify_event_reminder?: boolean;
+  notify_promoter_new_event?: boolean;
+  notify_new_message?: boolean;
+  notify_genie_alerts?: boolean;
+};
+
+export async function fetchProducerNotifPrefs() {
+  return apiJson<ProducerNotifPrefs>("/api/producer/notifications");
+}
+
+export async function updateProducerNotifPrefs(prefs: ProducerNotifPrefs) {
+  return apiJson<{ success: boolean }>("/api/producer/notifications", {
+    method: "POST",
+    body: JSON.stringify(prefs),
+  });
+}
+
+export type FollowProducerResult = {
+  success: boolean;
+  action: "followed" | "unfollowed";
+  followed_id: number;
+  followed_type: string;
+};
+
+export async function followProducer(
+  producerId: number,
+  source: string = "profile"
+) {
+  return apiJson<FollowProducerResult>("/api/producer/follow", {
+    method: "POST",
+    body: JSON.stringify({
+      followed_id: producerId,
+      followed_type: "producer",
+      follow_source: source,
+    }),
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Producer public profile page                                       */
+/* ------------------------------------------------------------------ */
+
+export type ProducerPublicPageData = {
+  success: boolean;
+  producer: ProducerProfile;
+  is_following: boolean;
+  upcoming_events: ProducerEvent[];
+  event_count: number;
+};
+
+export async function fetchProducerPublicProfile(producerId: number) {
+  return apiJson<ProducerPublicPageData>(
+    `/api/producer/profile-public?producer_id=${producerId}`
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Notifications                                                       */
+/* ------------------------------------------------------------------ */
+
+export type UserNotification = {
+  id: number;
+  type: string;
+  title: string;
+  body: string;
+  is_read: boolean;
+  created_at: number;
+  target_url?: string;
+  actor_name?: string;
+  actor_image_url?: string;
+};
+
+/** Raw notification row as returned by Xano (genie/get-notifications-dev). */
+type RawNotification = {
+  id: number;
+  notification_type?: string;
+  title?: string;
+  body?: string;
+  is_read?: boolean;
+  created_at?: string | number;
+  data_json?: Record<string, unknown> | null;
+};
+
+function normalizeNotification(row: RawNotification): UserNotification {
+  const data = (row.data_json ?? {}) as Record<string, unknown>;
+  // The UI's timeAgo() expects Unix *seconds*. Xano returns created_at as a Unix
+  // millisecond number (e.g. 1782859974610); tolerate an ISO string too.
+  let createdAt = 0;
+  if (typeof row.created_at === "number") {
+    // Values >= 1e11 are milliseconds; smaller ones are already seconds.
+    createdAt =
+      row.created_at >= 1e11
+        ? Math.floor(row.created_at / 1000)
+        : row.created_at;
+  } else if (typeof row.created_at === "string") {
+    const parsed = Date.parse(row.created_at);
+    createdAt = Number.isNaN(parsed) ? 0 : Math.floor(parsed / 1000);
+  }
+  const pickString = (key: string) =>
+    typeof data[key] === "string" ? (data[key] as string) : undefined;
+
+  return {
+    id: row.id,
+    type: row.notification_type ?? "notification",
+    title: row.title ?? "",
+    body: row.body ?? "",
+    is_read: Boolean(row.is_read),
+    created_at: createdAt,
+    target_url: pickString("target_url"),
+    actor_name: pickString("actor_name"),
+    actor_image_url: pickString("actor_image_url"),
+  };
+}
+
+export async function fetchUserNotifications() {
+  const raw = await apiJson<{ notifications?: RawNotification[] }>(
+    "/api/user/notifications"
+  );
+  return {
+    notifications: (raw.notifications ?? []).map(normalizeNotification),
+  };
+}
+
+export async function fetchUnreadNotifCount() {
+  return apiJson<{ unread_count: number }>(
+    "/api/user/notifications/unread-count"
+  );
+}
+
+/** Mark one or many notifications as read (single tap → pass [id]). */
+export async function markNotificationsRead(notificationIds: number[]) {
+  return apiJson<{ success: boolean }>("/api/user/notifications", {
+    method: "PATCH",
+    body: JSON.stringify({ notification_ids: notificationIds }),
+  });
+}
+
 /* ------------------------------------------------------------------ */
 /*  Homescreen Feed                                                     */
 /* ------------------------------------------------------------------ */
@@ -1719,6 +1862,18 @@ export async function createProducerPost(payload: {
 export type UpcomingEvent = {
   id: number;
   title: string;
+  producer_id?: number;
+  producer?: {
+    id?: number;
+    name?: string;
+    display_name?: string;
+    image_url?: string;
+    profile_photo_url?: string;
+    event_count?: number;
+    total_events_live?: number;
+    is_verified?: boolean;
+    is_following?: boolean;
+  };
   cover_image_url?: string;
   event_date?: string;
   start_time?: string;
@@ -1798,7 +1953,16 @@ export type EventFeedItem = {
   people_you_know?: number;
   is_on_fire?: boolean;
   badge?: string;
-  producer?: { name: string; image_url?: string; event_count?: number };
+  producer_id?: number;
+  producer?: {
+    name: string;
+    image_url?: string;
+    event_count?: number;
+    producer_id?: number;
+    handle?: string;
+    is_verified?: boolean;
+    is_following?: boolean;
+  };
   reason?: string;
   raw: UpcomingEvent;
 };
@@ -1830,6 +1994,7 @@ export type OnFireVenueItem = {
   category?: string;
   description?: string;
   going_count?: number;
+  badge?: string;
 };
 
 export type SuggestedProducerItem = {
@@ -1839,6 +2004,7 @@ export type SuggestedProducerItem = {
   image_url?: string;
   event_count?: number;
   producer_id?: number;
+  handle?: string;
 };
 
 export type FeedItem =
@@ -1882,9 +2048,12 @@ export async function fetchHomescreen(options: {
 /* ------------------------------------------------------------------ */
 
 export type EventDetailProducer = {
+  id?: number;
   name?: string;
   image_url?: string;
   event_count?: number;
+  is_verified?: boolean;
+  is_following?: boolean;
 };
 
 export type EventDetailMiniEvent = {
