@@ -327,12 +327,21 @@ export default async function InfluencerLandingPage({
                   </p>
                 ) : null}
 
-                <a
-                  href={`${acquisitionLink}&offer=${offer.id}`}
-                  className="mt-3 block w-full rounded-[18px] border border-red-500 bg-red-600 py-3 text-center text-sm font-semibold text-white transition hover:bg-red-700 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
-                >
-                  Get This Offer — Download Social Bevy
-                </a>
+                {offer.promo_code?.trim() ? (
+                  <Link
+                    href={`/i/${handle}/${encodeURIComponent(offer.promo_code.trim())}`}
+                    className="mt-3 block w-full rounded-[18px] border border-red-500 bg-red-600 py-3 text-center text-sm font-semibold text-white transition hover:bg-red-700 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                  >
+                    Redeem This Offer
+                  </Link>
+                ) : (
+                  <a
+                    href={acquisitionLink}
+                    className="mt-3 block w-full rounded-[18px] border border-red-500 bg-red-600 py-3 text-center text-sm font-semibold text-white transition hover:bg-red-700 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                  >
+                    Get This Offer — Download Social Bevy
+                  </a>
+                )}
               </div>
             ))}
           </div>

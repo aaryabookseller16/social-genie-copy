@@ -612,6 +612,38 @@ export async function redeemVibeeOffer(offerId: number) {
   return result;
 }
 
+/**
+ * Redeem an influencer offer via the influencer-specific endpoint so the
+ * influencer's commission is credited. Requires a logged-in genie_user JWT
+ * (auto-attached by apiJson). Input is only the promo_code.
+ */
+export async function redeemInfluencerOffer(promoCode: string) {
+  if (!readAuthToken()) {
+    throw new Error("Sign in required to redeem offers.");
+  }
+
+  const result = await apiJson<{
+    success?: boolean;
+    error?: string;
+    redemption_id?: number;
+    offer_title?: string;
+    offer_type?: string;
+    discount_value?: number | string;
+    discount_type?: string;
+    influencer_name?: string;
+    message?: string;
+  }>("/api/genie/redeem-influencer-offer", {
+    method: "POST",
+    body: JSON.stringify({ promo_code: promoCode }),
+  });
+
+  if (result.success === false) {
+    throw new Error(result.error || "Could not redeem this offer.");
+  }
+
+  return result;
+}
+
 export async function fetchUserRedemptions() {
   const externalUserId = readExternalUserId();
   if (!externalUserId) {
@@ -1379,6 +1411,46 @@ export async function deleteVendorOffer(offerId: number) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Vendor — Influencer Offer Review Queue                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * All influencer offers (active / pending / rejected) for the venues the
+ * calling owner has claimed. Owned venues are resolved server-side from the
+ * caller's JWT. Pass `status` to filter server-side, or omit for all.
+ */
+export async function fetchVendorInfluencerOffers(
+  status?: "active" | "pending" | "rejected"
+) {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+  return apiJson<{
+    success?: boolean;
+    offers?: InfluencerOffer[];
+    count?: number;
+  }>(`/api/vendor/influencer-offers${qs}`);
+}
+
+/**
+ * Approve or reject a pending influencer offer. Only the venue owner may
+ * review. `rejection_reason` is stored when rejecting.
+ */
+export async function reviewInfluencerOffer(payload: {
+  offer_id: number;
+  decision: "approve" | "reject" | "cancel";
+  rejection_reason?: string;
+}) {
+  return apiJson<{
+    success?: boolean;
+    offer_id?: number;
+    status?: string;
+    reviewed_at?: string | number;
+  }>("/api/vendor/review-offer", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/* ------------------------------------------------------------------ */
 /*  Vendor Influencer Codes                                            */
 /* ------------------------------------------------------------------ */
 
@@ -1500,6 +1572,8 @@ export interface InfluencerOffer {
   expires_at?: string | number;
   venue_id?: number;
   total_clicks?: number;
+  rejection_reason?: string;
+  reviewed_at?: string | number;
 }
 
 export interface InfluencerDashboardData {
@@ -1541,6 +1615,54 @@ export async function fetchInfluencerOffers(handle: string) {
     `/api/genie/influencer-offers?${params.toString()}`,
     { auth: false }
   );
+}
+
+export interface CreatedInfluencerOffer {
+  success?: boolean;
+  offer_id?: number;
+  status?: string;
+  promo_code?: string;
+  offer_type?: string;
+  offer_title?: string;
+  landing_url?: string;
+}
+
+/**
+ * Influencer creates an offer tied to a venue. Offer starts in `pending`
+ * status until the venue owner approves it. `venue_id` is required.
+ * (`discount_type` is intentionally omitted — the backend has no column for it.)
+ */
+export async function createInfluencerOffer(payload: {
+  venue_id: number;
+  offer_title: string;
+  offer_type: string;
+  offer_description?: string;
+  discount_value?: number;
+  promo_code?: string;
+  max_redemptions?: number;
+  expires_at?: string;
+}) {
+  return apiJson<CreatedInfluencerOffer>("/api/genie/create-influencer-offer", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export type InfluencerOfferAnalytics = InfluencerOffer & {
+  total_redemptions?: number;
+  new_user_count?: number;
+  vibbee_conversions?: number;
+};
+
+/**
+ * Per-offer aggregate analytics for the calling influencer (all statuses).
+ * Returns aggregate counts only — there is no per-redemption list.
+ */
+export async function fetchInfluencerOfferAnalytics() {
+  return apiJson<{
+    influencer_id?: number;
+    offers?: InfluencerOfferAnalytics[];
+  }>("/api/genie/influencer-offer-analytics");
 }
 
 /* ------------------------------------------------------------------ */

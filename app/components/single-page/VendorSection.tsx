@@ -17,12 +17,13 @@ import { type ConsumerAccount, readConsumerAccount, writeConsumerAccount } from 
 import {
   createSubscriptionCheckout,
   createVendorBusiness,
-  createVendorOffer,
   fetchMyVendorProfile,
   fetchVendorDashboard,
   fetchVendorInfluencerCodes,
   fetchVendorNotifPrefs,
+  fetchVendorInfluencerOffers,
   fetchVendorVenue,
+  reviewInfluencerOffer,
   searchVendorBusinesses,
   toggleVendorOffer,
   updateVendorNotifPrefs,
@@ -31,6 +32,7 @@ import {
   vendorOnboardingSearch,
   vendorOnboardingContact,
   vendorOnboardingConfirm,
+  type InfluencerOffer,
   type VendorInfluencerCode,
 } from "@/app/lib/publicApiClient";
 import { readExternalUserId } from "@/app/lib/sessionToken";
@@ -485,6 +487,19 @@ function SelectInput({
 /*  Main component                                                     */
 /* ------------------------------------------------------------------ */
 
+/** Auto-dismiss a transient toast/message a few seconds after it's set. */
+function useAutoClear(
+  value: string | null,
+  setter: (v: null) => void,
+  ms = 4000
+) {
+  useEffect(() => {
+    if (!value) return;
+    const t = setTimeout(() => setter(null), ms);
+    return () => clearTimeout(t);
+  }, [value, setter, ms]);
+}
+
 export function VendorSection({
   visible,
   sectionRef,
@@ -591,10 +606,17 @@ export function VendorSection({
   const [analyticsPeriod, setAnalyticsPeriod] = useState<"7_days" | "30_days" | "all_time">("30_days");
 
   // Offers screen
-  const [showCreateOffer, setShowCreateOffer] = useState(false);
-  const [offerForm, setOfferForm] = useState({ title: "", description: "", offer_type: "happy_hour", redeem_instructions: "", vibee_only: true });
-  const [isOfferSaving, setIsOfferSaving] = useState(false);
   const [offerMessage, setOfferMessage] = useState<string | null>(null);
+
+  // Influencer offer review queue (venue owner)
+  const [influencerOffers, setInfluencerOffers] = useState<InfluencerOffer[]>([]);
+  const [isLoadingPending, setIsLoadingPending] = useState(false);
+  const [vendorOfferFilter, setVendorOfferFilter] = useState<
+    "active" | "pending" | "rejected" | "cancelled"
+  >("pending");
+  const [rejectingOfferId, setRejectingOfferId] = useState<number | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [reviewingOfferId, setReviewingOfferId] = useState<number | null>(null);
 
   // Boost screen
   const [selectedBoostTier, setSelectedBoostTier] = useState<string | null>(null);
@@ -610,6 +632,12 @@ export function VendorSection({
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+
+  // Auto-dismiss transient toast messages after a few seconds.
+  useAutoClear(offerMessage, setOfferMessage);
+  useAutoClear(statusMessage, setStatusMessage);
+  useAutoClear(profileMessage, setProfileMessage);
+  useAutoClear(settingsMessage, setSettingsMessage);
 
   const progressStep: Record<VendorStep, number> = {
     loading: 0,
@@ -867,6 +895,80 @@ export function VendorSection({
     if (!visible || step !== "dashboard") return;
     void loadDashboard();
   }, [visible, step, loadDashboard]);
+
+  // ── Influencer offer review queue (venue owner) ────────────────────────────
+
+  const [pendingError, setPendingError] = useState<string | null>(null);
+
+  const loadInfluencerOffers = useCallback(async () => {
+    setIsLoadingPending(true);
+    setPendingError(null);
+    try {
+      const res = await fetchVendorInfluencerOffers();
+      setInfluencerOffers(res.offers ?? []);
+    } catch (err) {
+      setInfluencerOffers([]);
+      setPendingError(
+        err instanceof Error ? err.message : "Could not load offers."
+      );
+    } finally {
+      setIsLoadingPending(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!visible || step !== "offers") return;
+    void loadInfluencerOffers();
+  }, [visible, step, loadInfluencerOffers]);
+
+  const handleReviewOffer = useCallback(
+    async (
+      offerId: number,
+      decision: "approve" | "reject" | "cancel",
+      reason?: string
+    ) => {
+      setReviewingOfferId(offerId);
+      setOfferMessage(null);
+      try {
+        await reviewInfluencerOffer({
+          offer_id: offerId,
+          decision,
+          rejection_reason: reason,
+        });
+        // Move the reviewed offer to its new status in place so it appears
+        // under the Active / Rejected / Cancelled tab instead of vanishing.
+        const newStatus =
+          decision === "approve"
+            ? "active"
+            : decision === "cancel"
+              ? "cancelled"
+              : "rejected";
+        setInfluencerOffers((prev) =>
+          prev.map((o) =>
+            o.id === offerId
+              ? { ...o, status: newStatus, rejection_reason: reason }
+              : o
+          )
+        );
+        setRejectingOfferId(null);
+        setRejectReason("");
+        setOfferMessage(
+          decision === "approve"
+            ? "Offer approved."
+            : decision === "cancel"
+              ? "Offer cancelled."
+              : "Offer rejected."
+        );
+      } catch (err) {
+        setOfferMessage(
+          err instanceof Error ? err.message : "Could not review offer."
+        );
+      } finally {
+        setReviewingOfferId(null);
+      }
+    },
+    []
+  );
 
   /** Persist vendor_id into ConsumerAccount localStorage so dashboard survives refresh */
   const persistVendorIdToAccount = (vid: number) => {
@@ -2196,12 +2298,274 @@ export function VendorSection({
         const offers = dashboardData?.offers ?? [];
         return (
           <div className="mt-2 space-y-4 pb-24">
+            {/* Influencer offers — Active / Pending / Rejected */}
+            {(() => {
+              const statusOf = (o: InfluencerOffer) =>
+                (o.status ?? "pending").toLowerCase();
+              const counts = {
+                active: influencerOffers.filter((o) => statusOf(o) === "active")
+                  .length,
+                pending: influencerOffers.filter(
+                  (o) => statusOf(o) === "pending"
+                ).length,
+                rejected: influencerOffers.filter(
+                  (o) => statusOf(o) === "rejected"
+                ).length,
+                cancelled: influencerOffers.filter(
+                  (o) => statusOf(o) === "cancelled"
+                ).length,
+              };
+              const tabs: Array<{
+                key: "active" | "pending" | "rejected" | "cancelled";
+                label: string;
+              }> = [
+                { key: "active", label: "Active" },
+                { key: "pending", label: "Pending" },
+                { key: "rejected", label: "Rejected" },
+                { key: "cancelled", label: "Cancelled" },
+              ];
+              const filtered = influencerOffers.filter(
+                (o) => statusOf(o) === vendorOfferFilter
+              );
+              return (
+                <div className="space-y-3">
+                  <p className="text-[0.72rem] font-bold uppercase tracking-[0.14em] text-red-500 dark:text-[#ff7b7b]">
+                    Influencer Offers
+                  </p>
+
+                  {/* Segmented tab bar with a sliding red indicator */}
+                  <div className="relative flex rounded-full border border-[#E7070380] bg-white/5 p-1 dark:bg-black/20">
+                    {/* sliding pill — moves to the active tab */}
+                    <span
+                      aria-hidden
+                      className="absolute top-1 bottom-1 rounded-full bg-red-600 transition-transform duration-300 ease-out"
+                      style={{
+                        width: "calc((100% - 0.5rem) / 4)",
+                        left: "0.25rem",
+                        transform: `translateX(${
+                          tabs.findIndex((t) => t.key === vendorOfferFilter) * 100
+                        }%)`,
+                      }}
+                    />
+                    {tabs.map((tab) => {
+                      const isActive = vendorOfferFilter === tab.key;
+                      return (
+                        <button
+                          key={tab.key}
+                          type="button"
+                          onClick={() => setVendorOfferFilter(tab.key)}
+                          className={`relative z-10 flex-1 rounded-full px-1 py-1.5 text-[0.72rem] font-semibold transition-colors duration-300 ${
+                            isActive
+                              ? "text-white"
+                              : "text-gray-500 dark:text-white/60"
+                          }`}
+                        >
+                          {tab.label}
+                          {counts[tab.key] > 0 ? ` (${counts[tab.key]})` : ""}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {isLoadingPending ? (
+                    <div className="flex min-h-[6rem] items-center justify-center">
+                      <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-red-600" />
+                    </div>
+                  ) : pendingError ? (
+                    <p className="rounded-2xl border border-red-300/70 bg-red-50/60 px-4 py-3 text-[0.8rem] text-red-700 dark:border-red-500/30 dark:bg-red-500/5 dark:text-red-300">
+                      {pendingError}
+                    </p>
+                  ) : filtered.length === 0 ? (
+                    <p className="rounded-2xl border border-gray-200 bg-white/5 px-4 py-3 text-center text-[0.82rem] text-gray-400 dark:border-white/10 dark:text-white/40">
+                      {vendorOfferFilter === "pending"
+                        ? "No pending requests."
+                        : vendorOfferFilter === "active"
+                          ? "No active offers."
+                          : vendorOfferFilter === "rejected"
+                            ? "No rejected offers."
+                            : "No cancelled offers."}
+                    </p>
+                  ) : (
+                    filtered.map((offer) => {
+                      const status = statusOf(offer);
+                      const discount = offer.discount_value
+                        ? offer.discount_type === "percent"
+                          ? `${offer.discount_value}%`
+                          : `$${offer.discount_value}`
+                        : null;
+                      const isRejecting = rejectingOfferId === offer.id;
+                      const isBusy = reviewingOfferId === offer.id;
+                      const cardTone =
+                        status === "active"
+                          ? "border-green-300/70 bg-green-50/60 dark:border-green-500/30 dark:bg-green-500/5"
+                          : status === "rejected"
+                            ? "border-red-300/70 bg-red-50/50 dark:border-red-500/30 dark:bg-red-500/5"
+                            : status === "cancelled"
+                              ? "border-gray-300/70 bg-gray-100/60 dark:border-white/15 dark:bg-white/5"
+                              : "border-amber-300/70 bg-amber-50/60 dark:border-amber-500/30 dark:bg-amber-500/5";
+                      return (
+                        <div
+                          key={offer.id}
+                          className={`rounded-2xl border px-4 py-4 ${cardTone}`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[0.9rem] font-semibold text-gray-900 dark:text-white">
+                                {offer.offer_title}
+                              </p>
+                              <div className="mt-1 flex flex-wrap items-center gap-2">
+                                <span className="text-[0.72rem] capitalize text-gray-500 dark:text-white/50">
+                                  {offer.offer_type?.replace(/_/g, " ")}
+                                </span>
+                                {discount ? (
+                                  <span className="text-[0.72rem] font-semibold text-red-600 dark:text-[#ff7b7b]">
+                                    {discount} off
+                                  </span>
+                                ) : null}
+                              </div>
+                              {offer.offer_description ? (
+                                <p className="mt-1.5 text-[0.78rem] text-gray-500 dark:text-white/50">
+                                  {offer.offer_description}
+                                </p>
+                              ) : null}
+                              {offer.promo_code ? (
+                                <p className="mt-1.5 text-[0.72rem] font-bold uppercase tracking-wider text-red-600 dark:text-[#ff7b7b]">
+                                  {offer.promo_code}
+                                </p>
+                              ) : null}
+                              {(status === "rejected" ||
+                                status === "cancelled") &&
+                              offer.rejection_reason ? (
+                                <p className="mt-1.5 text-[0.72rem] text-red-600 dark:text-red-300">
+                                  Reason: {offer.rejection_reason}
+                                </p>
+                              ) : null}
+                            </div>
+                          </div>
+
+                          {status === "pending" &&
+                            (isRejecting ? (
+                              <div className="mt-3 space-y-2">
+                                <VendorInput
+                                  value={rejectReason}
+                                  placeholder="Reason for rejection (optional)"
+                                  onChange={setRejectReason}
+                                />
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    disabled={isBusy}
+                                    onClick={() =>
+                                      void handleReviewOffer(
+                                        offer.id,
+                                        "reject",
+                                        rejectReason.trim() || undefined
+                                      )
+                                    }
+                                    className="flex-1 rounded-lg border border-red-500 bg-red-600 px-3 py-2 text-[0.78rem] font-semibold text-white disabled:opacity-60"
+                                  >
+                                    {isBusy ? "…" : "Confirm Reject"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={isBusy}
+                                    onClick={() => {
+                                      setRejectingOfferId(null);
+                                      setRejectReason("");
+                                    }}
+                                    className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-[0.78rem] font-medium text-gray-600 dark:border-white/20 dark:text-white/70"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="mt-3 flex gap-2">
+                                <button
+                                  type="button"
+                                  disabled={isBusy}
+                                  onClick={() =>
+                                    void handleReviewOffer(offer.id, "approve")
+                                  }
+                                  className="flex-1 rounded-lg border border-green-500 bg-green-600 px-3 py-2 text-[0.78rem] font-semibold text-white disabled:opacity-60"
+                                >
+                                  {isBusy ? "…" : "Approve"}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={isBusy}
+                                  onClick={() => {
+                                    setRejectingOfferId(offer.id);
+                                    setRejectReason("");
+                                  }}
+                                  className="flex-1 rounded-lg border border-[#E7070380] px-3 py-2 text-[0.78rem] font-medium text-gray-600 dark:text-white/70"
+                                >
+                                  Reject
+                                </button>
+                              </div>
+                            ))}
+
+                          {status === "active" &&
+                            (isRejecting ? (
+                              <div className="mt-3 space-y-2">
+                                <VendorInput
+                                  value={rejectReason}
+                                  placeholder="Reason for cancelling (optional)"
+                                  onChange={setRejectReason}
+                                />
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    disabled={isBusy}
+                                    onClick={() =>
+                                      void handleReviewOffer(
+                                        offer.id,
+                                        "cancel",
+                                        rejectReason.trim() || undefined
+                                      )
+                                    }
+                                    className="flex-1 rounded-lg border border-red-500 bg-red-600 px-3 py-2 text-[0.78rem] font-semibold text-white disabled:opacity-60"
+                                  >
+                                    {isBusy ? "…" : "Confirm Cancel"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={isBusy}
+                                    onClick={() => {
+                                      setRejectingOfferId(null);
+                                      setRejectReason("");
+                                    }}
+                                    className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-[0.78rem] font-medium text-gray-600 dark:border-white/20 dark:text-white/70"
+                                  >
+                                    Keep Active
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="mt-3">
+                                <button
+                                  type="button"
+                                  disabled={isBusy}
+                                  onClick={() => {
+                                    setRejectingOfferId(offer.id);
+                                    setRejectReason("");
+                                  }}
+                                  className="w-full rounded-lg border border-[#E7070380] px-3 py-2 text-[0.78rem] font-medium text-gray-600 dark:text-white/70"
+                                >
+                                  Cancel Offer
+                                </button>
+                              </div>
+                            ))}
+                        </div>
+                      );
+                    })
+                  )}
+                  <div className="h-px bg-gray-200 dark:bg-white/10" />
+                </div>
+              );
+            })()}
+
             {/* Offer list */}
-            {offers.length === 0 && !showCreateOffer && (
-              <p className="text-center text-[0.88rem] text-gray-400 dark:text-white/50 py-4">
-                No offers yet. Create your first offer below.
-              </p>
-            )}
             <div className="space-y-3">
               {offers.map((offer) => (
                 <div
@@ -2244,83 +2608,7 @@ export function VendorSection({
             </div>
 
             {offerMessage && (
-              <p className={`text-sm ${offerMessage.includes("created") || offerMessage.includes("success") ? "text-green-500" : "text-red-500"}`}>{offerMessage}</p>
-            )}
-
-            {/* Create offer toggle */}
-            {!showCreateOffer ? (
-              <ActionButton onClick={() => setShowCreateOffer(true)} className="w-full">
-                + Create New Offer
-              </ActionButton>
-            ) : (
-              <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-5 dark:bg-black/20 space-y-4">
-                <p className="text-[0.95rem] font-semibold text-gray-900 dark:text-white">New Offer</p>
-                <VendorInput value={offerForm.title} placeholder="Offer title *" onChange={(v) => setOfferForm((c) => ({ ...c, title: v }))} />
-                <div>
-                  <label className="mb-1.5 block text-[13px] font-medium text-gray-500 dark:text-white/55">Description</label>
-                  <textarea
-                    value={offerForm.description}
-                    onChange={(e) => setOfferForm((c) => ({ ...c, description: e.target.value }))}
-                    placeholder="Describe the offer..."
-                    rows={2}
-                    className="w-full resize-none rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-[15px] text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30"
-                  />
-                </div>
-                <SelectInput
-                  value={offerForm.offer_type}
-                  placeholder="Offer type"
-                  label="Type"
-                  options={["happy_hour","bogo","discount","freebie","special_event"]}
-                  onChange={(v) => setOfferForm((c) => ({ ...c, offer_type: v }))}
-                />
-                <VendorInput value={offerForm.redeem_instructions} placeholder="Redeem instructions" onChange={(v) => setOfferForm((c) => ({ ...c, redeem_instructions: v }))} />
-                <div className="flex items-center justify-between">
-                  <label className="text-[13px] font-medium text-gray-700 dark:text-white/70">V.I.Bee members only</label>
-                  <button
-                    type="button"
-                    onClick={() => setOfferForm((c) => ({ ...c, vibee_only: !c.vibee_only }))}
-                    className={`relative h-6 w-11 rounded-full transition-colors ${offerForm.vibee_only ? "bg-red-600" : "bg-gray-300 dark:bg-white/20"}`}
-                  >
-                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${offerForm.vibee_only ? "translate-x-5" : "translate-x-0.5"}`} />
-                  </button>
-                </div>
-                <div className="flex gap-2">
-                  <ActionButton
-                    onClick={() => {
-                      if (!offerForm.title.trim()) { setOfferMessage("Title is required."); return; }
-                      const vid = vendorId ?? dashboardData?.vendor_id;
-                      if (!vid) { setOfferMessage("Vendor not found."); return; }
-                      setIsOfferSaving(true);
-                      setOfferMessage(null);
-                      createVendorOffer({
-                        vendor_id: vid,
-                        title: offerForm.title,
-                        description: offerForm.description,
-                        offer_type: offerForm.offer_type as Parameters<typeof createVendorOffer>[0]["offer_type"],
-                        redeem_instructions: offerForm.redeem_instructions,
-                        vibee_only: offerForm.vibee_only,
-                      })
-                        .then(() => {
-                          setShowCreateOffer(false);
-                          setOfferForm({ title: "", description: "", offer_type: "happy_hour", redeem_instructions: "", vibee_only: true });
-                          setOfferMessage("Offer created successfully!");
-                          void loadDashboard();
-                        })
-                        .catch((err) => {
-                          setOfferMessage(err instanceof Error ? err.message : "Could not create offer.");
-                        })
-                        .finally(() => setIsOfferSaving(false));
-                    }}
-                    disabled={isOfferSaving}
-                    className="flex-1"
-                  >
-                    {isOfferSaving ? "Saving..." : "Create Offer"}
-                  </ActionButton>
-                  <ActionButton variant="secondary" onClick={() => { setShowCreateOffer(false); setOfferMessage(null); }} className="flex-1">
-                    Cancel
-                  </ActionButton>
-                </div>
-              </div>
+              <p className={`text-sm ${/could ?n[o']?t|failed|error|required|not found|unable/i.test(offerMessage) ? "text-red-500" : "text-green-500"}`}>{offerMessage}</p>
             )}
           </div>
         );
