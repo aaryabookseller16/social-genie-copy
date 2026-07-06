@@ -18,6 +18,8 @@ import { OnboardingCompleteSection } from "@/app/components/single-page/Onboardi
 import { VerifyEmailGate } from "@/app/components/single-page/VerifyEmailGate";
 import { InfluencerSection } from "@/app/components/single-page/InfluencerSection";
 import { NotificationsScreen } from "@/app/components/single-page/NotificationsScreen";
+import { MessagesScreen } from "@/app/components/single-page/MessagesScreen";
+import { ConversationScreen } from "@/app/components/single-page/ConversationScreen";
 import { HomescreenSection } from "@/app/components/homescreen/HomescreenSection";
 import { EventDetailSection } from "@/app/components/event-detail/EventDetailSection";
 import {
@@ -101,6 +103,8 @@ import {
   saveProducerDetails,
   saveInfluencerDetails,
   fetchUnreadNotifCount,
+  fetchUnreadMessageCount,
+  type MessageThreadType,
 } from "@/app/lib/publicApiClient";
 import { getRuntimeConfig } from "@/app/lib/runtimeConfig";
 import { extractCityFromMessage, mentionsNearMe } from "@/app/lib/cityExtractor";
@@ -475,6 +479,15 @@ export function SinglePageGenieApp({
   const roleUnlockRef = useRef<HTMLElement | null>(null);
   const [activeScreen, setActiveScreen] = useState<FlowAnchor>(initialScreen);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
+  const [activeConversation, setActiveConversation] = useState<{
+    threadId: number | null;
+    threadType: MessageThreadType;
+    counterpartId: number;
+    counterpartName?: string;
+    counterpartAvatarUrl?: string;
+    viewerRole?: "consumer" | "producer";
+  } | null>(null);
   const [isRoleSwitcherOpen, setIsRoleSwitcherOpen] = useState(false);
   const [detailReturnScreen, setDetailReturnScreen] = useState<
     "decision" | "more" | "saved"
@@ -831,6 +844,13 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     if (!account) return;
     fetchUnreadNotifCount()
       .then((r) => setUnreadNotifCount(r.unread_count ?? 0))
+      .catch(() => {});
+  }, [account]);
+
+  useEffect(() => {
+    if (!account) return;
+    fetchUnreadMessageCount(account.id)
+      .then((count) => setUnreadMessageCount(count))
       .catch(() => {});
   }, [account]);
 
@@ -1821,11 +1841,28 @@ setResponse(nextResponse);
       "role-identifier",
       "role-setup",
       "onboarding-complete",
+      "messages",
     ];
-    if (allowed.includes(screen as FlowAnchor)) {
+    if (screen === "conversation") {
+      const threadType = url.searchParams.get("thread_type");
+      const producerId = url.searchParams.get("producer_id");
+      const counterpartName = url.searchParams.get("counterpart_name");
+      if (threadType === "producer" && producerId && !isNaN(Number(producerId))) {
+        setActiveConversation({
+          threadId: null,
+          threadType: "producer",
+          counterpartId: Number(producerId),
+          counterpartName: counterpartName ?? undefined,
+        });
+        navigateTo("conversation");
+      }
+    } else if (allowed.includes(screen as FlowAnchor)) {
       navigateTo(screen as FlowAnchor);
     }
     url.searchParams.delete("screen");
+    url.searchParams.delete("thread_type");
+    url.searchParams.delete("producer_id");
+    url.searchParams.delete("counterpart_name");
     window.history.replaceState(
       {},
       "",
@@ -2180,6 +2217,9 @@ setResponse(nextResponse);
         case "saved":
           navigateTo("saved");
           break;
+        case "messages":
+          navigateTo("messages");
+          break;
         case "membership":
           navigateTo("membership");
           break;
@@ -2362,6 +2402,8 @@ activeScreen !== "vibbee-trial" &&
     activeScreen !== "role-unlock" &&
     activeScreen !== "producer-dashboard" &&
     activeScreen !== "notifications" &&
+    activeScreen !== "messages" &&
+    activeScreen !== "conversation" &&
     activeScreen !== "detail";
 
   const isAiFallbackLayout =
@@ -5286,6 +5328,8 @@ navigateTo("event-detail");
     onOrbTap={startListening}
     onNotifications={() => navigateTo("notifications")}
     unreadNotifCount={unreadNotifCount}
+    onMessages={() => navigateTo("messages")}
+    unreadMessageCount={unreadMessageCount}
   />
 ) : null}
 
@@ -5293,6 +5337,35 @@ navigateTo("event-detail");
   <NotificationsScreen
     onBack={() => goBack("homescreen")}
     onClearUnread={() => setUnreadNotifCount(0)}
+  />
+) : null}
+
+{activeScreen === "messages" ? (
+  <MessagesScreen
+    account={account}
+    onBack={() => goBack("homescreen")}
+    onOpenConversation={(conv) => {
+      setActiveConversation(conv);
+      navigateTo("conversation");
+    }}
+  />
+) : null}
+
+{activeScreen === "conversation" && activeConversation ? (
+  <ConversationScreen
+    account={account}
+    threadId={activeConversation.threadId}
+    threadType={activeConversation.threadType}
+    counterpartId={activeConversation.counterpartId}
+    counterpartName={activeConversation.counterpartName}
+    counterpartAvatarUrl={activeConversation.counterpartAvatarUrl}
+    viewerRole={activeConversation.viewerRole}
+    onBack={() => goBack("messages")}
+    onThreadCreated={(threadId, viewerRole) =>
+      setActiveConversation((prev) =>
+        prev ? { ...prev, threadId, viewerRole: viewerRole ?? prev.viewerRole } : prev
+      )
+    }
   />
 ) : null}
 

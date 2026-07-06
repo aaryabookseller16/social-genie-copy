@@ -34,7 +34,9 @@ export type FlowAnchor =
   | "event-survey"
   | "vibbee-trial"
   | "membership"
-  | "notifications";
+  | "notifications"
+  | "messages"
+  | "conversation";
 
 export function BackIcon({
   size = 20,

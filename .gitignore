@@ -48,3 +48,4 @@ codex-plan-gpt-4.md
 .env*.local
 
 codebase-reference.md
+MESSAGING_HANDOFF.md
