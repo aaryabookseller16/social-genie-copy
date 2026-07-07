@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { ScrollUnlock } from "@/app/p/[id]/ScrollUnlock";
 import {
@@ -8,6 +8,8 @@ import {
   fetchBlockedUsers,
   fetchMessageThreads,
   fetchThreadMessages,
+  markThreadRead,
+  MAX_MESSAGE_LENGTH,
   mergeThreadsToConversations,
   replyAsProducer,
   reportUserProfile,
@@ -19,6 +21,54 @@ import {
 import { type ConsumerAccount } from "@/app/lib/localState";
 
 const POLL_INTERVAL_MS = 4000;
+const PER_PAGE = 30;
+/** How close to the bottom (px) still counts as "at the bottom" for auto-scroll. */
+const NEAR_BOTTOM_PX = 80;
+
+function toMs(value: string | number): number {
+  if (typeof value === "number") return value;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/** A server message, optionally with client-only optimistic-send state. */
+type DisplayMessage = RawMessage & { pending?: boolean; failed?: boolean };
+
+/** Union by id, sorted oldest→newest for top-to-bottom display. */
+function mergeMessages<T extends RawMessage>(existing: T[], incoming: T[]): T[] {
+  const byId = new Map<number, T>();
+  for (const m of existing) byId.set(m.id, m);
+  for (const m of incoming) byId.set(m.id, m);
+  return Array.from(byId.values()).sort((a, b) => {
+    const ta = toMs(a.created_at);
+    const tb = toMs(b.created_at);
+    if (ta !== tb) return ta - tb;
+    return a.id - b.id;
+  });
+}
+
+const sameDay = (a: number, b: number): boolean => {
+  const da = new Date(a);
+  const db = new Date(b);
+  return (
+    da.getFullYear() === db.getFullYear() &&
+    da.getMonth() === db.getMonth() &&
+    da.getDate() === db.getDate()
+  );
+};
+
+/** "Today" / "Yesterday" / "Mar 5" (adds year only if it differs from now). */
+function dayLabel(ms: number): string {
+  const now = Date.now();
+  if (sameDay(ms, now)) return "Today";
+  if (sameDay(ms, now - 86_400_000)) return "Yesterday";
+  const d = new Date(ms);
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    ...(d.getFullYear() !== new Date().getFullYear() ? { year: "numeric" } : {}),
+  });
+}
 
 type ViewerRole = "consumer" | "producer";
 
@@ -53,7 +103,7 @@ export function ConversationScreen({
   onThreadCreated,
 }: Props) {
   const isProducerOwnerReplying = threadType === "producer" && viewerRole === "producer";
-  const [messages, setMessages] = useState<RawMessage[]>([]);
+  const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [composerText, setComposerText] = useState("");
@@ -62,7 +112,31 @@ export function ConversationScreen({
   const [showMenu, setShowMenu] = useState(false);
   const [showReportPicker, setShowReportPicker] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
-  const listEndRef = useRef<HTMLDivElement | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  // Mirrors loadingOlder so the poll can bail synchronously without a stale
+  // closure — prevents a poll merge from fighting the load-older scroll offset.
+  const loadingOlderRef = useRef(false);
+  // Whether the user is currently scrolled to (near) the bottom — governs
+  // whether an incoming message should auto-scroll or leave them where they are.
+  const nearBottomRef = useRef(true);
+  // Oldest page number loaded so far (page 1 = newest; higher = older).
+  const oldestPageRef = useRef(1);
+  // When set, a load-older just prepended rows: hold the pre-prepend scrollHeight
+  // so the layout effect can restore the visual position (no jump).
+  const pendingOlderAdjustRef = useRef<number | null>(null);
+  // Request a scroll-to-bottom after the next messages render (initial load,
+  // a message I sent, or a new incoming message while already at the bottom).
+  const shouldScrollBottomRef = useRef(true);
+
+  const markReadSafe = useCallback(() => {
+    if (threadId === null) return;
+    markThreadRead(threadType, threadId).catch(() => {});
+  }, [threadId, threadType]);
 
   // onThreadCreated is a fresh function reference on every render of the
   // (large, frequently re-rendering) parent component. Keeping it in a ref
@@ -79,8 +153,36 @@ export function ConversationScreen({
     (isInitial: boolean) => {
       if (threadId === null) return;
       if (isInitial) setLoading(true);
-      fetchThreadMessages(threadType, threadId)
-        .then((raw) => setMessages(raw.messages ?? []))
+      // Always fetch page 1 (the newest). Older pages are pulled in separately
+      // by loadOlder() and preserved via the id-keyed merge.
+      fetchThreadMessages(threadType, threadId, 1, PER_PAGE)
+        .then((raw) => {
+          const incoming = raw.messages ?? [];
+          if (isInitial) {
+            oldestPageRef.current = 1;
+            setHasMore(incoming.length >= PER_PAGE);
+            shouldScrollBottomRef.current = true;
+            setMessages(mergeMessages([], incoming));
+            markReadSafe();
+          } else {
+            // Don't merge poll results while a load-older is in flight — the
+            // prepend scroll-offset math would be thrown off by a concurrent
+            // height change. The next poll (or visibility refresh) catches up.
+            if (loadingOlderRef.current) return;
+            setMessages((prev) => {
+              const merged = mergeMessages(prev, incoming);
+              if (merged.length > prev.length) {
+                const newest = merged[merged.length - 1];
+                const isIncoming = newest && newest.sender_id !== account?.id;
+                if (isIncoming) {
+                  markReadSafe();
+                  if (nearBottomRef.current) shouldScrollBottomRef.current = true;
+                }
+              }
+              return merged;
+            });
+          }
+        })
         .catch(() => {
           if (isInitial) setError("This conversation could not be loaded.");
         })
@@ -88,8 +190,44 @@ export function ConversationScreen({
           if (isInitial) setLoading(false);
         });
     },
-    [threadId, threadType]
+    [threadId, threadType, account?.id, markReadSafe]
   );
+
+  const loadOlder = useCallback(() => {
+    if (threadId === null || !hasMore || loadingOlder) return;
+    const container = scrollRef.current;
+    pendingOlderAdjustRef.current = container ? container.scrollHeight : null;
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+    const nextPage = oldestPageRef.current + 1;
+    fetchThreadMessages(threadType, threadId, nextPage, PER_PAGE)
+      .then((raw) => {
+        const incoming = raw.messages ?? [];
+        oldestPageRef.current = nextPage;
+        if (incoming.length < PER_PAGE) setHasMore(false);
+        if (incoming.length > 0) {
+          setMessages((prev) => mergeMessages(prev, incoming));
+        } else {
+          pendingOlderAdjustRef.current = null;
+        }
+      })
+      .catch(() => {
+        pendingOlderAdjustRef.current = null;
+      })
+      .finally(() => {
+        loadingOlderRef.current = false;
+        setLoadingOlder(false);
+      });
+  }, [threadId, threadType, hasMore, loadingOlder]);
+
+  function handleScroll() {
+    const c = scrollRef.current;
+    if (!c) return;
+    nearBottomRef.current = c.scrollHeight - c.scrollTop - c.clientHeight < NEAR_BOTTOM_PX;
+    if (c.scrollTop < 60 && hasMore && !loadingOlder) {
+      loadOlder();
+    }
+  }
 
   // A deep link (e.g. a producer profile's "Message" button) always arrives
   // with threadId === null, since it has no way to know whether a thread
@@ -121,9 +259,27 @@ export function ConversationScreen({
 
   useEffect(() => {
     if (threadId === null) return;
+    const isVisible = () =>
+      typeof document === "undefined" || document.visibilityState === "visible";
+    // Opening a chat always loads it. But the repeated poll is gated on tab
+    // visibility: reading a thread (ep_get_messages_dev) marks its messages read
+    // as a side effect, so a backgrounded/unfocused conversation tab must NOT
+    // keep polling — otherwise it silently "reads" incoming messages and the
+    // recipient never sees an unread badge elsewhere.
     loadMessages(true);
-    const interval = setInterval(() => loadMessages(false), POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
+    const interval = setInterval(() => {
+      if (isVisible()) loadMessages(false);
+    }, POLL_INTERVAL_MS);
+    // When the user switches back to this tab, refresh immediately (and mark
+    // read) rather than waiting for the next interval tick.
+    const onVisible = () => {
+      if (isVisible()) loadMessages(false);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [threadId, loadMessages]);
 
   useEffect(() => {
@@ -134,16 +290,73 @@ export function ConversationScreen({
       .catch(() => {});
   }, [counterpartId]);
 
+  // Auto-dismiss the transient action banner ("Blocked", "Report submitted", …).
   useEffect(() => {
-    listEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (!actionMessage) return;
+    const timer = setTimeout(() => setActionMessage(null), 3000);
+    return () => clearTimeout(timer);
+  }, [actionMessage]);
+
+  // Escape closes the ⋮ menu / report sheet (outside-click is handled by the
+  // menu backdrop in the markup below).
+  useEffect(() => {
+    if (!showMenu && !showReportPicker) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowMenu(false);
+        setShowReportPicker(false);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [showMenu, showReportPicker]);
+
+  useLayoutEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    // A load-older prepend just happened: keep the same rows under the user's
+    // eyes by offsetting scrollTop by the height that got added above.
+    if (pendingOlderAdjustRef.current != null) {
+      const prevHeight = pendingOlderAdjustRef.current;
+      pendingOlderAdjustRef.current = null;
+      container.scrollTop += container.scrollHeight - prevHeight;
+      return;
+    }
+    if (shouldScrollBottomRef.current) {
+      shouldScrollBottomRef.current = false;
+      container.scrollTop = container.scrollHeight;
+    }
   }, [messages]);
+
+  function resetComposerHeight() {
+    if (composerRef.current) composerRef.current.style.height = "auto";
+  }
 
   async function handleSend() {
     const text = composerText.trim();
     if (!text || sending) return;
     if (isProducerOwnerReplying && threadId === null) return; // no thread to reply in
-    setSending(true);
+
+    // Optimistic bubble: show it immediately with a temporary negative id (never
+    // collides with real server ids), reconcile on response.
+    const tempId = -Date.now();
+    const optimistic: DisplayMessage = {
+      id: tempId,
+      thread_id: threadId ?? 0,
+      sender_id: account?.id ?? 0,
+      recipient_id: counterpartId,
+      recipient_type: threadType,
+      message_text: text,
+      is_read: false,
+      created_at: Date.now(),
+      pending: true,
+    };
+    setComposerText("");
+    resetComposerHeight();
     setError(null);
+    shouldScrollBottomRef.current = true;
+    setMessages((prev) => mergeMessages(prev, [optimistic]));
+    setSending(true);
     try {
       const result = isProducerOwnerReplying
         ? await replyAsProducer(threadId as number, text)
@@ -152,14 +365,20 @@ export function ConversationScreen({
             recipientType: threadType,
             text,
           });
-      setComposerText("");
-      if (result.message) {
-        setMessages((prev) => [...prev, result.message]);
-      }
+      setMessages((prev) => {
+        const withoutTemp = prev.filter((m) => m.id !== tempId);
+        return result.message ? mergeMessages(withoutTemp, [result.message]) : withoutTemp;
+      });
       if (threadId === null && result.thread_id) {
         onThreadCreated(result.thread_id, viewerRole);
       }
     } catch (err) {
+      // Leave the bubble in place but mark it failed; restore the text so the
+      // user can immediately retry.
+      setMessages((prev) =>
+        prev.map((m) => (m.id === tempId ? { ...m, pending: false, failed: true } : m))
+      );
+      setComposerText((cur) => cur || text);
       setError(err instanceof Error ? err.message : "Could not send message.");
     } finally {
       setSending(false);
@@ -252,7 +471,16 @@ export function ConversationScreen({
         </div>
 
         {showMenu ? (
-          <div className="absolute right-4 top-[4.2rem] z-20 w-48 overflow-hidden rounded-xl border border-white/10 bg-black/90 text-sm text-white shadow-xl">
+          <>
+            <div
+              className="fixed inset-0 z-20"
+              aria-hidden="true"
+              onClick={() => setShowMenu(false)}
+            />
+            <div
+              ref={menuRef}
+              className="absolute right-4 top-[4.2rem] z-30 w-48 overflow-hidden rounded-xl border border-white/10 bg-black/90 text-sm text-white shadow-xl"
+            >
             <button
               type="button"
               onClick={handleToggleBlock}
@@ -270,12 +498,19 @@ export function ConversationScreen({
             >
               Report
             </button>
-          </div>
+            </div>
+          </>
         ) : null}
 
         {showReportPicker ? (
-          <div className="absolute inset-0 z-30 flex items-end justify-center bg-black/60 sm:items-center">
-            <div className="w-full max-w-md rounded-t-2xl border border-white/10 bg-[#1a0a0a] p-4 sm:rounded-2xl">
+          <div
+            className="absolute inset-0 z-40 flex items-end justify-center bg-black/60 sm:items-center"
+            onClick={() => setShowReportPicker(false)}
+          >
+            <div
+              className="w-full max-w-md rounded-t-2xl border border-white/10 bg-[#1a0a0a] p-4 sm:rounded-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
               <p className="mb-3 text-sm font-semibold text-white">Why are you reporting this person?</p>
               <div className="flex flex-col gap-1">
                 {(["spam", "inappropriate", "false_info", "harassment", "hate_speech", "other"] as const).map(
@@ -309,33 +544,61 @@ export function ConversationScreen({
         ) : null}
 
         {/* Messages */}
-        <div className="flex-1 space-y-2 overflow-y-auto px-4 py-4">
+        <div
+          ref={scrollRef}
+          onScroll={handleScroll}
+          className="flex-1 space-y-2 overflow-y-auto px-4 py-4"
+        >
+          {loadingOlder ? (
+            <div className="flex justify-center py-2">
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+            </div>
+          ) : null}
           {messages.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center text-center">
               <p className="text-[0.85rem] text-white/40">No messages yet. Say hi!</p>
             </div>
           ) : (
-            messages.map((message) => {
+            messages.map((message, i) => {
               const isMine = message.sender_id === account?.id;
+              const prev = messages[i - 1];
+              const showDay =
+                !prev || !sameDay(toMs(prev.created_at), toMs(message.created_at));
               return (
-                <div key={message.id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
-                  <div
-                    className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-[0.85rem] leading-snug ${
-                      isMine
-                        ? "bg-red-600 text-white"
-                        : "bg-white/10 text-white/90"
-                    }`}
-                  >
-                    <p>{message.message_text}</p>
-                    <p className={`mt-1 text-[0.62rem] ${isMine ? "text-white/70" : "text-white/40"}`}>
-                      {formatTime(message.created_at)}
-                    </p>
+                <Fragment key={message.id}>
+                  {showDay ? (
+                    <div className="flex justify-center py-2">
+                      <span className="rounded-full bg-black/40 px-3 py-1 text-[0.62rem] font-medium text-white/50">
+                        {dayLabel(toMs(message.created_at))}
+                      </span>
+                    </div>
+                  ) : null}
+                  <div className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
+                    <div
+                      className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-[0.85rem] leading-snug ${
+                        isMine ? "bg-red-600 text-white" : "bg-white/10 text-white/90"
+                      } ${message.failed ? "ring-1 ring-red-400/60" : ""}`}
+                    >
+                      <p className="whitespace-pre-wrap break-words">{message.message_text}</p>
+                      <p
+                        className={`mt-1 flex items-center justify-end gap-1 text-[0.62rem] ${
+                          isMine ? "text-white/70" : "text-white/40"
+                        }`}
+                      >
+                        {message.failed ? (
+                          <span className="text-red-300">Failed — tap Send to retry</span>
+                        ) : message.pending ? (
+                          <span>Sending…</span>
+                        ) : (
+                          formatTime(message.created_at)
+                        )}
+                      </p>
+                    </div>
                   </div>
-                </div>
+                </Fragment>
               );
             })
           )}
-          <div ref={listEndRef} />
         </div>
 
         {error ? (
@@ -354,15 +617,28 @@ export function ConversationScreen({
                 e.preventDefault();
                 void handleSend();
               }}
-              className="flex items-center gap-2"
+              className="flex items-end gap-2"
             >
-              <input
-                type="text"
+              <textarea
+                ref={composerRef}
+                rows={1}
                 value={composerText}
-                onChange={(e) => setComposerText(e.target.value)}
+                maxLength={MAX_MESSAGE_LENGTH}
+                onChange={(e) => {
+                  setComposerText(e.target.value);
+                  const el = e.currentTarget;
+                  el.style.height = "auto";
+                  el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    void handleSend();
+                  }
+                }}
                 placeholder="Message"
                 style={{ fontSize: "16px" }}
-                className="min-w-0 flex-1 rounded-full border border-white/15 bg-black/25 px-4 py-2.5 text-white placeholder:text-white/35 focus:border-white/30 focus:outline-none"
+                className="min-w-0 flex-1 resize-none rounded-2xl border border-white/15 bg-black/25 px-4 py-2.5 text-white placeholder:text-white/35 focus:border-white/30 focus:outline-none"
               />
               <button
                 type="submit"

@@ -1983,6 +1983,15 @@ export async function markNotificationsRead(notificationIds: number[]) {
 
 export type MessageThreadType = "producer" | "user";
 
+/** Max characters allowed in a single message (mirrored by the composer's maxLength). */
+export const MAX_MESSAGE_LENGTH = 2000;
+
+function assertMessageLength(text: string) {
+  if (text.length > MAX_MESSAGE_LENGTH) {
+    throw new Error(`Message is too long (max ${MAX_MESSAGE_LENGTH} characters).`);
+  }
+}
+
 type RawProducerThread = {
   id: number;
   user_id: number;
@@ -2121,6 +2130,7 @@ export async function sendMessage(input: {
 }
 
 export async function sendMessageToProducer(producerId: number, text: string) {
+  assertMessageLength(text);
   return apiJson<{ success: boolean; message: RawMessage; thread_id: number; is_new_thread?: boolean }>(
     "/api/messages/producer",
     {
@@ -2131,6 +2141,7 @@ export async function sendMessageToProducer(producerId: number, text: string) {
 }
 
 export async function sendMessageToUser(recipientUserId: number, text: string) {
+  assertMessageLength(text);
   return apiJson<{ success: boolean; message: RawMessage; thread_id: number; is_new_thread: boolean }>(
     "/api/messages/user",
     {
@@ -2144,6 +2155,7 @@ export async function sendMessageToUser(recipientUserId: number, text: string) {
  * endpoint than sendMessageToProducer, since the producer isn't "messaging
  * a producer" (themselves), they're replying within an existing thread. */
 export async function replyAsProducer(threadId: number, text: string) {
+  assertMessageLength(text);
   return apiJson<{ success: boolean; message: RawMessage; thread_id: number }>(
     "/api/messages/producer-reply",
     {
@@ -2151,6 +2163,14 @@ export async function replyAsProducer(threadId: number, text: string) {
       body: JSON.stringify({ thread_id: threadId, message_text: text }),
     }
   );
+}
+
+/** Zeroes the caller's own unread counter for a thread (fire-and-forget from the UI). */
+export async function markThreadRead(threadType: MessageThreadType, threadId: number) {
+  return apiJson<{ success: boolean }>("/api/messages/mark-read", {
+    method: "POST",
+    body: JSON.stringify({ thread_id: threadId, thread_type: threadType }),
+  });
 }
 
 export async function fetchThreadMessages(

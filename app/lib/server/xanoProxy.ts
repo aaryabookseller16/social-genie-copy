@@ -121,3 +121,24 @@ export function extractBearerToken(
   if (!auth?.startsWith("Bearer ")) return undefined;
   return auth.slice(7);
 }
+
+/**
+ * Maps a caught proxy error to a client-safe { status, message }.
+ * 4xx messages (validation/auth) are safe to surface; 5xx / unknown errors are
+ * masked behind `fallback` so backend internals never leak to the browser — the
+ * detail is logged server-side instead.
+ */
+export function toClientError(
+  error: unknown,
+  fallback: string
+): { status: number; message: string } {
+  if (error instanceof XanoError) {
+    if (error.status >= 400 && error.status < 500) {
+      return { status: error.status, message: error.message };
+    }
+    console.error("[xano] upstream error", error.status, error.message, error.body);
+    return { status: error.status, message: fallback };
+  }
+  console.error("[xano] proxy error", error);
+  return { status: 500, message: fallback };
+}

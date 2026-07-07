@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { xanoFetch, extractBearerToken, XanoError } from "@/app/lib/server/xanoProxy";
+import { xanoFetch, extractBearerToken, toClientError } from "@/app/lib/server/xanoProxy";
 
 /**
  * GET /api/messages/blocked
@@ -18,9 +18,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(result);
   } catch (error) {
-    if (error instanceof XanoError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-    return NextResponse.json({ error: "Could not load blocked users." }, { status: 500 });
+    const { status, message } = toClientError(error, "Could not load blocked users.");
+    return NextResponse.json({ error: message }, { status });
   }
 }

@@ -847,12 +847,28 @@ const [trialSuccess, setTrialSuccess] = useState(false);
       .catch(() => {});
   }, [account]);
 
+  // Keep the homescreen message badge live: fetch on load, poll while the app
+  // is open, and refetch on every screen change (so a recipient sees a new
+  // message's badge, and it clears right after reading a thread + navigating
+  // back). The unread count has no dedicated endpoint — it's derived from the
+  // thread list — so this is intentionally lightweight, not per-second.
   useEffect(() => {
     if (!account) return;
-    fetchUnreadMessageCount(account.id)
-      .then((count) => setUnreadMessageCount(count))
-      .catch(() => {});
-  }, [account]);
+    let cancelled = false;
+    const refresh = () => {
+      fetchUnreadMessageCount(account.id)
+        .then((count) => {
+          if (!cancelled) setUnreadMessageCount(count);
+        })
+        .catch(() => {});
+    };
+    refresh();
+    const interval = setInterval(refresh, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [account, activeScreen]);
 
   const loadSocialPreferences = useCallback(async () => {
     if (profileLoadedRef.current) {

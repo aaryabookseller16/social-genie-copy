@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import { ScrollUnlock } from "@/app/p/[id]/ScrollUnlock";
 import {
@@ -66,64 +66,73 @@ function ConversationAvatar({ conversation }: { conversation: Conversation }) {
 export function MessagesScreen({ account, onBack, onOpenConversation }: Props) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadConversations = useCallback(async () => {
+    try {
+      const raw = await fetchMessageThreads("all");
+      const merged = mergeThreadsToConversations(raw, account?.id);
+      setConversations(merged);
+
+      // The threads list doesn't include the producer's display name/photo —
+      // look those up separately for producer conversations so the inbox
+      // doesn't just show "Conversation" for every business thread.
+      // Only enrich when *we're* the consumer looking at a producer —
+      // if we're the producer owner, counterpartId is the consumer's user
+      // id, not a producer id, so this lookup would be meaningless.
+      const producerIds = Array.from(
+        new Set(
+          merged
+            .filter(
+              (c) =>
+                c.threadType === "producer" &&
+                c.viewerRole !== "producer" &&
+                !c.counterpartName
+            )
+            .map((c) => c.counterpartId)
+        )
+      );
+      if (producerIds.length === 0) return;
+
+      const profiles = await Promise.all(
+        producerIds.map((id) => fetchProducerPublicProfile(id).catch(() => null))
+      );
+      const nameById = new Map<number, { name?: string; avatar?: string }>();
+      profiles.forEach((p, i) => {
+        if (p?.producer) {
+          nameById.set(producerIds[i], {
+            name: p.producer.display_name,
+            avatar: p.producer.profile_photo_url,
+          });
+        }
+      });
+      setConversations((prev) =>
+        prev.map((c) => {
+          if (c.threadType !== "producer") return c;
+          const info = nameById.get(c.counterpartId);
+          if (!info) return c;
+          return {
+            ...c,
+            counterpartName: c.counterpartName ?? info.name,
+            counterpartAvatarUrl: c.counterpartAvatarUrl ?? info.avatar,
+          };
+        })
+      );
+    } catch {
+      // Keep whatever's already on screen; a failed refresh shouldn't blank it.
+    }
+  }, [account?.id]);
 
   useEffect(() => {
-    fetchMessageThreads("all")
-      .then(async (raw) => {
-        const merged = mergeThreadsToConversations(raw, account?.id);
-        setConversations(merged);
+    loadConversations().finally(() => setLoading(false));
+  }, [loadConversations]);
 
-        // The threads list doesn't include the producer's display name/photo —
-        // look those up separately for producer conversations so the inbox
-        // doesn't just show "Conversation" for every business thread.
-        // Only enrich when *we're* the consumer looking at a producer —
-        // if we're the producer owner, counterpartId is the consumer's user
-        // id, not a producer id, so this lookup would be meaningless.
-        const producerIds = Array.from(
-          new Set(
-            merged
-              .filter(
-                (c) =>
-                  c.threadType === "producer" &&
-                  c.viewerRole !== "producer" &&
-                  !c.counterpartName
-              )
-              .map((c) => c.counterpartId)
-          )
-        );
-        if (producerIds.length === 0) return;
-
-        const profiles = await Promise.all(
-          producerIds.map((id) =>
-            fetchProducerPublicProfile(id).catch(() => null)
-          )
-        );
-        const nameById = new Map<number, { name?: string; avatar?: string }>();
-        profiles.forEach((p, i) => {
-          if (p?.producer) {
-            nameById.set(producerIds[i], {
-              name: p.producer.display_name,
-              avatar: p.producer.profile_photo_url,
-            });
-          }
-        });
-        setConversations((prev) =>
-          prev.map((c) => {
-            if (c.threadType !== "producer") return c;
-            const info = nameById.get(c.counterpartId);
-            if (!info) return c;
-            return {
-              ...c,
-              counterpartName: c.counterpartName ?? info.name,
-              counterpartAvatarUrl: c.counterpartAvatarUrl ?? info.avatar,
-            };
-          })
-        );
-      })
-      .catch(() => setConversations([]))
-      .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  async function handleRefresh() {
+    if (refreshing) return;
+    setRefreshing(true);
+    await loadConversations();
+    setRefreshing(false);
+  }
 
   if (loading) {
     return (
@@ -154,7 +163,26 @@ export function MessagesScreen({ account, onBack, onOpenConversation }: Props) {
             </svg>
           </button>
           <h1 className="text-lg font-bold text-white">Messages</h1>
-          <div className="w-9" />
+          <button
+            type="button"
+            aria-label="Refresh"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="flex h-9 w-9 items-center justify-center rounded-full text-white hover:bg-white/10 disabled:opacity-50"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              className={`h-5 w-5 ${refreshing ? "animate-spin" : ""}`}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+              <path d="M21 3v6h-6" />
+            </svg>
+          </button>
         </div>
 
         {/* List */}

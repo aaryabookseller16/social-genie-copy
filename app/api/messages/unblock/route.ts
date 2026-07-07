@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { xanoFetch, extractBearerToken, XanoError } from "@/app/lib/server/xanoProxy";
+import { xanoFetch, extractBearerToken, toClientError } from "@/app/lib/server/xanoProxy";
 
 /**
  * POST /api/messages/unblock
@@ -22,9 +22,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(result);
   } catch (error) {
-    if (error instanceof XanoError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-    return NextResponse.json({ error: "Could not unblock user." }, { status: 500 });
+    const { status, message } = toClientError(error, "Could not unblock user.");
+    return NextResponse.json({ error: message }, { status });
   }
 }
