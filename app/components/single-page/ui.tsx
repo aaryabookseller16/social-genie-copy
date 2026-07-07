@@ -35,6 +35,7 @@ export type FlowAnchor =
   | "vibbee-trial"
   | "membership"
   | "notifications"
+  | "notification-settings"
   | "messages"
   | "conversation";
 
