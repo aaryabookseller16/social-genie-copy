@@ -642,6 +642,8 @@ const [trialSuccess, setTrialSuccess] = useState(false);
   const [onboardingRoles, setOnboardingRoles] = useState<OnboardingRole[]>([]);
   const [verifyGateOpen, setVerifyGateOpen] = useState(false);
   const [mapPreviewFailed, setMapPreviewFailed] = useState(false);
+  // /join?signup=... deep link: tells AccountSection which form to open.
+  const [signupIntent, setSignupIntent] = useState<AccountScreenMode>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [contactForm, setContactForm] = useState({
@@ -2496,6 +2498,15 @@ const [trialSuccess, setTrialSuccess] = useState(false);
         setSelectedEvent({ id: eventId });
         navigateTo("event-detail");
       }
+    } else if (screen === "account") {
+      const signup = url.searchParams.get("signup");
+      // "vibee" is no longer a distinct signup mode (tier is chosen
+      // post-verification) — old shared /join links still send it, so map
+      // it to "free" rather than breaking them.
+      if (signup === "free" || signup === "vibee") {
+        setSignupIntent("free");
+      }
+      navigateTo("account");
     } else if (allowed.includes(screen as FlowAnchor)) {
       navigateTo(screen as FlowAnchor);
     }
@@ -2506,6 +2517,7 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     url.searchParams.delete("thread_id");
     url.searchParams.delete("counterpart_name");
     url.searchParams.delete("event_id");
+    url.searchParams.delete("signup");
     window.history.replaceState(
       {},
       "",
@@ -5569,6 +5581,7 @@ activeScreen === "vibbee-trial" ||
           visible={activeScreen === "account"}
           account={account}
           onDismiss={dismissAccount}
+          initialMode={signupIntent}
           onOpenVendor={() => navigateTo("vendor")}
           onOpenOffers={() => navigateTo("offers")}
           onOpenPreferences={() => navigateTo("preferences")}

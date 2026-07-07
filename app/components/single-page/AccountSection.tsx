@@ -59,6 +59,7 @@ export function AccountSection({
   onRequestedModeApplied,
   notice,
   onNoticeShown,
+  initialMode,
 }: {
   sectionRef: RefObject<HTMLElement | null>;
   visible: boolean;
@@ -85,6 +86,10 @@ export function AccountSection({
   // the user opens the account screen on their own later.
   notice?: string | null;
   onNoticeShown?: () => void;
+  // /join?signup=... deep link: opens straight on the given form. "vibee" is
+  // no longer a distinct signup mode (tier is chosen post-verification), so
+  // the caller maps it to "free" before passing it in.
+  initialMode?: AccountScreenMode;
 }) {
   const [mode, setMode] = useState<AccountScreenMode>("login");
   // Modes the user passed through to reach `mode`, so the back arrow can retrace
@@ -168,8 +173,14 @@ export function AccountSection({
       setMessage(null);
       setGateNotice(null);
       setForm(createEmptyConsumerForm());
+      return;
     }
-  }, [visible]);
+    if (initialMode) {
+      setMode(initialMode);
+      setForm(createEmptyConsumerForm());
+      setMessage(null);
+    }
+  }, [visible, initialMode]);
 
   useEffect(() => {
     if (visible && authError) {
