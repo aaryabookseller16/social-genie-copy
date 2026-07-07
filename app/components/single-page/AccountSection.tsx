@@ -87,6 +87,7 @@ export function AccountSection({
   onOpenPreferences,
   onAccountChange,
   onModeChange,
+  initialMode,
 }: {
   sectionRef: RefObject<HTMLElement | null>;
   visible: boolean;
@@ -98,6 +99,7 @@ export function AccountSection({
   onOpenPreferences: () => void;
   onAccountChange: (account: ConsumerAccount, message: string) => void;
   onModeChange?: (mode: AccountScreenMode) => void;
+  initialMode?: "free" | "vibee" | null;
 }) {
   const [mode, setMode] = useState<AccountScreenMode>(null);
   const [form, setForm] = useState<ConsumerFormState>(createEmptyConsumerForm());
@@ -113,8 +115,14 @@ export function AccountSection({
       setMode(null);
       setMessage(null);
       setForm(createEmptyConsumerForm());
+      return;
     }
-  }, [visible]);
+    if (initialMode) {
+      setMode(initialMode);
+      setForm(createEmptyConsumerForm());
+      setMessage(null);
+    }
+  }, [visible, initialMode]);
 
   void onAccountChange;
 

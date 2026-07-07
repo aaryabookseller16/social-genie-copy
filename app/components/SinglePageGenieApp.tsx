@@ -534,6 +534,9 @@ const [trialSuccess, setTrialSuccess] = useState(false);
   const [mapPreviewFailed, setMapPreviewFailed] = useState(false);
   const [accountScreenMode, setAccountScreenMode] =
     useState<AccountScreenMode>(null);
+  const [signupIntent, setSignupIntent] = useState<"free" | "vibee" | null>(
+    null
+  );
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [contactForm, setContactForm] = useState({
@@ -1813,10 +1816,17 @@ const [trialSuccess, setTrialSuccess] = useState(false);
       "preferences",
       "event-survey",
     ];
-    if (allowed.includes(screen as FlowAnchor)) {
+    if (screen === "account") {
+      const signup = url.searchParams.get("signup");
+      if (signup === "free" || signup === "vibee") {
+        setSignupIntent(signup);
+      }
+      navigateTo("account");
+    } else if (allowed.includes(screen as FlowAnchor)) {
       navigateTo(screen as FlowAnchor);
     }
     url.searchParams.delete("screen");
+    url.searchParams.delete("signup");
     window.history.replaceState(
       {},
       "",
@@ -4542,6 +4552,7 @@ activeScreen === "vibbee-trial" ||
           account={account}
           config={config}
           onDismiss={dismissAccount}
+          initialMode={signupIntent}
           onModeChange={setAccountScreenMode}
           onOpenVendor={() => navigateTo("vendor")}
           onOpenOffers={() => navigateTo("offers")}
