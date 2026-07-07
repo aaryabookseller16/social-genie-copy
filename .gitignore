@@ -48,3 +48,5 @@ codex-plan-gpt-4.md
 .env*.local
 
 codebase-reference.md
+FEATURE_STATUS.md
+CLIENT_SPEC_GAP_ANALYSIS.md
