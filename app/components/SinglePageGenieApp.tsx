@@ -2169,6 +2169,11 @@ setResponse(nextResponse);
     "Help Genie learn your vibe so recommendations get more personal.";
   const mapPreviewUrl = selectedVenue ? buildStaticMapUrl(selectedVenue) : null;
   const nativeMapsUrl = selectedVenue ? buildNativeMapsUrl(selectedVenue) : null;
+  // Uber deeplink — same construction as the standalone venue page (VenueDetailClient.tsx).
+  const uberUrl =
+    selectedVenue && selectedVenue.latitude != null && selectedVenue.longitude != null
+      ? `uber://?dropoff[lat]=${selectedVenue.latitude}&dropoff[lng]=${selectedVenue.longitude}&dropoff[nickname]=${encodeURIComponent(selectedVenue.venue_name)}`
+      : null;
   const detailActions: Array<{
     id: string;
     label: string;
@@ -2176,6 +2181,40 @@ setResponse(nextResponse);
     onClick: () => void;
   }> = selectedVenue
     ? [
+        ...(uberUrl
+          ? [
+              {
+                id: "ride",
+                label: "Get a Ride",
+                variant: "secondary" as const,
+                onClick: () => {
+                  logVendorInteraction("ride_click", Number(selectedVenue.id));
+                  logVenueInteraction("ride", Number(selectedVenue.id), "detail");
+                  window.open(uberUrl, "_blank", "noopener,noreferrer");
+                },
+              },
+            ]
+          : []),
+        ...(nativeMapsUrl
+          ? [
+              {
+                id: "directions",
+                label: "Directions",
+                variant: "secondary" as const,
+                onClick: () => {
+                  trackEvent(analyticsEvents.mapOpen, {
+                    venueId: getVenueId(selectedVenue),
+                  });
+                  trackEvent(analyticsEvents.vendorMapTap, {
+                    venueId: getVenueId(selectedVenue),
+                  });
+                  logVendorInteraction("map_click", Number(selectedVenue.id));
+                  logVenueInteraction("map", Number(selectedVenue.id), "detail");
+                  window.open(nativeMapsUrl, "_blank", "noopener,noreferrer");
+                },
+              },
+            ]
+          : []),
         ...(selectedVenue.phone
           ? [
               {
@@ -3445,49 +3484,74 @@ navigateTo("event-detail");
 
               <div className="grid grid-cols-[1fr_1.45fr_1fr] gap-1">
                 {detailActions.slice(0, 3).map((action, index) => {
-                  const isCall =
-                    action.id.includes("call") ||
-                    action.label.toLowerCase().includes("call");
-                  const isReserve = index === 1;
-                  const label = isCall ? "Call" : isReserve ? "Reservations" : "Share";
-                  const lightIconSrc = isCall
-                    ? "/icons/phone-red.png"
-                    : isReserve
-                      ? "/icons/calendarIcon.png"
-                      : "/icons/share-red.png";
-                  const darkIconSrc = isCall
-                    ? "/icons/phoneIcon.png"
-                    : isReserve
-                      ? "/icons/calendarIcon.png"
-                      : "/icons/shareIcon.png";
+                  // Middle button keeps the filled-red emphasis; sides stay outlined.
+                  const isPrimary = index === 1;
+                  const iconSize = isPrimary ? "h-[15px] w-[15px]" : "h-[14px] w-[14px]";
+                  // Icon is chosen by the action's identity — not its position —
+                  // so reordering the actions can never mislabel a button.
+                  let icon: React.ReactNode;
+                  if (action.id === "ride") {
+                    icon = (
+                      <svg viewBox="0 0 24 24" className={`${iconSize} flex-none`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="1" y="3" width="15" height="13" rx="2" />
+                        <polygon points="16 8 20 8 23 11 23 16 16 16 16 8" />
+                        <circle cx="5.5" cy="18.5" r="2.5" />
+                        <circle cx="18.5" cy="18.5" r="2.5" />
+                      </svg>
+                    );
+                  } else if (action.id === "directions") {
+                    icon = (
+                      <svg viewBox="0 0 24 24" className={`${iconSize} flex-none`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polygon points="3 11 22 2 13 21 11 13 3 11" />
+                      </svg>
+                    );
+                  } else {
+                    const lightIconSrc =
+                      action.id === "call"
+                        ? "/icons/phone-red.png"
+                        : action.id === "share"
+                          ? "/icons/share-red.png"
+                          : "/icons/calendarIcon.png";
+                    const darkIconSrc =
+                      action.id === "call"
+                        ? "/icons/phoneIcon.png"
+                        : action.id === "share"
+                          ? "/icons/shareIcon.png"
+                          : "/icons/calendarIcon.png";
+                    icon = (
+                      <>
+                        <Image
+                          src={lightIconSrc}
+                          alt=""
+                          aria-hidden="true"
+                          width={16}
+                          height={16}
+                          className={`${iconSize} object-contain dark:hidden`}
+                        />
+                        <Image
+                          src={darkIconSrc}
+                          alt=""
+                          aria-hidden="true"
+                          width={16}
+                          height={16}
+                          className={`hidden ${iconSize} object-contain dark:block`}
+                        />
+                      </>
+                    );
+                  }
                   return (
                     <button
                       key={action.id}
                       type="button"
                       onClick={gateDetailTap(action.onClick)}
                       className={`flex items-center justify-center gap-1 rounded-full border font-medium transition ${
-                        isReserve
+                        isPrimary
                           ? "border-red-500 bg-red-600 px-1.5 py-2 text-[0.76rem] text-white hover:bg-red-700 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
                           : "border-[#E7070380] bg-transparent px-1.5 py-1.5 text-[0.72rem] text-red-600 hover:bg-red-50 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
                       }`}
                     >
-                      <Image
-                        src={lightIconSrc}
-                        alt=""
-                        aria-hidden="true"
-                        width={16}
-                        height={16}
-                        className={`${isReserve ? "h-[15px] w-[15px]" : "h-[14px] w-[14px]"} object-contain dark:hidden`}
-                      />
-                      <Image
-                        src={darkIconSrc}
-                        alt=""
-                        aria-hidden="true"
-                        width={16}
-                        height={16}
-                        className={`hidden ${isReserve ? "h-[15px] w-[15px]" : "h-[14px] w-[14px]"} object-contain dark:block`}
-                      />
-                      {label}
+                      {icon}
+                      {action.label}
                     </button>
                   );
                 })}

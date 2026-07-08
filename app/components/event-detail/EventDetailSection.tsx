@@ -42,6 +42,87 @@ function fmtDate(d: unknown): string {
   }
 }
 
+// ─── Add-to-Calendar (.ics) helpers ──────────────────────────────────────────
+// Build a downloadable .ics file client-side so the event can be added to any
+// device calendar (iOS / Android / desktop) without native deeplinks.
+
+// "YYYY-MM-DD" + "HH:MM:SS" -> "YYYYMMDDTHHMMSS" (floating local time).
+function toIcsStamp(dateStr: string, timeStr: string): string {
+  const d = dateStr.replace(/-/g, "");
+  const [h = "00", m = "00", s = "00"] = (timeStr || "00:00:00").split(":");
+  const pad = (v: string) => v.padStart(2, "0").slice(0, 2);
+  return `${d}T${pad(h)}${pad(m)}${pad(s)}`;
+}
+
+// Add `hours` to a "YYYYMMDDTHHMMSS" stamp (used to derive an end time when none given).
+function addHoursToStamp(stamp: string, hours: number): string {
+  const y = +stamp.slice(0, 4);
+  const mo = +stamp.slice(4, 6);
+  const da = +stamp.slice(6, 8);
+  const h = +stamp.slice(9, 11);
+  const mi = +stamp.slice(11, 13);
+  const s = +stamp.slice(13, 15);
+  const dt = new Date(y, mo - 1, da, h + hours, mi, s);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${dt.getFullYear()}${p(dt.getMonth() + 1)}${p(dt.getDate())}T${p(dt.getHours())}${p(dt.getMinutes())}${p(dt.getSeconds())}`;
+}
+
+// Escape reserved characters per RFC 5545.
+function escapeIcs(text: string): string {
+  return text.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
+}
+
+function buildEventIcs(opts: {
+  id?: number;
+  title: string;
+  dateStr: string;
+  startTime: string;
+  endTime: string;
+  venueName: string;
+  venueAddr: string;
+}): string {
+  const dtStart = toIcsStamp(opts.dateStr, opts.startTime);
+  const dtEnd = opts.endTime
+    ? toIcsStamp(opts.dateStr, opts.endTime)
+    : addHoursToStamp(dtStart, 2);
+  const location = [opts.venueName, opts.venueAddr].filter(Boolean).join(", ");
+  const dtStamp = toIcsStamp(
+    new Date().toISOString().slice(0, 10),
+    new Date().toISOString().slice(11, 19)
+  );
+  const uid = `${opts.id ?? "event"}-${Date.now()}@genie.socialbevy.com`;
+  return [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Social Genie//Event//EN",
+    "CALSCALE:GREGORIAN",
+    "BEGIN:VEVENT",
+    `UID:${uid}`,
+    `DTSTAMP:${dtStamp}`,
+    `DTSTART:${dtStart}`,
+    `DTEND:${dtEnd}`,
+    `SUMMARY:${escapeIcs(opts.title)}`,
+    location ? `LOCATION:${escapeIcs(location)}` : "",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ]
+    .filter(Boolean)
+    .join("\r\n");
+}
+
+// Package the .ics text as a Blob and trigger a browser download.
+function downloadIcs(filename: string, ics: string): void {
+  const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function BackIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -306,6 +387,23 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
           </button>
           <button
             type="button"
+            onClick={() => {
+              const dateStr = (ev.event_date as string) || "";
+              if (!dateStr) return; // need a date for a valid calendar entry
+              const ics = buildEventIcs({
+                id: ev.id as number | undefined,
+                title: evTitle,
+                dateStr,
+                startTime: (ev.start_time as string) || "",
+                endTime: (ev.end_time as string) || "",
+                venueName,
+                venueAddr,
+              });
+              const safeName =
+                evTitle.replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-") || "event";
+              downloadIcs(`${safeName}.ics`, ics);
+              logInteraction?.("add_to_calendar", ev.id as number, "event-detail");
+            }}
             className="flex h-9 w-9 items-center justify-center rounded-full border border-white/30 bg-black/30 text-white backdrop-blur-sm"
             aria-label="Add to calendar"
           >
