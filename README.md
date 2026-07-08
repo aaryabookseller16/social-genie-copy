@@ -189,6 +189,5 @@ Upcoming major changes:
 
 **Alphonso Roundtree**  
 Founder & CEO — Social Bevy  
-Social Genie Team Lead  
 
  
