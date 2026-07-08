@@ -94,16 +94,55 @@ export function normalizeHandleMessageResponse(
   message: string
 ): GenieResponseEnvelope {
   const response = rawResponse.result ?? rawResponse;
-  const decisive = (response.decisive ?? response.top_venues ?? [])
+
+  // ── Query mode ──────────────────────────────────────────────────────────
+  // Backend returns query_mode: "event" | "venue"
+  const queryMode =
+    typeof response.query_mode === "string"
+      ? response.query_mode
+      : "venue";
+
+  // ── Events ───────────────────────────────────────────────────────────────
+  // Only populated when query_mode === "event"
+  const events = Array.isArray(response.events)
+    ? response.events
+    : [];
+
+  // ── Venues ───────────────────────────────────────────────────────────────
+  // Backend can return venues under several key names depending on the path
+  const rawVenues =
+    response.venues ??
+    response.decisive ??
+    response.top_venues ??
+    [];
+
+  const rawMoreNearby =
+    response.more_nearby_venues ??
+    response.more_nearby ??
+    response.more_venues ??
+    [];
+
+  const decisive = rawVenues
     .map(mapVenue)
     .slice(0, 3);
-  const moreNearby = (response.more_nearby ?? response.more_venues ?? [])
+
+  const moreNearby = rawMoreNearby
     .map(mapVenue)
     .slice(0, 12);
+
   const totalVenueCount = decisive.length + moreNearby.length;
-  const responseMode = inferResponseMode(response, totalVenueCount);
+
+  // ── Response mode ────────────────────────────────────────────────────────
+  // If we got events back treat it as structured results so the
+  // frontend decision screen renders event cards
+  let responseMode = inferResponseMode(response, totalVenueCount);
+  if (queryMode === "event" && events.length > 0) {
+    responseMode = "structured_results";
+  }
+
   const cityContext =
-    typeof response.debug?.city === "string" && response.debug.city.trim().length > 0
+    typeof response.debug?.city === "string" &&
+    response.debug.city.trim().length > 0
       ? response.debug.city
       : response.filters?.city ?? null;
 
@@ -117,6 +156,8 @@ export function normalizeHandleMessageResponse(
     use_xano: Boolean(response.use_xano),
     decisive,
     more_nearby: moreNearby,
+    events,
+    query_mode: queryMode,
     needs_location: Boolean(response.needs_location),
     session_id: response.session_id,
     session_token: response.session_token,

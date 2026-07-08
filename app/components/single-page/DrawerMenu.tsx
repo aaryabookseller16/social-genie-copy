@@ -16,10 +16,12 @@ export type DrawerMenuActionId =
   | "redemptions"
   | "how-genie-works"
   | "vendor"
+  | "switch-role"
   | "help-faq"
   | "contact"
   | "privacy"
-  | "terms";
+  | "terms"
+  | "messages";
 
 type DrawerMenuProps = {
   visible: boolean;
@@ -47,6 +49,7 @@ function isActiveItem(id: DrawerMenuActionId, activeScreen: FlowAnchor) {
   if (id === "dashboard") return activeScreen === "dashboard";
   if (id === "preferences") return activeScreen === "preferences";
   if (id === "saved") return activeScreen === "saved";
+  if (id === "messages") return activeScreen === "messages" || activeScreen === "conversation";
   if (id === "vendor") return activeScreen === "vendor";
   if (id === "home") return activeScreen === "home";
   return false;
@@ -114,8 +117,10 @@ export function DrawerMenu({
   // so the drawer itself stays flat to match the design.
   const primaryItems: Array<{ id: DrawerMenuActionId; label: string }> = [
     { id: "home", label: "Home" },
+    { id: "messages", label: "Messages" },
     { id: "profile", label: "My Profile" },
     { id: "dashboard", label: "My Dashboard" },
+    { id: "switch-role", label: "My Roles" },
     { id: "how-genie-works", label: "How Genie Works" },
     {
       id: "vendor",

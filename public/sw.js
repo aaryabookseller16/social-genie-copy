@@ -1,9 +1,15 @@
-const CACHE_NAME = "genie-shell-v1";
+// OneSignal web push. Imported here so a SINGLE service worker owns scope "/"
+// (both push and the app-shell cache below). Registering OneSignal's separate
+// /OneSignalSDKWorker.js at the same scope would compete with this worker and
+// silently break either push or offline caching in production.
+importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");
+
+const CACHE_NAME = "genie-shell-v2";
 const APP_SHELL = [
   "/",
   "/site.webmanifest",
   "/apple-touch-icon.png",
-  "/favicon-32x32.png",
+  "/favicon-bevy.png",
   "/favicon-16x16.png",
   "/genie-pic2.png",
   "/genie-profile-pic.png",
@@ -30,8 +36,15 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
+// This worker is now also registered in development (OneSignal registers it so
+// push works in dev). Skip app-shell caching on localhost so dev never serves
+// stale HTML — push still works because OneSignal's handlers run regardless.
+const IS_LOCALHOST = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(
+  self.location.hostname
+);
+
 self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET") {
+  if (IS_LOCALHOST || event.request.method !== "GET") {
     return;
   }
 

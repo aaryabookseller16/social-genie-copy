@@ -87,6 +87,7 @@ export function AccountSection({
   onOpenPreferences,
   onAccountChange,
   onModeChange,
+  onAdvanceOnboarding,
 }: {
   sectionRef: RefObject<HTMLElement | null>;
   visible: boolean;
@@ -98,6 +99,9 @@ export function AccountSection({
   onOpenPreferences: () => void;
   onAccountChange: (account: ConsumerAccount, message: string) => void;
   onModeChange?: (mode: AccountScreenMode) => void;
+  // Free signup sends a magic link but does not wait for it — advance the
+  // onboarding wizard (Step 2) on the guest session instead of dead-ending.
+  onAdvanceOnboarding?: (email: string) => void;
 }) {
   const [mode, setMode] = useState<AccountScreenMode>(null);
   const [form, setForm] = useState<ConsumerFormState>(createEmptyConsumerForm());
@@ -207,28 +211,48 @@ export function AccountSection({
     setMessage(null);
 
     try {
-      const result = await signUpUser({
-        first_name: form.firstName.trim(),
-        last_name: form.lastName.trim(),
-        email: form.email.trim(),
-      });
+  const result = await signUpUser({
+    first_name: form.firstName.trim(),
+    last_name: form.lastName.trim(),
+    email: form.email.trim(),
+  });
+  trackEvent(eventMap.submit, { membership, email: form.email });
+  trackEvent(eventMap.success, { membership, email: form.email });
+  trackEvent(analyticsEvents.signupCompleted, { membership });
 
-      setMessage(
-        result.message ||
-          "Check your email for a magic link to complete your account!"
-      );
-      trackEvent(eventMap.submit, { membership, email: form.email });
-      trackEvent(eventMap.success, { membership, email: form.email });
-      trackEvent(analyticsEvents.signupCompleted, { membership });
-    } catch (error) {
-      const nextMessage =
-        error instanceof Error ? error.message : "Could not create your account.";
+  // For V.I.Bee signups — go straight to Stripe checkout
+  // after account is created. Magic link will be sent by
+  // Xano but user lands in Stripe immediately.
+  if (membership === "vibee") {
+    setMessage("Redirecting to secure checkout...");
+    const { checkout_url } = await createSubscriptionCheckout({
+  email: form.email.trim(),
+  external_user_id: form.email.trim(),
+  success_url: `${window.location.origin}?checkout=success`,
+  cancel_url: `${window.location.origin}?checkout=cancelled`,
+});
+    window.location.href = checkout_url;
+    return;
+  }
 
-      setMessage(nextMessage);
-      trackEvent(eventMap.error, { membership, error: nextMessage });
-    } finally {
-      setIsSubmitting(false);
-    }
+  // Free signup — magic link is sent, but we don't wait for it. Advance the
+  // onboarding wizard (preferences → roles → completion) on the guest session.
+  if (onAdvanceOnboarding) {
+    onAdvanceOnboarding(form.email.trim());
+  } else {
+    setMessage(
+      result.message ||
+        "Check your email for a magic link to complete your account!"
+    );
+  }
+} catch (error) {
+  const nextMessage =
+    error instanceof Error ? error.message : "Could not create your account.";
+  setMessage(nextMessage);
+  trackEvent(eventMap.error, { membership, error: nextMessage });
+} finally {
+  setIsSubmitting(false);
+}
   };
 
   const upgradeToVibee = async () => {

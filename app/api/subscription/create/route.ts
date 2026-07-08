@@ -53,12 +53,13 @@ export async function POST(request: NextRequest) {
     }>("genie/checkout_vibee", {
       method: "POST",
       body: {
-        external_user_id: body.external_user_id ?? "",
-        success_url:
-          body.success_url ??
-          `${appBase}/vibee/success?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: body.cancel_url ?? `${appBase}/?checkout=cancel`,
-      },
+  external_user_id: body.external_user_id ?? "",
+  email: body.email ?? "",
+  success_url:
+    body.success_url ??
+    `${appBase}/vibee/success?session_id={CHECKOUT_SESSION_ID}`,
+  cancel_url: body.cancel_url ?? `${appBase}/?checkout=cancel`,
+},
     });
 
     return NextResponse.json({ checkout_url: result.checkout_url });

@@ -1,6 +1,5 @@
 "use client";
 
-import { toBlob } from "html-to-image";
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -9,13 +8,27 @@ import {
   type AccountScreenMode,
 } from "@/app/components/single-page/AccountSection";
 import { DrawerMenu, type DrawerMenuActionId } from "@/app/components/single-page/DrawerMenu";
+import { RoleSwitcherDialog } from "@/app/components/single-page/RoleSwitcherDialog";
 import { ProfileSection } from "@/app/components/single-page/ProfileSection";
+import { NotificationSettingsSection } from "@/app/components/single-page/NotificationSettingsSection";
 import { VendorSection } from "@/app/components/single-page/VendorSection";
+import { ProducerSection } from "@/app/components/single-page/ProducerSection";
+import { RoleIdentifierSection } from "@/app/components/single-page/RoleIdentifierSection";
+import { RoleSetupSection } from "@/app/components/single-page/RoleSetupSection";
+import { OnboardingCompleteSection } from "@/app/components/single-page/OnboardingCompleteSection";
+import { VerifyEmailGate } from "@/app/components/single-page/VerifyEmailGate";
+import { InfluencerSection } from "@/app/components/single-page/InfluencerSection";
+import { NotificationsScreen } from "@/app/components/single-page/NotificationsScreen";
+import { MessagesScreen } from "@/app/components/single-page/MessagesScreen";
+import { ConversationScreen } from "@/app/components/single-page/ConversationScreen";
+import { HomescreenSection } from "@/app/components/homescreen/HomescreenSection";
+import { EventDetailSection } from "@/app/components/event-detail/EventDetailSection";
 import {
   BottomDock,
   GenieBubble,
   BackIcon,
   ResultCard,
+  EventResultCard,
   SectionShell,
   type FlowAnchor,
   buildVenueTags,
@@ -28,7 +41,11 @@ import {
 } from "@/app/components/single-page/ui";
 import { HomeScreen } from "@/app/components/discovery/HomeScreen";
 import { GenieOrb } from "@/app/components/shared/GenieOrb";
-import { requestPushPermission } from "@/app/components/shared/NotificationsBoot";
+import {
+  requestPushPermission,
+  isPushPermissionGranted,
+  getPushSubscriptionId,
+} from "@/app/components/shared/NotificationsBoot";
 import {
   trackEvent,
   trackHomeScreenViewed,
@@ -48,7 +65,11 @@ import {
 import {
   readAuthToken,
   readConsumerAccount,
+  readOnboardingPending,
+  writeOnboardingPending,
+  readSelectedRoles,
   type ConsumerAccount,
+  type OnboardingRole,
 } from "@/app/lib/localState";
 import {
   type SocialProfile,
@@ -68,6 +89,8 @@ import {
   initDeviceProfile,
   loginWithMagicToken,
   logVendorInteraction,
+  logVenueInteraction,
+  logEventInteraction,
   markNotificationOpened,
   mergeGuestProfile,
   persistAuthSession,
@@ -80,6 +103,15 @@ import {
   toConsumerAccount,
   updateSocialProfile,
   unsaveVenueForUser,
+  createSubscriptionCheckout,
+  setUserRoles,
+  saveProducerDetails,
+  saveInfluencerDetails,
+  fetchUnreadNotifCount,
+  fetchUnreadMessageCount,
+  fetchMessageThreads,
+  mergeThreadsToConversations,
+  type MessageThreadType,
 } from "@/app/lib/publicApiClient";
 import { getRuntimeConfig } from "@/app/lib/runtimeConfig";
 import { extractCityFromMessage, mentionsNearMe } from "@/app/lib/cityExtractor";
@@ -125,7 +157,22 @@ function getVenueId(venue: GenieVenue) {
   return String(venue.id);
 }
 
+function getAppOrigin() {
+  return typeof window !== "undefined"
+    ? window.location.origin
+    : "https://genie.socialbevy.com";
+}
 
+async function shareLink(payload: { title: string; text: string; url: string }) {
+  if (typeof navigator !== "undefined" && navigator.share) {
+    await navigator.share(payload);
+    return;
+  }
+
+  if (typeof navigator !== "undefined" && navigator.clipboard) {
+    await navigator.clipboard.writeText(`${payload.text}\n${payload.url}`);
+  }
+}
 
 function buildNativeMapsUrl(venue: GenieVenue) {
   if (venue.google_maps_url?.trim()) {
@@ -144,6 +191,20 @@ function buildNativeMapsUrl(venue: GenieVenue) {
   return query
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`
     : null;
+}
+// ─── Navigate to event detail ────────────────────────────────────────────────
+// Called whenever a user taps an event card anywhere in the app.
+// Sets the slug so the event-detail screen knows which page to load.
+function openEventDetail(
+  slug: string,
+  eventId: number | null,
+  setSlug: (s: string) => void,
+  setId: (id: number | null) => void,
+  nav: (screen: FlowAnchor) => void
+) {
+  setSlug(slug);
+  setId(eventId);
+  nav("event-detail");
 }
 
 function buildStaticMapUrl(venue: GenieVenue) {
@@ -166,6 +227,15 @@ function buildStaticMapUrl(venue: GenieVenue) {
 
   const encodedLocation = encodeURIComponent(location);
   return `https://maps.googleapis.com/maps/api/staticmap?center=${encodedLocation}&zoom=15&size=1200x720&scale=2&markers=color:0xff4f4f%7C${encodedLocation}&key=${apiKey}`;
+}
+
+function isAlreadyRedeemedMessage(message: string) {
+  const normalized = message.toLowerCase().replace(/[_-]+/g, " ");
+  return (
+    normalized.includes("already redeemed") ||
+    normalized.includes("already been redeemed") ||
+    normalized.includes("offer redeemed already")
+  );
 }
 
 const socialTagOptions = {
@@ -385,7 +455,7 @@ type SinglePageGenieAppProps = {
 };
 
 export function SinglePageGenieApp({
-  initialScreen = "home",
+  initialScreen = "homescreen",
   initialVenueId = null,
 }: SinglePageGenieAppProps = {}) {
   const config = getRuntimeConfig();
@@ -397,6 +467,7 @@ export function SinglePageGenieApp({
   const moreNearbyImpressionResponseRef =
     useRef<GenieResponseEnvelope | null>(null);
   const screenHistoryRef = useRef<FlowAnchor[]>([]);
+  const pendingReturnRef = useRef<{ screen: FlowAnchor; eventId: number | null; event: Record<string, unknown> } | null>(null);
   const homeRef = useRef<HTMLElement | null>(null);
   const listeningRef = useRef<HTMLElement | null>(null);
   const thinkingRef = useRef<HTMLElement | null>(null);
@@ -409,7 +480,22 @@ export function SinglePageGenieApp({
   const accountRef = useRef<HTMLElement | null>(null);
   const vendorRef = useRef<HTMLElement | null>(null);
   const profileRef = useRef<HTMLElement | null>(null);
+  const roleIdentifierRef = useRef<HTMLElement | null>(null);
+  const roleSetupRef = useRef<HTMLElement | null>(null);
+  const onboardingCompleteRef = useRef<HTMLElement | null>(null);
+  const roleUnlockRef = useRef<HTMLElement | null>(null);
   const [activeScreen, setActiveScreen] = useState<FlowAnchor>(initialScreen);
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
+  const [activeConversation, setActiveConversation] = useState<{
+    threadId: number | null;
+    threadType: MessageThreadType;
+    counterpartId: number;
+    counterpartName?: string;
+    counterpartAvatarUrl?: string;
+    viewerRole?: "consumer" | "producer";
+  } | null>(null);
+  const [isRoleSwitcherOpen, setIsRoleSwitcherOpen] = useState(false);
   const [detailReturnScreen, setDetailReturnScreen] = useState<
     "decision" | "more" | "saved"
   >("decision");
@@ -459,11 +545,43 @@ export function SinglePageGenieApp({
   const [selectedVenueId, setSelectedVenueId] = useState<string | null>(
     initialVenueId ? String(initialVenueId) : null
   );
+  // ── Event detail state ──────────────────────────────────────────────────────
+// selectedEventSlug: the public_slug of the event currently being viewed
+// selectedEventId: the numeric id for survey submission
+const [selectedEventSlug, setSelectedEventSlug] = useState<string | null>(null);
+const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
+const [selectedEvent, setSelectedEvent] = useState<Record<string, unknown> | null>(null);
+
+// ── Post-event survey state ──────────────────────────────────────────────────
+const [surveyEventId, setSurveyEventId] = useState<number | null>(null);
+const [surveyDidAttend, setSurveyDidAttend] = useState<boolean | null>(null);
+const [surveyVibeRating, setSurveyVibeRating] = useState<number>(0);
+const [surveyVenueRating, setSurveyVenueRating] = useState<number>(0);
+const [surveyMetExpectations, setSurveyMetExpectations] = useState<"yes" | "somewhat" | "no" | null>(null);
+const [surveyWouldReturn, setSurveyWouldReturn] = useState<"yes" | "maybe" | "no" | null>(null);
+const [surveyOneWord, setSurveyOneWord] = useState("");
+const [surveyDiscoveredViaGenie, setSurveyDiscoveredViaGenie] = useState<boolean | null>(null);
+const [surveySubmitting, setSurveySubmitting] = useState(false);
+const [surveySubmitted, setSurveySubmitted] = useState(false);
+
+// ── V.I.Bee trial state ──────────────────────────────────────────────────────
+const [trialLoading, setTrialLoading] = useState(false);
+const [trialError, setTrialError] = useState<string | null>(null);
+const [trialSuccess, setTrialSuccess] = useState(false);
+
   const [sharedVenue, setSharedVenue] = useState<GenieVenue | null>(null);
   const [sharedVenueLoading, setSharedVenueLoading] = useState(false);
   const [selectedOfferId, setSelectedOfferId] = useState<number | null>(null);
   const [account, setAccount] = useState<ConsumerAccount | null>(null);
   const [isAuthChecked, setIsAuthChecked] = useState(false);
+  // Onboarding wizard: under magic-link there is no auth session until the link
+  // is clicked, so the wizard runs on the guest session. `isOnboarding` routes
+  // the preferences "Next" button into the role steps; `onboardingEmail` feeds
+  // the completion + verification gate.
+  const [isOnboarding, setIsOnboarding] = useState(false);
+  const [onboardingEmail, setOnboardingEmail] = useState("");
+  const [onboardingRoles, setOnboardingRoles] = useState<OnboardingRole[]>([]);
+  const [verifyGateOpen, setVerifyGateOpen] = useState(false);
   const [mapPreviewFailed, setMapPreviewFailed] = useState(false);
   const [accountScreenMode, setAccountScreenMode] =
     useState<AccountScreenMode>(null);
@@ -507,6 +625,33 @@ export function SinglePageGenieApp({
     [userCoords]
   );
   const hasPromptedForPushRef = useRef(false);
+  // The external_user_id this device's push token was last registered under.
+  // Lets us re-register on login (guest → real user) so the recipient's token
+  // is tied to the right account, without re-prompting every render.
+  const lastRegisteredPushExtIdRef = useRef<string | null>(null);
+
+  // Register this device's OneSignal token under the current user so DM pushes
+  // can reach them. Silent when permission is already granted; prompts at most
+  // once per session otherwise (never on cold start — callers gate on login /
+  // a meaningful screen). No-op if already registered under this external id.
+  const syncPushRegistration = useCallback(async () => {
+    const externalUserId = readExternalUserId();
+    if (!externalUserId) return;
+    if (lastRegisteredPushExtIdRef.current === externalUserId) return;
+
+    let playerId = isPushPermissionGranted() ? getPushSubscriptionId() : null;
+    if (!playerId && !hasPromptedForPushRef.current) {
+      hasPromptedForPushRef.current = true;
+      playerId = await requestPushPermission();
+    }
+    if (!playerId) return;
+
+    lastRegisteredPushExtIdRef.current = externalUserId;
+    await registerPushToken(playerId).catch((error) => {
+      console.error("Failed to register push token", error);
+    });
+  }, []);
+
   const offersLoadedRef = useRef(false);
   const profileLoadedRef = useRef(false);
   const resultVenues = useMemo(
@@ -552,7 +697,7 @@ export function SinglePageGenieApp({
     screenHistoryRef.current = [];
     stopListeningSession();
     setIsDrawerOpen(false);
-    setActiveScreen("home");
+    setActiveScreen("homescreen");
   }, [stopListeningSession]);
 
   const navigateTo = useCallback(
@@ -605,6 +750,30 @@ export function SinglePageGenieApp({
     },
     [account, activeScreen, config.signupPromptSuppressAfter, navigateTo]
   );
+
+  // Magic-link verification gate: a user who finished the onboarding wizard but
+  // hasn't clicked their link has no auth token. Block gated actions and show
+  // the resend prompt. Returns true when the gate was shown (caller aborts).
+  const maybeBlockForVerification = useCallback((): boolean => {
+    if (account) {
+      if (isAuthChecked && account.verified === false) {
+        setOnboardingEmail(account.email);
+        setVerifyGateOpen(true);
+        return true;
+      }
+      return false;
+    }
+    if (readAuthToken()) {
+      return false;
+    }
+    const pending = readOnboardingPending();
+    if (!pending || pending.verified) {
+      return false;
+    }
+    setOnboardingEmail(pending.email);
+    setVerifyGateOpen(true);
+    return true;
+  }, [account, isAuthChecked]);
 
   const hydrateAuthenticatedSession = useCallback(async () => {
     const token = readAuthToken();
@@ -705,6 +874,36 @@ export function SinglePageGenieApp({
     }
   }, [account]);
 
+  useEffect(() => {
+    if (!account) return;
+    fetchUnreadNotifCount()
+      .then((r) => setUnreadNotifCount(r.unread_count ?? 0))
+      .catch(() => {});
+  }, [account]);
+
+  // Keep the homescreen message badge live: fetch on load, poll while the app
+  // is open, and refetch on every screen change (so a recipient sees a new
+  // message's badge, and it clears right after reading a thread + navigating
+  // back). The unread count has no dedicated endpoint — it's derived from the
+  // thread list — so this is intentionally lightweight, not per-second.
+  useEffect(() => {
+    if (!account) return;
+    let cancelled = false;
+    const refresh = () => {
+      fetchUnreadMessageCount(account.id)
+        .then((count) => {
+          if (!cancelled) setUnreadMessageCount(count);
+        })
+        .catch(() => {});
+    };
+    refresh();
+    const interval = setInterval(refresh, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [account, activeScreen]);
+
   const loadSocialPreferences = useCallback(async () => {
     if (profileLoadedRef.current) {
       return;
@@ -731,7 +930,11 @@ export function SinglePageGenieApp({
       return;
     }
 
-    screenHistoryRef.current = ["home"];
+    if (maybeBlockForVerification()) {
+      return;
+    }
+
+    screenHistoryRef.current = ["homescreen"];
     setActiveScreen("thinking");
     setLastQuery(trimmed);
     setStatusMessage(null);
@@ -814,7 +1017,7 @@ export function SinglePageGenieApp({
         cityContext: cityForQuery ?? undefined,
         includeCoords: shouldUseCoords,
       });
-      setResponse(nextResponse);
+setResponse(nextResponse);
       // Remember the resolved city so the next query without an explicit city
       // stays anchored to it.
       const resolvedSessionCity =
@@ -929,6 +1132,11 @@ export function SinglePageGenieApp({
     index: number,
     source: "decision" | "more" | "saved"
   ) => {
+    // Verification gate takes precedence: an unverified onboarded user must
+    // click their magic link before opening a detail screen.
+    if (maybeBlockForVerification()) {
+      return;
+    }
     // Account Intro gate: on the Decision screen, after the user has completed
     // at least two queries, the first venue tap by an unauthenticated user
     // takes them to the Account Intro instead of the detail view.
@@ -993,6 +1201,10 @@ export function SinglePageGenieApp({
   );
 
   const handleSaveVenue = async (venue: GenieVenue) => {
+    if (maybeBlockForVerification()) {
+      return;
+    }
+
     let token = readAuthToken();
 
     if (!account || !token) {
@@ -1024,6 +1236,7 @@ export function SinglePageGenieApp({
     try {
       if (isSaved) {
         await unsaveVenueForUser(venueId);
+        logVenueInteraction("unsave", venueId, activeScreen);
         const nextVenues = savedVenues.filter(
           (savedVenue) => getVenueId(savedVenue) !== id
         );
@@ -1031,6 +1244,7 @@ export function SinglePageGenieApp({
         setSavedVenueIds(syncSavedVenueIds(nextVenues));
       } else {
         await saveVenueForUser(venueId);
+        logVenueInteraction("save", venueId, activeScreen);
         const nextVenues = [venue, ...savedVenues].filter(
           (entry, index, array) =>
             array.findIndex((candidate) => getVenueId(candidate) === getVenueId(entry)) ===
@@ -1079,46 +1293,14 @@ export function SinglePageGenieApp({
   const handleShareVenue = async (venue: GenieVenue) => {
     const venueId = getVenueId(venue);
     const text = `Check out ${venue.venue_name} on Genie by Social Bevy`;
-    const origin = typeof window !== "undefined" ? window.location.origin : "https://genie.socialbevy.com";
-    const url = `${origin}/venue/${venueId}`;
-
-    if (detailRef.current && navigator.share) {
-      try {
-        const blob = await toBlob(detailRef.current, {
-          cacheBust: true,
-          pixelRatio: 2,
-        });
-
-        if (blob) {
-          const file = new File([blob], `genie-venue-${venueId}.png`, {
-            type: "image/png",
-          });
-
-          if (!navigator.canShare || navigator.canShare({ files: [file] })) {
-            await navigator.share({
-              title: `${venue.venue_name} - Genie by Social Bevy`,
-              text,
-              files: [file],
-            });
-            trackShare(venueId);
-            return;
-          }
-        }
-      } catch (error) {
-        console.error("Screenshot share failed", error);
-      }
-    }
+    const url = `${getAppOrigin()}/venue/${venueId}`;
 
     try {
-      if (navigator.share) {
-        await navigator.share({
-          title: `${venue.venue_name} — Genie by Social Bevy`,
-          text,
-          url,
-        });
-      } else if (navigator.clipboard) {
-        await navigator.clipboard.writeText(`${text}\n${url}`);
-      }
+      await shareLink({
+        title: `${venue.venue_name} - Genie by Social Bevy`,
+        text,
+        url,
+      });
     } catch (error) {
       console.error("Share failed", error);
     }
@@ -1126,8 +1308,23 @@ export function SinglePageGenieApp({
     trackShare(venueId);
   };
 
+  const handleShareApp = async () => {
+    try {
+      await shareLink({
+        title: "Genie by Social Bevy",
+        text: "Discover food, drinks, offers, and things to do with Genie by Social Bevy.",
+        url: getAppOrigin(),
+      });
+    } catch (error) {
+      console.error("App share failed", error);
+    }
+  };
+
   const handleRedeemOffer = useCallback(
     async (offer: VibeeOffer) => {
+      if (maybeBlockForVerification()) {
+        return;
+      }
       if (!account || account.membership !== "vibee") {
         setStatusMessage("Upgrade to V.I.Bee to redeem offers.");
         navigateTo("account");
@@ -1181,82 +1378,17 @@ export function SinglePageGenieApp({
             ? error.message
             : "Could not redeem this offer right now.";
 
-        const lowerMsg = message.toLowerCase();
-        if (lowerMsg.includes("already redeemed") || lowerMsg.includes("already been redeemed")) {
-          // Offers are reusable every 24h. If the stored redemption for this
-          // offer is >24h old, the backend should have reset it — surface a
-          // clearer hint so the user knows to refresh. If it's within the
-          // window, reuse that redemption's token so they can still pull up
-          // the QR screen instead of being stranded on an "already redeemed"
-          // dead-end. Prior behavior blanked out verify_url/token which is
-          // why tapping an offer never revealed the QR code.
+        if (isAlreadyRedeemedMessage(message)) {
           const existing = redemptions.find((r) => r.offer_id === offer.id) ?? null;
-          const now = Date.now();
           const redemptionMs =
             existing && existing.redeemed_at
               ? existing.redeemed_at < 1_000_000_000_000
-                ? existing.redeemed_at * 1000 // seconds → ms if needed
+                ? existing.redeemed_at * 1000
                 : existing.redeemed_at
-              : null;
-          const withinResetWindow =
-            redemptionMs === null
-              ? true
-              : now - redemptionMs < 24 * 60 * 60 * 1000;
+              : Date.now();
+          const venueMatch =
+            selectedVenue && Number(selectedVenue.id) === offer.vendor_id ? selectedVenue : null;
 
-          if (!withinResetWindow) {
-            // Cache is stale — force a refresh so the user can redeem again.
-            const refreshed = await fetchUserRedemptions().catch(() => null);
-            if (refreshed?.redemptions) {
-              setRedemptions(refreshed.redemptions);
-              if (!refreshed.redemptions.some((r) => r.offer_id === offer.id)) {
-                try {
-                  const retried = await redeemVibeeOffer(offer.id);
-                  const venueMatch =
-                    selectedVenue && Number(selectedVenue.id) === offer.vendor_id
-                      ? selectedVenue
-                      : null;
-                  setActiveRedemption({
-                    offer_id: offer.id,
-                    offer_title: retried.offer_title,
-                    offer_type: offer.offer_type,
-                    offer_description: offer.description,
-                    offer_terms: offer.redeem_instructions,
-                    discount_value: offer.discount_value,
-                    vendor_id: offer.vendor_id,
-                    venue_name: venueMatch?.venue_name ?? offer.venue_name,
-                    venue_image: venueMatch?.image ?? offer.venue_image ?? undefined,
-                    venue_rating: venueMatch?.google_rating ?? offer.venue_rating ?? undefined,
-                    venue_review_count:
-                      venueMatch?.google_user_ratings_total ?? offer.venue_review_count ?? undefined,
-                    venue_neighborhood:
-                      venueMatch?.area_neighborhood ?? venueMatch?.city ?? offer.venue_neighborhood ?? undefined,
-                    verify_url: retried.verify_url,
-                    redeemed_at: retried.redeemed_at,
-                    redemption_token: retried.redemption_token,
-                  });
-                  setRedemptionOutcome(null);
-                  setStatusMessage(null);
-                  navigateTo("offer-activated");
-                  return;
-                } catch (retryError) {
-                  setStatusMessage(
-                    retryError instanceof Error
-                      ? retryError.message
-                      : "Could not redeem this offer right now."
-                  );
-                  return;
-                }
-              }
-            }
-            setStatusMessage(
-              "This offer refreshes every 24 hours. Pull to refresh, then try again."
-            );
-            return;
-          }
-
-          // Populate activeRedemption with the existing token so the QR screen
-          // renders correctly instead of showing a blank "already redeemed".
-          const venueMatch = selectedVenue && Number(selectedVenue.id) === offer.vendor_id ? selectedVenue : null;
           setActiveRedemption({
             offer_id: offer.id,
             offer_title: offer.title,
@@ -1268,20 +1400,29 @@ export function SinglePageGenieApp({
             venue_name: venueMatch?.venue_name ?? offer.venue_name,
             venue_image: venueMatch?.image ?? offer.venue_image ?? undefined,
             venue_rating: venueMatch?.google_rating ?? offer.venue_rating ?? undefined,
-            venue_review_count: venueMatch?.google_user_ratings_total ?? offer.venue_review_count ?? undefined,
-            venue_neighborhood: venueMatch?.area_neighborhood ?? venueMatch?.city ?? offer.venue_neighborhood ?? undefined,
-            // Prefer the existing redemption's token so the QR code actually
-            // renders — previously we blanked these out which is why the
-            // redemption screen stayed empty.
+            venue_review_count:
+              venueMatch?.google_user_ratings_total ?? offer.venue_review_count ?? undefined,
+            venue_neighborhood:
+              venueMatch?.area_neighborhood ??
+              venueMatch?.city ??
+              offer.venue_neighborhood ??
+              undefined,
             verify_url: (existing as { verify_url?: string } | null)?.verify_url ?? "",
-            redeemed_at: redemptionMs ?? Date.now(),
+            redeemed_at: redemptionMs,
             redemption_token: existing?.redemption_token ?? "",
           });
-          // If we successfully reconstructed a QR-ready redemption, treat it
-          // as a normal successful activation so the user sees the code.
-          setRedemptionOutcome(existing?.redemption_token ? null : "already_redeemed");
+          setRedemptionOutcome("already_redeemed");
+          setStatusMessage(null);
           navigateTo("offer-activated");
-        } else if (lowerMsg.includes("expired")) {
+
+          void fetchUserRedemptions()
+            .then((refreshed) => setRedemptions(refreshed.redemptions ?? []))
+            .catch(() => null);
+          return;
+        }
+
+        const lowerMsg = message.toLowerCase();
+        if (lowerMsg.includes("expired")) {
           setRedemptionOutcome("expired");
           navigateTo("offer-activated");
         } else {
@@ -1343,11 +1484,14 @@ export function SinglePageGenieApp({
       setSocialProfile(updated);
       profileLoadedRef.current = true;
       setStatusMessage("Preferences saved. Genie will use these on your next ask.");
-      // "Next" previously only saved and left the user stranded on the
-      // Preferences screen — users perceived this as being bounced back to
-      // Profile. Advance to Home so the button actually progresses the flow
-      // and the user can immediately try out their updated vibe.
-      navigateTo("home", false);
+      // During the onboarding wizard, "Next" advances to the role identifier
+      // (Step 3) instead of bouncing home. Outside onboarding (e.g. "Tune my
+      // preferences") it returns home so the button still progresses the flow.
+      if (isOnboarding) {
+        navigateTo("role-identifier");
+      } else {
+        navigateTo("home", false);
+      }
     } catch (error) {
       const message =
         error instanceof Error
@@ -1357,14 +1501,15 @@ export function SinglePageGenieApp({
     } finally {
       setSocialSaving(false);
     }
-  }, [socialProfile, navigateTo]);
+  }, [socialProfile, navigateTo, isOnboarding]);
 
   useEffect(() => {
     trackHomeScreenViewed();
     setAccount(readConsumerAccount());
     void (async () => {
       const url = new URL(window.location.href);
-      const magicToken = url.searchParams.get("token");
+      // Handle both ?token= and ?/token= (Xano sometimes prepends a slash)
+      const magicToken = url.searchParams.get("token") ?? url.searchParams.get("/token");
 
       if (magicToken) {
         try {
@@ -1379,6 +1524,12 @@ export function SinglePageGenieApp({
           if (external_user_id) {
             writeExternalUserId(external_user_id);
           }
+
+          // Magic link clicked → the account is verified. Clear the pending
+          // state and dismiss the wizard/gate so they never show again.
+          writeOnboardingPending(null);
+          setIsOnboarding(false);
+          setVerifyGateOpen(false);
 
           // Preserve the latest documented behavior: remove the token from the URL
           // immediately after a successful exchange.
@@ -1397,6 +1548,45 @@ export function SinglePageGenieApp({
             offersLoadedRef.current = false;
             profileLoadedRef.current = false;
             await mergeGuestProfile(external_user_id).catch(() => {});
+          }
+
+          // Sync onboarding role selections to genie_user now that the
+          // account row exists (magic link click creates it).
+          const savedRoles = readSelectedRoles();
+          if (savedRoles.length > 0) {
+            setUserRoles(savedRoles).catch(() => {});
+          }
+          try {
+            const rawDetails = window.localStorage.getItem(
+              "genie_onboarding_role_details_v1"
+            );
+            if (rawDetails) {
+              const details = JSON.parse(rawDetails) as {
+                brandName?: string;
+                producerHandle?: string;
+                influencerHandle?: string;
+              };
+              if (
+                (details.brandName || details.producerHandle) &&
+                savedRoles.includes("producer")
+              ) {
+                saveProducerDetails({
+                  brand_name: details.brandName,
+                  producer_handle: details.producerHandle,
+                }).catch(() => {});
+              }
+              if (
+                details.influencerHandle &&
+                savedRoles.includes("influencer")
+              ) {
+                saveInfluencerDetails({
+                  influencer_handle: details.influencerHandle,
+                }).catch(() => {});
+              }
+              window.localStorage.removeItem("genie_onboarding_role_details_v1");
+            }
+          } catch {
+            // best-effort
           }
         } catch (error) {
           console.error("Failed to exchange magic token", error);
@@ -1508,6 +1698,33 @@ export function SinglePageGenieApp({
     setStatusMessage("That venue was not found. Try searching again.");
     setActiveScreen("home");
   }, [activeScreen, isAuthChecked, selectedVenue, selectedVenueId, sharedVenueLoading]);
+
+  // Keep the address bar in sync with the active screen so leaving the venue
+  // detail (e.g. tapping Home) drops the /venue/<id> path. Only the detail
+  // screen owns a deep URL — every other screen renders at "/".
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const { pathname, search, hash } = window.location;
+    const onVenuePath = pathname.startsWith("/venue/");
+    const desiredVenuePath =
+      activeScreen === "detail" && selectedVenueId
+        ? `/venue/${selectedVenueId}`
+        : null;
+
+    if (desiredVenuePath) {
+      if (pathname !== desiredVenuePath) {
+        window.history.replaceState({}, "", `${desiredVenuePath}${search}${hash}`);
+      }
+      return;
+    }
+
+    if (onVenuePath) {
+      window.history.replaceState({}, "", `/${search}${hash}`);
+    }
+  }, [activeScreen, selectedVenueId]);
 
   useEffect(() => {
     const media = window.matchMedia("(display-mode: standalone)");
@@ -1670,11 +1887,72 @@ export function SinglePageGenieApp({
       "profile",
       "membership",
       "preferences",
+      "event-survey",
+      "role-identifier",
+      "role-setup",
+      "onboarding-complete",
+      "messages",
     ];
-    if (allowed.includes(screen as FlowAnchor)) {
+    if (screen === "conversation") {
+      const threadType = url.searchParams.get("thread_type");
+      const producerId = url.searchParams.get("producer_id");
+      const threadIdParam = url.searchParams.get("thread_id");
+      const counterpartName = url.searchParams.get("counterpart_name");
+      if (threadType === "producer" && producerId && !isNaN(Number(producerId))) {
+        setActiveConversation({
+          threadId: null,
+          threadType: "producer",
+          counterpartId: Number(producerId),
+          counterpartName: counterpartName ?? undefined,
+        });
+        navigateTo("conversation");
+      } else if (
+        threadType === "user" &&
+        threadIdParam &&
+        !isNaN(Number(threadIdParam))
+      ) {
+        // Notification tap into a 1:1 DM: we only have thread_id. Open the chat
+        // immediately (history loads by thread_id + clears unread), then resolve
+        // the counterpart (name/avatar/id, needed for the header and replies)
+        // from the thread list. Use the stored account id so this is correct
+        // even before React state hydrates on a cold notification open.
+        const tid = Number(threadIdParam);
+        setActiveConversation({
+          threadId: tid,
+          threadType: "user",
+          counterpartId: 0,
+          counterpartName: counterpartName ?? undefined,
+        });
+        navigateTo("conversation");
+        const selfId = readConsumerAccount()?.id;
+        void fetchMessageThreads("user", 1, 100)
+          .then((raw) => {
+            const conv = mergeThreadsToConversations(raw, selfId).find(
+              (c) => c.threadType === "user" && c.threadId === tid
+            );
+            if (!conv) return;
+            setActiveConversation((prev) =>
+              prev && prev.threadId === tid
+                ? {
+                    ...prev,
+                    counterpartId: conv.counterpartId,
+                    counterpartName: conv.counterpartName ?? prev.counterpartName,
+                    counterpartAvatarUrl: conv.counterpartAvatarUrl,
+                    viewerRole: conv.viewerRole,
+                  }
+                : prev
+            );
+          })
+          .catch(() => {});
+      }
+    } else if (allowed.includes(screen as FlowAnchor)) {
       navigateTo(screen as FlowAnchor);
     }
     url.searchParams.delete("screen");
+    url.searchParams.delete("thread_type");
+    url.searchParams.delete("producer_id");
+    url.searchParams.delete("thread_id");
+    url.searchParams.delete("counterpart_name");
     window.history.replaceState(
       {},
       "",
@@ -1817,20 +2095,17 @@ export function SinglePageGenieApp({
       });
     });
 
-    if (!hasPromptedForPushRef.current) {
-      hasPromptedForPushRef.current = true;
-      void (async () => {
-        const playerId = await requestPushPermission();
-        if (!playerId) {
-          return;
-        }
+    void syncPushRegistration();
+  }, [response, syncPushRegistration]);
 
-        await registerPushToken(playerId).catch((error) => {
-          console.error("Failed to register push token", error);
-        });
-      })();
-    }
-  }, [response]);
+  // Register (or re-register) this device for push as soon as we have a
+  // logged-in account, so message pushes reach users who go straight to
+  // messaging — not just those who run a Genie search. Re-runs on login when
+  // account.id becomes available (or changes from guest to real user).
+  useEffect(() => {
+    if (!account?.id) return;
+    void syncPushRegistration();
+  }, [account?.id, syncPushRegistration]);
 
   useEffect(() => {
     if (
@@ -1868,6 +2143,7 @@ export function SinglePageGenieApp({
 
   const currentResponseMode = response?.response_mode;
   const showResultSections = currentResponseMode === "structured_results";
+  console.log("RENDER:", { currentResponseMode, showResultSections, activeScreen });
   const nonStructuredResponse =
     response && response.response_mode !== "structured_results"
       ? response
@@ -1893,6 +2169,11 @@ export function SinglePageGenieApp({
     "Help Genie learn your vibe so recommendations get more personal.";
   const mapPreviewUrl = selectedVenue ? buildStaticMapUrl(selectedVenue) : null;
   const nativeMapsUrl = selectedVenue ? buildNativeMapsUrl(selectedVenue) : null;
+  // Uber deeplink — same construction as the standalone venue page (VenueDetailClient.tsx).
+  const uberUrl =
+    selectedVenue && selectedVenue.latitude != null && selectedVenue.longitude != null
+      ? `uber://?dropoff[lat]=${selectedVenue.latitude}&dropoff[lng]=${selectedVenue.longitude}&dropoff[nickname]=${encodeURIComponent(selectedVenue.venue_name)}`
+      : null;
   const detailActions: Array<{
     id: string;
     label: string;
@@ -1900,6 +2181,40 @@ export function SinglePageGenieApp({
     onClick: () => void;
   }> = selectedVenue
     ? [
+        ...(uberUrl
+          ? [
+              {
+                id: "ride",
+                label: "Get a Ride",
+                variant: "secondary" as const,
+                onClick: () => {
+                  logVendorInteraction("ride_click", Number(selectedVenue.id));
+                  logVenueInteraction("ride", Number(selectedVenue.id), "detail");
+                  window.open(uberUrl, "_blank", "noopener,noreferrer");
+                },
+              },
+            ]
+          : []),
+        ...(nativeMapsUrl
+          ? [
+              {
+                id: "directions",
+                label: "Directions",
+                variant: "secondary" as const,
+                onClick: () => {
+                  trackEvent(analyticsEvents.mapOpen, {
+                    venueId: getVenueId(selectedVenue),
+                  });
+                  trackEvent(analyticsEvents.vendorMapTap, {
+                    venueId: getVenueId(selectedVenue),
+                  });
+                  logVendorInteraction("map_click", Number(selectedVenue.id));
+                  logVenueInteraction("map", Number(selectedVenue.id), "detail");
+                  window.open(nativeMapsUrl, "_blank", "noopener,noreferrer");
+                },
+              },
+            ]
+          : []),
         ...(selectedVenue.phone
           ? [
               {
@@ -1914,6 +2229,7 @@ export function SinglePageGenieApp({
                     venueId: getVenueId(selectedVenue),
                   });
                   logVendorInteraction("call_click", Number(selectedVenue.id));
+                  logVenueInteraction("call", Number(selectedVenue.id), "detail");
                   window.open(
                     `tel:${selectedVenue.phone}`,
                     "_self"
@@ -1937,6 +2253,7 @@ export function SinglePageGenieApp({
                     venueId: getVenueId(selectedVenue),
                   });
                   logVendorInteraction("reservation_click", Number(selectedVenue.id));
+                  logVenueInteraction("reservation", Number(selectedVenue.id), "detail");
                   window.open(
                     selectedVenue.reservation_url!,
                     "_blank",
@@ -1974,6 +2291,7 @@ export function SinglePageGenieApp({
               venueId: getVenueId(selectedVenue),
             });
             logVendorInteraction("share", Number(selectedVenue.id));
+            logVenueInteraction("share", Number(selectedVenue.id), "detail");
             void handleShareVenue(selectedVenue);
           },
         },
@@ -2024,6 +2342,9 @@ export function SinglePageGenieApp({
           break;
         case "saved":
           navigateTo("saved");
+          break;
+        case "messages":
+          navigateTo("messages");
           break;
         case "membership":
           navigateTo("membership");
@@ -2085,6 +2406,10 @@ export function SinglePageGenieApp({
             "noopener,noreferrer"
           );
           break;
+        case "switch-role":
+          setIsDrawerOpen(false);
+          setIsRoleSwitcherOpen(true);
+          break;
       }
     },
     [goHome, isVibeeMember, navigateTo]
@@ -2145,6 +2470,29 @@ export function SinglePageGenieApp({
           dismissAccount();
         }
         break;
+        case "event-detail":
+  setSelectedEventSlug(null);
+  setSelectedEventId(null);
+  goBack("home");
+  break;
+case "event-survey":
+  setSurveySubmitted(false);
+  goBack("event-detail");
+  break;
+case "vibbee-trial":
+  setTrialError(null);
+  setTrialSuccess(false);
+  goBack("account");
+  break;
+      case "producer-dashboard":
+        goBack("home");
+        break;
+      case "influencer-dashboard":
+        goBack("home");
+        break;
+      case "role-unlock":
+        goBack("home");
+        break;
       default:
         goBack("home");
     }
@@ -2159,6 +2507,7 @@ export function SinglePageGenieApp({
 
   const shouldShowTopBar =
     activeScreen !== "home" &&
+    activeScreen !== "homescreen" &&
     activeScreen !== "vendor" &&
     activeScreen !== "account" &&
     activeScreen !== "profile" &&
@@ -2170,6 +2519,17 @@ export function SinglePageGenieApp({
     activeScreen !== "offer-detail" &&
     activeScreen !== "redemptions" &&
     activeScreen !== "saved" &&
+    activeScreen !== "event-detail" &&
+activeScreen !== "event-survey" &&
+activeScreen !== "vibbee-trial" &&
+    activeScreen !== "role-identifier" &&
+    activeScreen !== "role-setup" &&
+    activeScreen !== "onboarding-complete" &&
+    activeScreen !== "role-unlock" &&
+    activeScreen !== "producer-dashboard" &&
+    activeScreen !== "notifications" &&
+    activeScreen !== "messages" &&
+    activeScreen !== "conversation" &&
     activeScreen !== "detail";
 
   const isAiFallbackLayout =
@@ -2183,7 +2543,7 @@ export function SinglePageGenieApp({
   // landing screen, so users always have a consistent way to get back home or
   // jump into profile/account.
   const shouldShowFooter =
-    activeScreen === "home" ||
+    activeScreen === "homescreen" ||
     activeScreen === "decision" ||
     activeScreen === "more" ||
     activeScreen === "detail" ||
@@ -2194,15 +2554,21 @@ export function SinglePageGenieApp({
     activeScreen === "offer-activated" ||
     activeScreen === "redemptions" ||
     activeScreen === "profile" ||
+    activeScreen === "notification-settings" ||
     activeScreen === "account" ||
     activeScreen === "membership" ||
     activeScreen === "contact" ||
     activeScreen === "preferences" ||
     activeScreen === "vendor" ||
+    activeScreen === "producer-dashboard" ||
+    activeScreen === "influencer-dashboard" ||
+    activeScreen === "event-detail" ||
+activeScreen === "event-survey" ||
+activeScreen === "vibbee-trial" ||
     (activeScreen === "thinking" && isAiFallbackLayout);
 
   return (
-    <main className={`relative flex h-dvh flex-col overflow-x-hidden ${activeScreen === "home" || activeScreen === "listening" || activeScreen === "thinking" ? "overflow-y-hidden" : "overflow-y-auto"} bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat px-4 pb-3 pt-3 dark:bg-[url('/bg.png')] dark:bg-cover dark:bg-center sm:px-6 sm:pb-4 sm:pt-5`}>
+    <main className={`relative flex h-dvh flex-col overflow-x-hidden ${activeScreen === "home" || activeScreen === "homescreen" || activeScreen === "listening" || activeScreen === "thinking" ? "overflow-y-hidden" : "overflow-y-auto"} bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat px-4 pb-3 pt-3 dark:bg-[url('/bg.png')] dark:bg-cover dark:bg-center sm:px-6 sm:pb-4 sm:pt-5`}>
       <div className="pointer-events-none fixed inset-0 z-0 hidden bg-black/50 dark:block" />
       <DrawerMenu
         visible={isDrawerOpen}
@@ -2217,7 +2583,26 @@ export function SinglePageGenieApp({
         onToggleNotifications={() => setNotificationsEnabled((prev) => !prev)}
       />
 
-      <div className={`relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col gap-3 ${activeScreen === "home" || activeScreen === "listening" || activeScreen === "thinking" ? "min-h-0" : ""}`}>
+      <RoleSwitcherDialog
+        visible={isRoleSwitcherOpen}
+        onClose={() => setIsRoleSwitcherOpen(false)}
+        onNavigateToRole={(role) => {
+          setIsRoleSwitcherOpen(false);
+          const targets: Record<OnboardingRole, FlowAnchor> = {
+            consumer: "dashboard",
+            vendor: "vendor",
+            producer: "producer-dashboard",
+            influencer: "influencer-dashboard",
+          };
+          navigateTo(targets[role]);
+        }}
+        onUnlockNew={() => {
+          setIsRoleSwitcherOpen(false);
+          navigateTo("role-unlock");
+        }}
+      />
+
+      <div className={`relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col gap-3 ${activeScreen === "home" || activeScreen === "homescreen" || activeScreen === "listening" || activeScreen === "thinking" ? "min-h-0" : ""}`}>
         {!locationPromptDismissed && activeScreen === "home" ? (
           <div className="flex items-start gap-3 rounded-[18px] border border-[#E7070380] bg-transparent px-3 py-2.5 shadow-sm dark:border-white/15 dark:bg-black/30">
             <span className="mt-0.5 text-red-500 dark:text-[#ff9d7d]" aria-hidden="true">
@@ -2328,6 +2713,7 @@ export function SinglePageGenieApp({
             showBottomNav={shouldShowFooter}
             pendingTranscript={pendingTranscript}
             onMenuOpen={() => setIsDrawerOpen(true)}
+            onShareApp={handleShareApp}
             onInputChange={(value) => {
               if (!hasTrackedTypingRef.current && value.trim().length > 0) {
                 hasTrackedTypingRef.current = true;
@@ -2580,56 +2966,138 @@ export function SinglePageGenieApp({
         ) : null}
 
         {activeScreen === "decision" && showResultSections ? (
-          <section ref={decisionRef} className="space-y-2 pb-24">
-            <GenieBubble
-              copy={response?.reply?.trim() || "I found a few spots that match your vibe."}
-              compact
+  <section ref={decisionRef} className="space-y-2 pb-24">
+    <GenieBubble
+      copy={response?.reply?.trim() || "I found a few spots that match your vibe."}
+      compact
+    />
+    {response?.show_intake_prompt ? (
+      <div className="rounded-[22px] border border-red-200 bg-red-50/60 p-4 dark:border-white/12 dark:bg-black/20">
+        <p className="text-sm leading-6 text-gray-700 dark:text-white/82">
+          {intakePromptCopy}
+        </p>
+        <button
+          type="button"
+          onClick={() => navigateTo("preferences")}
+          className="mt-3 rounded-[16px] border border-red-500 bg-red-600 px-4 py-2 text-sm font-semibold text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+        >
+          Tune preferences
+        </button>
+      </div>
+    ) : null}
+
+    {/* ── EVENT MODE — show event cards as primary results ── */}
+    {response?.query_mode === "event" && Array.isArray(response.events) && response.events.length > 0 ? (
+      <div className="flex flex-col gap-2">
+        {response.events.slice(0, 3).map((evt) => (
+          <EventResultCard
+            key={evt.id}
+            evt={evt}
+            onOpen={() => {
+  setSelectedEventSlug(evt.public_slug ?? null);
+  setSelectedEventId(evt.id);
+  setSelectedEvent(evt as Record<string, unknown>);
+  navigateTo("event-detail");
+  logEventInteraction("tap", evt.id, "decision");
+}}
+          />
+        ))}
+      </div>
+    ) : (
+      <>
+        {/* ── VENUE MODE — show venue cards as primary results ── */}
+        <div className="flex flex-col gap-2">
+          {response?.decisive.map((venue, index) => (
+            <ResultCard
+              key={venue.id}
+              venue={venue}
+              index={index}
+              userCoords={userCoordsLL}
+              onOpen={() => { selectVenue(venue, index, "decision"); logVenueInteraction("tap", Number(venue.id), "decision"); }}
+              onSave={() => handleSaveVenue(venue)}
             />
-            {response?.show_intake_prompt ? (
-              <div className="rounded-[22px] border border-red-200 bg-red-50/60 p-4 dark:border-white/12 dark:bg-black/20">
-                <p className="text-sm leading-6 text-gray-700 dark:text-white/82">
-                  {intakePromptCopy}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => navigateTo("preferences")}
-                  className="mt-3 rounded-[16px] border border-red-500 bg-red-600 px-4 py-2 text-sm font-semibold text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
-                >
-                  Tune preferences
-                </button>
-              </div>
-            ) : null}
-            {/* Decisive cards */}
+          ))}
+        </div>
+
+        {/* ── Events below venue results (mixed mode) ── */}
+        {Array.isArray(response?.events) && response.events.length > 0 ? (
+          <div className="mt-2">
+            <p className="mb-2 text-[0.9rem] font-semibold text-gray-900 dark:text-white">
+              Events nearby
+            </p>
             <div className="flex flex-col gap-2">
-              {response?.decisive.map((venue, index) => (
-                <ResultCard
-                  key={venue.id}
-                  venue={venue}
-                  index={index}
-                  userCoords={userCoordsLL}
-                  onOpen={() => selectVenue(venue, index, "decision")}
-                  onSave={() => handleSaveVenue(venue)}
-                />
+              {response.events.slice(0, 3).map((evt) => (
+                <button
+                  key={evt.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedEventSlug(evt.public_slug ?? null);
+setSelectedEventId(evt.id);
+setSelectedEvent(evt as Record<string, unknown>);
+navigateTo("event-detail");
+logEventInteraction("tap", evt.id, "more");
+                  }}
+                  className="flex items-center gap-3 rounded-[18px] border border-[#E7070380] bg-transparent p-3 text-left dark:border-[#E7070380] dark:bg-black/30"
+                >
+                  <div className="relative h-16 w-16 flex-none overflow-hidden rounded-[12px]">
+                    <Image
+                      src={evt.cover_image_url || "/sample-venue-2.jpeg"}
+                      alt={evt.title}
+                      fill
+                      className="object-cover"
+                      sizes="64px"
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="line-clamp-1 text-[0.9rem] font-semibold text-gray-900 dark:text-white">
+                      {evt.title}
+                    </p>
+                    {evt.event_date ? (
+                      <p className="mt-0.5 text-[0.72rem] text-gray-500 dark:text-white/55">
+                        {new Date(evt.event_date).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                        })}
+                        {evt.start_time ? ` · ${evt.start_time.slice(0, 5)}` : ""}
+                      </p>
+                    ) : null}
+                    <div className="mt-1 flex items-center gap-2">
+                      {evt.is_free ? (
+                        <span className="rounded-full bg-green-500 px-2 py-0.5 text-[0.6rem] font-bold text-white">
+                          FREE
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                  <svg viewBox="0 0 24 24" className="h-4 w-4 flex-none text-gray-400 dark:text-white/30" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 18l6-6-6-6" />
+                  </svg>
+                </button>
               ))}
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                setHasOpenedMoreNearby(true);
-                trackEvent(analyticsEvents.seeMoreNearbyTapped);
-                trackEvent(analyticsEvents.moreNearbyOpened, {
-                  count: response?.more_nearby.length ?? 0,
-                  queryText: response?.normalized_intent ?? lastQuery,
-                });
-                navigateTo("more");
-              }}
-              className="mt-2 flex w-full items-center justify-center gap-2 py-3 text-[1rem] font-medium text-gray-800 dark:text-white"
-            >
-              <span>See More Nearby</span>
-              <span aria-hidden="true">→</span>
-            </button>
-          </section>
+          </div>
         ) : null}
+      </>
+    )}
+
+    <button
+      type="button"
+      onClick={() => {
+        setHasOpenedMoreNearby(true);
+        trackEvent(analyticsEvents.seeMoreNearbyTapped);
+        trackEvent(analyticsEvents.moreNearbyOpened, {
+          count: response?.more_nearby.length ?? 0,
+          queryText: response?.normalized_intent ?? lastQuery,
+        });
+        navigateTo("more");
+      }}
+      className="mt-2 flex w-full items-center justify-center gap-2 py-3 text-[1rem] font-medium text-gray-800 dark:text-white"
+    >
+      <span>See More Nearby</span>
+      <span aria-hidden="true">→</span>
+    </button>
+  </section>
+) : null}
 
         {activeScreen === "more" && showResultSections && response?.more_nearby.length ? (
           <section ref={moreRef} className="space-y-4 pb-24">
@@ -2645,7 +3113,7 @@ export function SinglePageGenieApp({
                 <button
                   key={venue.id}
                   type="button"
-                  onClick={() => selectVenue(venue, index, "more")}
+                  onClick={() => { selectVenue(venue, index, "more"); logVenueInteraction("tap", Number(venue.id), "more"); }}
                   className="overflow-hidden rounded-[18px] border border-[#E7070380] bg-transparent text-left shadow-[0_8px_24px_rgba(0,0,0,0.06)] dark:border-[#6a1d1d] dark:bg-black/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
                 >
                   <div className="relative h-36 w-full">
@@ -2736,11 +3204,115 @@ export function SinglePageGenieApp({
             ) : null}
           </section>
         ) : null}
+        {activeScreen === "more" && showResultSections && response?.query_mode === "event" && Array.isArray(response.events) && response.events.length > 3 ? (
+          <section className="space-y-4 pb-24">
+            <GenieBubble
+              copy={response?.reply?.trim() || "Here are more events you might like."}
+              compact
+            />
+            <div className="grid grid-cols-2 gap-3">
+              {response.events.slice(3, 5).map((evt) => (
+                <button
+                  key={evt.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedEventSlug(evt.public_slug ?? null);
+setSelectedEventId(evt.id);
+setSelectedEvent(evt as Record<string, unknown>);
+navigateTo("event-detail");
+                  }}
+                  className="overflow-hidden rounded-[18px] border border-[#E7070380] bg-transparent text-left shadow-[0_8px_24px_rgba(0,0,0,0.06)] dark:border-[#6a1d1d] dark:bg-black/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
+                >
+                  <div className="relative h-36 w-full">
+                    <Image
+                      src={evt.cover_image_url || "/sample-venue-2.jpeg"}
+                      alt={evt.title}
+                      fill
+                      className="object-cover"
+                      sizes="(max-width: 640px) 45vw, 200px"
+                    />
+                  </div>
+                  <div className="px-3 py-2.5">
+                    <p className="line-clamp-1 text-[1rem] font-semibold text-gray-900 dark:text-white">
+                      {evt.title}
+                    </p>
+                    <p className="mt-0.5 text-[0.75rem] text-gray-500 dark:text-white/60">
+                      {evt.event_date ? new Date(evt.event_date).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""}
+                      {evt.start_time ? ` · ${evt.start_time.slice(0, 5)}` : ""}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {evt.category ? (
+                        <span className="rounded-full border border-[#E70703] bg-transparent px-2.5 py-0.5 text-[0.65rem] font-medium text-[#E70703] dark:border-[#E70703] dark:bg-transparent dark:text-white">
+                          {evt.category}
+                        </span>
+                      ) : null}
+                      {evt.is_free ? (
+                        <span className="rounded-full border border-[#E70703] bg-transparent px-2.5 py-0.5 text-[0.65rem] font-medium text-[#E70703] dark:border-[#E70703] dark:bg-transparent dark:text-white">
+                          Free
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {response.events.length > 5 ? (
+              <>
+                <p className="mt-5 text-[1.25rem] font-semibold text-gray-900 dark:text-white">
+                  More events you might like
+                </p>
+                <div className="-mx-4 overflow-x-auto">
+                  <div className="flex gap-3 px-4 pb-2">
+                    {response.events.slice(5, 13).map((evt) => (
+                      <button
+                        key={evt.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedEventSlug(evt.public_slug ?? null);
+setSelectedEventId(evt.id);
+setSelectedEvent(evt as Record<string, unknown>);
+navigateTo("event-detail");
+                        }}
+                        className="w-[9.5rem] flex-none overflow-hidden rounded-[18px] border border-[#E7070380] bg-transparent text-left shadow-[0_8px_20px_rgba(0,0,0,0.05)] dark:border-[#6a1d1d] dark:bg-black/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
+                      >
+                        <div className="relative h-24 w-full">
+                          <Image
+                            src={evt.cover_image_url || "/sample-venue-2.jpeg"}
+                            alt={evt.title}
+                            fill
+                            className="object-cover"
+                            sizes="152px"
+                          />
+                        </div>
+                        <div className="px-2.5 py-2">
+                          <p className="line-clamp-1 text-[0.88rem] font-semibold text-gray-900 dark:text-white">
+                            {evt.title}
+                          </p>
+                          <p className="mt-0.5 truncate text-[0.66rem] text-gray-500 dark:text-white/60">
+                            {evt.event_date ? new Date(evt.event_date).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""}
+                          </p>
+                          <div className="mt-1.5 flex flex-wrap gap-1">
+                            {evt.category ? (
+                              <span className="rounded-full border border-[#E70703] bg-transparent px-2 py-0.5 text-[0.6rem] font-medium text-[#E70703] dark:border-[#E70703] dark:bg-transparent dark:text-white">
+                                {evt.category}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            ) : null}
+          </section>
+        ) : null}
 
         {activeScreen === "detail" && selectedVenue ? (
           <section
             ref={detailRef}
-            className="-mx-4 -mt-3 pb-24 sm:-mx-6 sm:-mt-5"
+            className="-mx-4 -mt-3 pb-[calc(env(safe-area-inset-bottom,0px)+11rem)] sm:-mx-6 sm:-mt-5"
             // Shared-link signup gate: when a not-yet-registered visitor
             // arrives via a shared venue URL, the first tap anywhere on the
             // screen routes them to the Account Intro. The Back button opts
@@ -2900,53 +3472,86 @@ export function SinglePageGenieApp({
                     Official Vendor
                   </span>
                 ) : null}
+                {/* Vendor status — surfaces when not operating normally */}
+{(selectedVenue as unknown as { vendor_status?: string; vendor_status_message?: string }).vendor_status &&
+(selectedVenue as unknown as { vendor_status?: string }).vendor_status !== "operating_normally" ? (
+  <span className="rounded-full border border-amber-400/60 bg-amber-400/15 px-3 py-0.5 text-[0.72rem] font-medium text-amber-600 dark:border-amber-400/40 dark:text-amber-300">
+    {(selectedVenue as unknown as { vendor_status_message?: string; vendor_status?: string }).vendor_status_message ||
+      ((selectedVenue as unknown as { vendor_status?: string }).vendor_status ?? "").replace(/_/g, " ")}
+  </span>
+) : null}
               </div>
 
               <div className="grid grid-cols-[1fr_1.45fr_1fr] gap-1">
                 {detailActions.slice(0, 3).map((action, index) => {
-                  const isCall =
-                    action.id.includes("call") ||
-                    action.label.toLowerCase().includes("call");
-                  const isReserve = index === 1;
-                  const label = isCall ? "Call" : isReserve ? "Reservations" : "Share";
-                  const lightIconSrc = isCall
-                    ? "/icons/phone-red.png"
-                    : isReserve
-                      ? "/icons/calendarIcon.png"
-                      : "/icons/share-red.png";
-                  const darkIconSrc = isCall
-                    ? "/icons/phoneIcon.png"
-                    : isReserve
-                      ? "/icons/calendarIcon.png"
-                      : "/icons/shareIcon.png";
+                  // Middle button keeps the filled-red emphasis; sides stay outlined.
+                  const isPrimary = index === 1;
+                  const iconSize = isPrimary ? "h-[15px] w-[15px]" : "h-[14px] w-[14px]";
+                  // Icon is chosen by the action's identity — not its position —
+                  // so reordering the actions can never mislabel a button.
+                  let icon: React.ReactNode;
+                  if (action.id === "ride") {
+                    icon = (
+                      <svg viewBox="0 0 24 24" className={`${iconSize} flex-none`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="1" y="3" width="15" height="13" rx="2" />
+                        <polygon points="16 8 20 8 23 11 23 16 16 16 16 8" />
+                        <circle cx="5.5" cy="18.5" r="2.5" />
+                        <circle cx="18.5" cy="18.5" r="2.5" />
+                      </svg>
+                    );
+                  } else if (action.id === "directions") {
+                    icon = (
+                      <svg viewBox="0 0 24 24" className={`${iconSize} flex-none`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polygon points="3 11 22 2 13 21 11 13 3 11" />
+                      </svg>
+                    );
+                  } else {
+                    const lightIconSrc =
+                      action.id === "call"
+                        ? "/icons/phone-red.png"
+                        : action.id === "share"
+                          ? "/icons/share-red.png"
+                          : "/icons/calendarIcon.png";
+                    const darkIconSrc =
+                      action.id === "call"
+                        ? "/icons/phoneIcon.png"
+                        : action.id === "share"
+                          ? "/icons/shareIcon.png"
+                          : "/icons/calendarIcon.png";
+                    icon = (
+                      <>
+                        <Image
+                          src={lightIconSrc}
+                          alt=""
+                          aria-hidden="true"
+                          width={16}
+                          height={16}
+                          className={`${iconSize} object-contain dark:hidden`}
+                        />
+                        <Image
+                          src={darkIconSrc}
+                          alt=""
+                          aria-hidden="true"
+                          width={16}
+                          height={16}
+                          className={`hidden ${iconSize} object-contain dark:block`}
+                        />
+                      </>
+                    );
+                  }
                   return (
                     <button
                       key={action.id}
                       type="button"
                       onClick={gateDetailTap(action.onClick)}
                       className={`flex items-center justify-center gap-1 rounded-full border font-medium transition ${
-                        isReserve
+                        isPrimary
                           ? "border-red-500 bg-red-600 px-1.5 py-2 text-[0.76rem] text-white hover:bg-red-700 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
                           : "border-[#E7070380] bg-transparent px-1.5 py-1.5 text-[0.72rem] text-red-600 hover:bg-red-50 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
                       }`}
                     >
-                      <Image
-                        src={lightIconSrc}
-                        alt=""
-                        aria-hidden="true"
-                        width={16}
-                        height={16}
-                        className={`${isReserve ? "h-[15px] w-[15px]" : "h-[14px] w-[14px]"} object-contain dark:hidden`}
-                      />
-                      <Image
-                        src={darkIconSrc}
-                        alt=""
-                        aria-hidden="true"
-                        width={16}
-                        height={16}
-                        className={`hidden ${isReserve ? "h-[15px] w-[15px]" : "h-[14px] w-[14px]"} object-contain dark:block`}
-                      />
-                      {label}
+                      {icon}
+                      {action.label}
                     </button>
                   );
                 })}
@@ -3010,6 +3615,7 @@ export function SinglePageGenieApp({
                         venueId: getVenueId(selectedVenue),
                       });
                       logVendorInteraction("map_click", Number(selectedVenue.id));
+                      logVenueInteraction("map", Number(selectedVenue.id), "detail");
                       window.open(nativeMapsUrl, "_blank", "noopener,noreferrer");
                     }
                   })}
@@ -3089,28 +3695,30 @@ export function SinglePageGenieApp({
                 const isMember = account?.membership === "vibee";
                 const redeeming = redeemingOfferId === venueOffer.id;
                 return (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!account) {
-                        navigateTo("account");
-                        return;
-                      }
-                      if (!isMember) {
-                        navigateTo("account");
-                        return;
-                      }
-                      void handleRedeemOffer(venueOffer);
-                    }}
-                    disabled={redeeming}
-                    className="mt-2 w-full rounded-[18px] border border-red-500 bg-red-600 py-3.5 text-sm font-semibold text-white disabled:opacity-60 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
-                  >
-                    {redeeming
-                      ? "Redeeming..."
-                      : isMember
-                        ? "Redeem Offer"
-                        : "Upgrade to Redeem"}
-                  </button>
+                  <div className="fixed bottom-[calc(env(safe-area-inset-bottom,0px)+5.25rem)] left-1/2 z-[90] w-[min(100vw,28rem)] -translate-x-1/2 px-4 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!account) {
+                          navigateTo("account");
+                          return;
+                        }
+                        if (!isMember) {
+                          navigateTo("account");
+                          return;
+                        }
+                        void handleRedeemOffer(venueOffer);
+                      }}
+                      disabled={redeeming}
+                      className="w-full rounded-[18px] border border-red-500 bg-red-600 py-3.5 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(231,7,7,0.35)] disabled:opacity-60 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                    >
+                      {redeeming
+                        ? "Redeeming..."
+                        : isMember
+                          ? "Redeem Offer"
+                          : "Upgrade to Redeem"}
+                    </button>
+                  </div>
                 );
               })()}
             </div>
@@ -3144,7 +3752,7 @@ export function SinglePageGenieApp({
                   <button
                     key={`saved-${venue.id}`}
                     type="button"
-                    onClick={() => selectVenue(venue, index, "saved")}
+                    onClick={() => { selectVenue(venue, index, "saved"); logVenueInteraction("tap", Number(venue.id), "saved"); }}
                     className="overflow-hidden rounded-[18px] border border-white/10 bg-black/30 text-left"
                   >
                     <div className="relative h-44 w-full">
@@ -3576,9 +4184,14 @@ export function SinglePageGenieApp({
                   <button
                     type="button"
                     onClick={() => {
-                      if (navigator.share) {
-                        void navigator.share({ title: venueName, text: offer.title, url: window.location.href });
-                      }
+                      const url = matchedVenue
+                        ? `${getAppOrigin()}/venue/${getVenueId(matchedVenue)}`
+                        : getAppOrigin();
+                      void shareLink({
+                        title: `${venueName} - Genie by Social Bevy`,
+                        text: offer.title,
+                        url,
+                      });
                     }}
                     className="flex flex-1 items-center justify-center gap-1.5 rounded-full border border-[#E7070380] bg-transparent py-2 text-[0.82rem] font-semibold text-gray-900 dark:border-white/20 dark:text-white"
                   >
@@ -3631,7 +4244,7 @@ export function SinglePageGenieApp({
               )}
 
               {/* Fixed Redeem CTA */}
-              <div className="fixed bottom-0 left-1/2 z-40 w-[min(100vw,28rem)] -translate-x-1/2 px-4 pb-[calc(env(safe-area-inset-bottom,0px)+14px)] pt-3">
+              <div className="fixed bottom-[calc(env(safe-area-inset-bottom,0px)+5.25rem)] left-1/2 z-[90] w-[min(100vw,28rem)] -translate-x-1/2 px-4 pt-3">
                 <button
                   type="button"
                   onClick={() => {
@@ -3679,16 +4292,16 @@ export function SinglePageGenieApp({
 
           // Header
           const Header = (
-            <div className="mb-5 flex items-center">
+            <div className="relative mb-5 w-full">
               <button
                 type="button"
                 onClick={() => { setRedemptionOutcome(null); goBack("offer-detail"); }}
                 aria-label="Go back"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-red-600 dark:border dark:border-white/12 dark:bg-black/24 dark:text-white/82"
+                className="absolute left-0 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full text-red-600 dark:border dark:border-white/12 dark:bg-black/24 dark:text-white/82"
               >
                 <BackIcon size={20} />
               </button>
-              <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
+              <h2 className="w-full text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
                 Redeem Offer
               </h2>
             </div>
@@ -3974,7 +4587,7 @@ export function SinglePageGenieApp({
 
         {activeScreen === "preferences" ? (
           <section ref={preferencesRef} className="relative flex flex-1 flex-col pb-4">
-            {!account ? (
+            {!account && !isOnboarding ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-4 pt-20 text-center">
                 <p className="text-[1.1rem] font-semibold text-gray-900 dark:text-white">
                   Sign in to set preferences
@@ -4132,12 +4745,70 @@ export function SinglePageGenieApp({
           onOpenVendor={() => navigateTo("vendor")}
           onOpenOffers={() => navigateTo("offers")}
           onOpenPreferences={() => navigateTo("preferences")}
+          onAdvanceOnboarding={(email) => {
+            setOnboardingEmail(email);
+            setIsOnboarding(true);
+            navigateTo("preferences");
+          }}
           onAccountChange={(nextAccount) => {
             setAccount(nextAccount);
             void hydrateAuthenticatedSession();
             setAccountScreenMode(null);
-            setActiveScreen("account");
+            const pending = pendingReturnRef.current;
+            if (pending) {
+              pendingReturnRef.current = null;
+              setSelectedEventId(pending.eventId);
+              setSelectedEvent(pending.event);
+              navigateTo(pending.screen);
+            } else {
+              setActiveScreen("account");
+            }
           }}
+        />
+
+        <RoleIdentifierSection
+          sectionRef={roleIdentifierRef}
+          visible={activeScreen === "role-identifier"}
+          onContinue={(roles) => {
+            setOnboardingRoles(roles);
+            const hasNonConsumerRole = roles.some((role) => role !== "consumer");
+            navigateTo(hasNonConsumerRole ? "role-setup" : "onboarding-complete");
+          }}
+        />
+
+        {activeScreen === "role-unlock" ? (
+          <RoleIdentifierSection
+            sectionRef={roleUnlockRef}
+            visible={true}
+            onContinue={() => {
+              // TODO: pending states (vendor claim, producer/influencer approval) come later
+              navigateTo("home", false);
+            }}
+          />
+        ) : null}
+
+        <RoleSetupSection
+          sectionRef={roleSetupRef}
+          visible={activeScreen === "role-setup"}
+          roles={onboardingRoles.length > 0 ? onboardingRoles : readSelectedRoles()}
+          onOpenVendor={() => navigateTo("vendor")}
+          onContinue={() => navigateTo("onboarding-complete")}
+        />
+
+        <OnboardingCompleteSection
+          sectionRef={onboardingCompleteRef}
+          visible={activeScreen === "onboarding-complete"}
+          email={onboardingEmail}
+          onOpenGenie={() => {
+            setIsOnboarding(false);
+            navigateTo("home", false);
+          }}
+        />
+
+        <VerifyEmailGate
+          visible={verifyGateOpen}
+          email={onboardingEmail}
+          onClose={() => setVerifyGateOpen(false)}
         />
 
         <VendorSection
@@ -4391,6 +5062,35 @@ export function SinglePageGenieApp({
                 </div>
               </div>
             ) : null}
+            {/* ── RANKED FEED PREVIEW ──────────────────────────────────────────
+    Shows top 3 ranked feed posts from ep_get_ranked_feed_dev.
+    Full feed tab is a V2 build — this surfaces the algorithm
+    result as a preview on the dashboard so it's live for beta.
+    Serendipity cards and Genie cards are labeled inline.
+────────────────────────────────────────────────────────────── */}
+<div>
+  <div className="flex items-center justify-between mb-3">
+    <h2 className="text-[1.05rem] font-semibold text-gray-900 dark:text-white">
+      What&apos;s Happening
+    </h2>
+    <span className="text-[0.72rem] text-gray-400 dark:text-white/40">
+      Ranked for you
+    </span>
+  </div>
+
+  <div className="rounded-[18px] border border-[#E7070380] bg-transparent px-4 py-4 dark:border-[#E7070380] dark:bg-black/25 text-center">
+    <p className="text-[0.85rem] text-gray-500 dark:text-white/55">
+      Your personalized feed will appear here once you start saving spots and attending events.
+    </p>
+    <button
+      type="button"
+      onClick={goHome}
+      className="mt-3 rounded-[14px] border border-red-500 bg-red-600 px-5 py-2 text-[0.82rem] font-semibold text-white"
+    >
+      Ask Genie something
+    </button>
+  </div>
+</div>
               </>
             )}
           </section>
@@ -4419,6 +5119,7 @@ export function SinglePageGenieApp({
                 onEditPreferences={() => navigateTo("preferences")}
                 onOpenMembership={() => navigateTo("membership")}
                 onUpgradeMembership={() => navigateTo("membership")}
+                onOpenNotifications={() => navigateTo("notification-settings")}
                 onBack={() => goBack("home")}
                 onSave={async (data) => {
                   if (!account) return;
@@ -4465,6 +5166,14 @@ export function SinglePageGenieApp({
               />
             )}
           </section>
+        ) : null}
+
+        {/* ── NOTIFICATION SETTINGS ── */}
+        {activeScreen === "notification-settings" ? (
+          <NotificationSettingsSection
+            visible
+            onBack={() => goBack("profile")}
+          />
         ) : null}
 
         {/* ── CONTACT ── */}
@@ -4517,13 +5226,13 @@ export function SinglePageGenieApp({
 
             {/* Form */}
             {contactSent ? (
-              <div className="rounded-[20px] border border-green-500/30 bg-green-500/10 px-4 py-6 text-center">
-                <p className="text-base font-semibold text-white">Message sent!</p>
-                <p className="mt-1 text-sm text-white/65">We&apos;ll get back to you shortly.</p>
+              <div className="rounded-[20px] border border-green-600/25 bg-green-50/80 px-4 py-6 text-center dark:border-green-500/30 dark:bg-green-500/10">
+                <p className="text-base font-semibold text-green-950 dark:text-white">Message sent!</p>
+                <p className="mt-1 text-sm text-green-800 dark:text-white/65">We&apos;ll get back to you shortly.</p>
                 <button
                   type="button"
                   onClick={() => { setContactSent(false); setContactError(null); setContactForm({ firstName: "", lastName: "", email: "", subject: "", description: "" }); }}
-                  className="mt-4 rounded-[14px] border border-white/20 bg-white/10 px-5 py-2 text-sm font-semibold text-white"
+                  className="mt-4 rounded-[14px] border border-green-700/20 bg-white/75 px-5 py-2 text-sm font-semibold text-green-900 dark:border-white/20 dark:bg-white/10 dark:text-white"
                 >
                   Send another
                 </button>
@@ -4539,8 +5248,9 @@ export function SinglePageGenieApp({
                       first_name: contactForm.firstName,
                       last_name: contactForm.lastName,
                       email: contactForm.email,
-                      subject: contactForm.subject,
-                      description: contactForm.description,
+                      topic: contactForm.subject,
+                      message: contactForm.description,
+                      source: "app",
                     });
                     setContactSent(true);
                   } catch (err) {
@@ -4560,7 +5270,7 @@ export function SinglePageGenieApp({
                     { key: "firstName", label: "First Name", placeholder: "First Name", type: "text" },
                     { key: "lastName", label: "Last Name", placeholder: "Last Name", type: "text" },
                     { key: "email", label: "Email", placeholder: "Email", type: "email" },
-                    { key: "subject", label: "Subject", placeholder: "Subject", type: "text" },
+                    { key: "subject", label: "Topic", placeholder: "Topic", type: "text" },
                   ] as Array<{ key: keyof typeof contactForm; label: string; placeholder: string; type: string }>
                 ).map(({ key, placeholder, type }) => (
                   <input
@@ -4570,19 +5280,19 @@ export function SinglePageGenieApp({
                     onChange={(e) => setContactForm((prev) => ({ ...prev, [key]: e.target.value }))}
                     placeholder={placeholder}
                     style={{ fontSize: "16px" }}
-                    className="w-full rounded-[14px] border border-white/15 bg-white/8 px-4 py-3.5 text-white placeholder:text-white/35 focus:border-white/30 focus:outline-none dark:bg-black/25"
+                    className="w-full rounded-[14px] border border-red-200/70 bg-white/65 px-4 py-3.5 text-gray-950 placeholder:text-gray-500 focus:border-red-500 focus:outline-none dark:border-white/15 dark:bg-black/25 dark:text-white dark:placeholder:text-white/35 dark:focus:border-white/30"
                   />
                 ))}
                 <textarea
                   value={contactForm.description}
                   onChange={(e) => setContactForm((prev) => ({ ...prev, description: e.target.value }))}
-                  placeholder="Short Description"
+                  placeholder="Message"
                   rows={4}
                   style={{ fontSize: "16px" }}
-                  className="w-full resize-none rounded-[14px] border border-white/15 bg-white/8 px-4 py-3.5 text-white placeholder:text-white/35 focus:border-white/30 focus:outline-none dark:bg-black/25"
+                  className="w-full resize-none rounded-[14px] border border-red-200/70 bg-white/65 px-4 py-3.5 text-gray-950 placeholder:text-gray-500 focus:border-red-500 focus:outline-none dark:border-white/15 dark:bg-black/25 dark:text-white dark:placeholder:text-white/35 dark:focus:border-white/30"
                 />
                 {contactError ? (
-                  <p className="text-center text-sm text-red-300">
+                  <p className="text-center text-sm text-red-600 dark:text-red-300">
                     {contactError}
                   </p>
                 ) : null}
@@ -4703,29 +5413,135 @@ export function SinglePageGenieApp({
                         ))}
                       </ul>
                     </div>
+                    {trialError ? (
+  <div className="rounded-[14px] border border-red-300 bg-red-50 px-4 py-3 text-[0.82rem] text-red-600 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+    {trialError}
+  </div>
+) : null}
                     <button
-                      type="button"
-                      onClick={() => navigateTo("account")}
-                      className="w-full rounded-[18px] border border-red-500 bg-red-600 py-4 text-sm font-semibold text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
-                    >
-                      Upgrade to V.I.Bee Now
-                    </button>
+  type="button"
+  onClick={async () => {
+    try {
+      setTrialLoading(true);
+      const { checkout_url } = await createSubscriptionCheckout({});
+      window.location.href = checkout_url;
+    } catch {
+      setTrialError("Something went wrong. Please try again.");
+    } finally {
+      setTrialLoading(false);
+    }
+  }}
+  disabled={trialLoading}
+  className="w-full rounded-[18px] border border-red-500 bg-red-600 py-4 text-sm font-semibold text-white disabled:opacity-60 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+>
+  {trialLoading ? "Loading..." : "Become a V.I.Bee — $2.99/mo"}
+</button>
                   </>
                 ) : null}
               </div>
             </section>
           );
         })() : null}
-      </div>
+        {activeScreen === "event-detail" && selectedEvent ? (
+          <EventDetailSection
+            eventId={selectedEventId}
+            initialData={selectedEvent}
+            onBack={handleTopBack}
+            logInteraction={logEventInteraction}
+            onAuthRequired={() => {
+              pendingReturnRef.current = {
+                screen: "event-detail",
+                eventId: selectedEventId,
+                event: selectedEvent,
+              };
+              navigateTo("account");
+            }}
+          />
+        ) : null}
 
-      {shouldShowFooter ? (
-        <BottomDock
-          activeId={activeScreen}
-          onHome={goHome}
-          onProfile={() => navigateTo(account ? "profile" : "account", false)}
-          onCenter={startListening}
-        />
-      ) : null}
-    </main>
+{activeScreen === "producer-dashboard" ? (
+  <ProducerSection
+    account={account}
+    onBack={() => goBack("homescreen")}
+  />
+) : null}
+
+{activeScreen === "influencer-dashboard" ? (
+  <InfluencerSection account={account} onNavigate={navigateTo} />
+) : null}
+
+{activeScreen === "homescreen" ? (
+  <HomescreenSection
+    account={account}
+    navigateTo={navigateTo}
+    userCoords={userCoords}
+    onVenueOpen={(id) => {
+      setSharedVenueLoading(true);
+      setSelectedVenueId(String(id));
+      navigateTo("detail");
+    }}
+    onEventOpen={(evt) => {
+      setSelectedEventId(evt.id);
+      setSelectedEvent(evt as Record<string, unknown>);
+      navigateTo("event-detail");
+    }}
+    onMenuOpen={() => setIsDrawerOpen(true)}
+    onOrbTap={startListening}
+    onNotifications={() => navigateTo("notifications")}
+    unreadNotifCount={unreadNotifCount}
+    onMessages={() => navigateTo("messages")}
+    unreadMessageCount={unreadMessageCount}
+  />
+) : null}
+
+{activeScreen === "notifications" ? (
+  <NotificationsScreen
+    onBack={() => goBack("homescreen")}
+    onClearUnread={() => setUnreadNotifCount(0)}
+  />
+) : null}
+
+{activeScreen === "messages" ? (
+  <MessagesScreen
+    account={account}
+    onBack={() => goBack("homescreen")}
+    onOpenConversation={(conv) => {
+      setActiveConversation(conv);
+      navigateTo("conversation");
+    }}
+  />
+) : null}
+
+{activeScreen === "conversation" && activeConversation ? (
+  <ConversationScreen
+    account={account}
+    threadId={activeConversation.threadId}
+    threadType={activeConversation.threadType}
+    counterpartId={activeConversation.counterpartId}
+    counterpartName={activeConversation.counterpartName}
+    counterpartAvatarUrl={activeConversation.counterpartAvatarUrl}
+    viewerRole={activeConversation.viewerRole}
+    onBack={() => goBack("messages")}
+    onThreadCreated={(threadId, viewerRole) =>
+      setActiveConversation((prev) =>
+        prev ? { ...prev, threadId, viewerRole: viewerRole ?? prev.viewerRole } : prev
+      )
+    }
+  />
+) : null}
+
+</div>
+
+{shouldShowFooter ? (
+  <BottomDock
+    activeId={activeScreen}
+    onHome={() => navigateTo("homescreen")}
+    onCenter={() => navigateTo("home")}
+    onProfile={() => (account ? navigateTo("dashboard") : navigateTo("account"))}
+  />
+) : null}
+
+</main>
   );
 }
+

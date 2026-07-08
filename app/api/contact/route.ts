@@ -12,13 +12,8 @@ function isEmailValid(email: string) {
 /**
  * POST /api/contact
  *
- * Submits a contact-form message.
- *
- * Transport priority:
- *   1. If `GENIE_CONTACT_WEBHOOK_URL` env var is set, POST the payload to that
- *      webhook (useful for Zapier / Make / custom mail relay).
- *   2. Otherwise, forward the payload to Xano `genie/contact_submit`
- *      (forward-compatible — backend team can expose this endpoint when ready).
+ * Submits a contact-form message to the Xano contact endpoint:
+ * /api:pgMKWi2e/genie/ep_contact_us_dev
  *
  * Auth token (if present) is attached so the backend can associate the message
  * with the signed-in user; anonymous submissions are also accepted.
@@ -33,9 +28,22 @@ export async function POST(request: NextRequest) {
     const firstName = String(body.first_name ?? "").trim();
     const lastName = String(body.last_name ?? "").trim();
     const email = String(body.email ?? "").trim().toLowerCase();
-    const subject = String(body.subject ?? "").trim();
-    const description = String(body.description ?? "").trim();
+    const topic = String(body.topic ?? body.subject ?? "").trim();
+    const message = String(body.message ?? body.description ?? "").trim();
+    const source = String(body.source ?? "app").trim() || "app";
 
+    if (!firstName) {
+      return NextResponse.json(
+        { error: "first_name is required" },
+        { status: 400 }
+      );
+    }
+    if (!lastName) {
+      return NextResponse.json(
+        { error: "last_name is required" },
+        { status: 400 }
+      );
+    }
     if (!email) {
       return NextResponse.json(
         { error: "email is required" },
@@ -48,9 +56,15 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    if (!description) {
+    if (!topic) {
       return NextResponse.json(
-        { error: "Please include a short description." },
+        { error: "topic is required" },
+        { status: 400 }
+      );
+    }
+    if (!message) {
+      return NextResponse.json(
+        { error: "message is required" },
         { status: 400 }
       );
     }
@@ -58,52 +72,30 @@ export async function POST(request: NextRequest) {
     const authToken = extractBearerToken(request);
 
     const payload = {
-      first_name: firstName || undefined,
-      last_name: lastName || undefined,
+      first_name: firstName,
+      last_name: lastName,
       email,
-      subject: subject || undefined,
-      description,
-      submitted_at: new Date().toISOString(),
+      topic,
+      message,
+      source,
     };
 
-    const webhookUrl = process.env.GENIE_CONTACT_WEBHOOK_URL;
-    if (webhookUrl) {
-      const res = await fetch(webhookUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        cache: "no-store",
-      });
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        console.error("Contact webhook failed", res.status, text);
-        return NextResponse.json(
-          { error: "Could not deliver your message. Please try again." },
-          { status: 502 }
-        );
-      }
-      return NextResponse.json({
-        success: true,
-        message: "Thanks — we'll get back to you shortly.",
-      });
-    }
-
-    const result = await xanoFetch<{
+    const result = (await xanoFetch<{
       success?: boolean;
       message?: string;
       Message?: string;
-    }>("genie/contact_submit", {
+    } | null>("genie/ep_contact_us_dev", {
       method: "POST",
       body: payload,
       authToken,
-    });
+    })) ?? {};
 
     return NextResponse.json({
       success: result.success ?? true,
       message:
         result.Message ||
         result.message ||
-        "Thanks — we'll get back to you shortly.",
+        "Thanks - we'll get back to you shortly.",
     });
   } catch (error) {
     if (error instanceof XanoError) {

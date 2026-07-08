@@ -6,7 +6,7 @@ Social Genie is an AI-powered social concierge that helps people get social inst
 
 This repo contains the **Genie-first frontend**, built with Next.js + React 19, integrated with **Xano** as the backend for Genie’s venues, and includes the Phase 1 UI used for live user testing.
 
---
+---
 
 ## 🚀 What Genie Does (Phase 1)
 
@@ -36,7 +36,7 @@ Each venue has a full-screen detail page with:
 - Hours  
 - Save button  
 - Share button  
-
+- 
 ### ✔ Mobile-first UI  
 Genie is optimized for iPhone and mobile experience.
 

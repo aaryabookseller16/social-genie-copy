@@ -21,6 +21,7 @@ type ProfileSectionProps = {
   onEditPreferences?: () => void;
   onOpenMembership?: () => void;
   onUpgradeMembership?: () => void;
+  onOpenNotifications?: () => void;
   onDeleteAccount?: () => Promise<void> | void;
 };
 
@@ -104,6 +105,51 @@ function DetailField({ label, value }: { label: string; value: string }) {
         {value || "—"}
       </p>
     </div>
+  );
+}
+
+/**
+ * WhatsApp-style opt-out for DM push notifications. Reads (and, on first read,
+ * initializes) the current user's preferences, then toggles `notify_new_message`.
+ * Uses the same per-user notification-preferences endpoints the producer
+ * settings screen uses — the GET must run before the POST (it seeds defaults).
+ */
+function BellIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="text-red-600 dark:text-[#E70703]"
+    >
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+    </svg>
+  );
+}
+
+function ChevronRightIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="text-gray-400 dark:text-white/40"
+    >
+      <path d="M9 18l6-6-6-6" />
+    </svg>
   );
 }
 
@@ -262,6 +308,7 @@ export function ProfileSection({
   onEditPreferences,
   onOpenMembership,
   onUpgradeMembership,
+  onOpenNotifications,
   onDeleteAccount,
 }: ProfileSectionProps) {
   const [editing, setEditing] = useState(false);
@@ -455,6 +502,23 @@ export function ProfileSection({
             ))}
           </div>
         </ProfileCard>
+
+        {/* Notifications */}
+        {onOpenNotifications ? (
+          <button
+            type="button"
+            onClick={onOpenNotifications}
+            className="flex w-full items-center justify-between rounded-[22px] border border-[#E7070380] bg-transparent px-5 py-4 text-left transition hover:bg-black/[0.02] dark:border-[#E7070380] dark:bg-black/20 dark:hover:bg-white/[0.03]"
+          >
+            <span className="flex items-center gap-3">
+              <BellIcon />
+              <span className="text-[1.1rem] font-semibold text-gray-900 dark:text-white">
+                Manage Notifications
+              </span>
+            </span>
+            <ChevronRightIcon />
+          </button>
+        ) : null}
       </div>
 
       {/* Delete my account — anchored to bottom */}

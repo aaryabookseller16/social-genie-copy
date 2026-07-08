@@ -29,6 +29,7 @@ export type PublicApiUser = {
   membership: "free" | "vibee";
   subscription_status?: ConsumerSubscriptionStatus;
   vendor_id?: number | null;
+  verified?: boolean;
 };
 
 export type SocialProfile = {
@@ -107,12 +108,35 @@ type JsonInit = RequestInit & {
   auth?: boolean;
 };
 
+function findErrorMessage(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") {
+    return typeof payload === "string" ? payload : null;
+  }
+
+  const record = payload as Record<string, unknown>;
+  for (const key of ["error", "message", "Message", "detail"]) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+  }
+
+  for (const value of Object.values(record)) {
+    const nested = findErrorMessage(value);
+    if (nested) {
+      return nested;
+    }
+  }
+
+  return null;
+}
+
 async function readErrorMessage(response: Response) {
   const fallback = `Request failed with status ${response.status}`;
 
   try {
-    const payload = (await response.json()) as { error?: string };
-    return payload.error || fallback;
+    const payload = await response.json();
+    return findErrorMessage(payload) || fallback;
   } catch {
     return fallback;
   }
@@ -159,6 +183,7 @@ export function toConsumerAccount(
     membership: status === "active" ? "vibee" : user.membership,
     subscriptionStatus: status,
     vendorId: user.vendor_id ?? null,
+    verified: user.verified ?? false,
     createdAt: Date.now(),
   };
 }
@@ -380,11 +405,12 @@ export async function saveVendorProfileChanges(payload: {
 }
 
 export async function submitContactForm(payload: {
-  first_name?: string;
-  last_name?: string;
+  first_name: string;
+  last_name: string;
   email: string;
-  subject?: string;
-  description: string;
+  topic: string;
+  message: string;
+  source?: "app" | "website" | string;
 }) {
   // Auth header is attached automatically if the user is signed in;
   // anonymous submissions are still accepted by the API route.
@@ -445,6 +471,7 @@ export async function createSubscriptionCheckout(payload: {
   return apiJson<{ checkout_url: string }>("/api/subscription/create", {
     method: "POST",
     body: JSON.stringify({
+      email: payload.email || undefined,
       external_user_id: payload.external_user_id || externalUserId || undefined,
       success_url: payload.success_url,
       cancel_url: payload.cancel_url,
@@ -561,8 +588,10 @@ export async function redeemVibeeOffer(offerId: number) {
     throw new Error("Sign in required to redeem offers.");
   }
 
-  return apiJson<{
-    success: boolean;
+  const result = await apiJson<{
+    success?: boolean;
+    message?: string;
+    error?: string;
     redemption_token: string;
     offer_title: string;
     redeemed_at: number;
@@ -575,6 +604,44 @@ export async function redeemVibeeOffer(offerId: number) {
       offer_id: offerId,
     }),
   });
+
+  if (result.success === false) {
+    throw new Error(result.message || result.error || "Could not redeem this offer right now.");
+  }
+
+  return result;
+}
+
+/**
+ * Redeem an influencer offer via the influencer-specific endpoint so the
+ * influencer's commission is credited. Requires a logged-in genie_user JWT
+ * (auto-attached by apiJson). Input is only the promo_code.
+ */
+export async function redeemInfluencerOffer(promoCode: string) {
+  if (!readAuthToken()) {
+    throw new Error("Sign in required to redeem offers.");
+  }
+
+  const result = await apiJson<{
+    success?: boolean;
+    error?: string;
+    redemption_id?: number;
+    offer_title?: string;
+    offer_type?: string;
+    discount_value?: number | string;
+    discount_type?: string;
+    influencer_name?: string;
+    message?: string;
+  }>("/api/genie/redeem-influencer-offer", {
+    method: "POST",
+    body: JSON.stringify({ promo_code: promoCode }),
+  });
+
+  if (result.success === false) {
+    throw new Error(result.error || "Could not redeem this offer.");
+  }
+
+  return result;
 }
 
 export async function fetchUserRedemptions() {
@@ -826,9 +893,14 @@ export async function createVendorBusiness(payload: {
     "/api/vendor/create",
     {
       method: "POST",
-      auth: false,
       body: JSON.stringify(payload),
     }
+  );
+}
+
+export async function fetchMyVendorProfile() {
+  return apiJson<{ vendor: { id: number; business_name?: string; is_live?: boolean; onboarding_completed?: boolean } | null }>(
+    `/api/vendor/profile`
   );
 }
 
@@ -1038,8 +1110,116 @@ export function logVendorInteraction(
 }
 
 /* ------------------------------------------------------------------ */
+/*  Venue Interaction Logging                                          */
+/*  Feeds genie_user_venue_interaction + genie_behavior_signals       */
+/*  for behavioral aggregation and personalization.                   */
+/*  Fire-and-forget — never blocks UI.                                */
+/* ------------------------------------------------------------------ */
+export function logVenueInteraction(
+  interactionType: string,
+  venueId: number,
+  sourceScreen?: string
+) {
+  const sessionId = readSessionId();
+  const account = readAuthToken()
+    ? (JSON.parse(
+        localStorage.getItem("genie_consumer_account_v1") ?? "null"
+      ) as ConsumerAccount | null)
+    : null;
+  fetch("/api/genie/log-venue-interaction", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      venue_id: venueId,
+      interaction_type: interactionType,
+      user_id: account?.id ?? 0,
+      session_id: sessionId,
+      source_screen: sourceScreen ?? "",
+    }),
+    keepalive: true,
+  }).catch(() => {});
+}
+
+/* ------------------------------------------------------------------ */
+/*  Event Interaction Logging                                          */
+/*  Feeds genie_user_event_interaction + genie_behavior_signals       */
+/*  for behavioral aggregation and personalization.                   */
+/*  Fire-and-forget — never blocks UI.                                */
+/* ------------------------------------------------------------------ */
+export function logEventInteraction(
+  interactionType: string,
+  eventId: number,
+  sourceScreen?: string
+) {
+  const sessionId = readSessionId();
+  const account = readAuthToken()
+    ? (JSON.parse(
+        localStorage.getItem("genie_consumer_account_v1") ?? "null"
+      ) as ConsumerAccount | null)
+    : null;
+  fetch("/api/genie/log-event-interaction", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      event_id: eventId,
+      interaction_type: interactionType,
+      user_id: account?.id ?? 0,
+      session_id: sessionId,
+      source_screen: sourceScreen ?? "",
+    }),
+    keepalive: true,
+  }).catch(() => {});
+}
+
+/* ------------------------------------------------------------------ */
 /*  Signup Prompt                                                      */
 /* ------------------------------------------------------------------ */
+
+export async function saveProducerDetails(payload: {
+  brand_name?: string;
+  producer_handle?: string;
+}) {
+  const externalUserId = readExternalUserId();
+  if (!externalUserId) throw new Error("No session found.");
+  return apiJson<{ success: boolean; brand_name: string; producer_handle: string }>(
+    "/api/genie/save-producer-details",
+    {
+      method: "POST",
+      auth: false,
+      body: JSON.stringify({ external_user_id: externalUserId, ...payload }),
+    }
+  );
+}
+
+export async function saveInfluencerDetails(payload: {
+  influencer_handle?: string;
+}) {
+  const externalUserId = readExternalUserId();
+  if (!externalUserId) throw new Error("No session found.");
+  return apiJson<{ success: boolean; influencer_handle: string }>(
+    "/api/genie/save-influencer-details",
+    {
+      method: "POST",
+      auth: false,
+      body: JSON.stringify({ external_user_id: externalUserId, ...payload }),
+    }
+  );
+}
+
+export async function setUserRoles(roles: string[]) {
+  const externalUserId = readExternalUserId();
+  if (!externalUserId) {
+    throw new Error("No session found — cannot save roles.");
+  }
+  return apiJson<{ success: boolean; roles: string[] }>(
+    "/api/genie/set-user-roles",
+    {
+      method: "POST",
+      auth: false,
+      body: JSON.stringify({ external_user_id: externalUserId, roles }),
+    }
+  );
+}
 
 export async function checkSignupPrompt() {
   const externalUserId = readExternalUserId();
@@ -1197,6 +1377,125 @@ export async function fetchVendorProfileCompleteness(vendorId: number) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Vendor Offers (list / toggle / delete)                            */
+/* ------------------------------------------------------------------ */
+
+export type VendorOfferItem = {
+  id: number;
+  title: string;
+  description?: string;
+  offer_type: string;
+  active?: boolean;
+  vibee_only?: boolean;
+  redeem_instructions?: string | null;
+  discount_value?: string | null;
+};
+
+export async function fetchVendorOffers(vendorId: number) {
+  const params = new URLSearchParams({ vendor_id: String(vendorId) });
+  return apiJson<VendorOfferItem[]>(`/api/vendor/offers?${params.toString()}`);
+}
+
+export async function toggleVendorOffer(offerId: number, active: boolean) {
+  return apiJson<{ success: boolean }>("/api/vendor/offers", {
+    method: "PATCH",
+    body: JSON.stringify({ offer_id: offerId, active }),
+  });
+}
+
+export async function deleteVendorOffer(offerId: number) {
+  return apiJson<{ success: boolean }>(
+    `/api/vendor/offers?offer_id=${offerId}`,
+    { method: "DELETE" }
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Vendor — Influencer Offer Review Queue                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * All influencer offers (active / pending / rejected) for the venues the
+ * calling owner has claimed. Owned venues are resolved server-side from the
+ * caller's JWT. Pass `status` to filter server-side, or omit for all.
+ */
+export async function fetchVendorInfluencerOffers(
+  status?: "active" | "pending" | "rejected"
+) {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+  return apiJson<{
+    success?: boolean;
+    offers?: InfluencerOffer[];
+    count?: number;
+  }>(`/api/vendor/influencer-offers${qs}`);
+}
+
+/**
+ * Approve or reject a pending influencer offer. Only the venue owner may
+ * review. `rejection_reason` is stored when rejecting.
+ */
+export async function reviewInfluencerOffer(payload: {
+  offer_id: number;
+  decision: "approve" | "reject" | "cancel";
+  rejection_reason?: string;
+}) {
+  return apiJson<{
+    success?: boolean;
+    offer_id?: number;
+    status?: string;
+    reviewed_at?: string | number;
+  }>("/api/vendor/review-offer", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Vendor Influencer Codes                                            */
+/* ------------------------------------------------------------------ */
+
+export type VendorInfluencerCode = {
+  code: string;
+  redeemed: number;
+  new_users: number;
+  vibee_conversions: number;
+  history?: string[];
+};
+
+export async function fetchVendorInfluencerCodes(vendorId: number) {
+  const params = new URLSearchParams({ vendor_id: String(vendorId) });
+  return apiJson<{ codes: VendorInfluencerCode[] }>(
+    `/api/vendor/influencer-codes?${params.toString()}`
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Vendor Notification Preferences                                    */
+/* ------------------------------------------------------------------ */
+
+export type VendorNotifPrefs = {
+  external_user_id: string;
+  email_notifications: boolean;
+  push_notifications: boolean;
+  sms_notifications: boolean;
+  sms_phone?: string;
+};
+
+export async function fetchVendorNotifPrefs(externalUserId: string) {
+  const params = new URLSearchParams({ external_user_id: externalUserId });
+  return apiJson<Partial<VendorNotifPrefs>>(
+    `/api/vendor/notifications?${params.toString()}`
+  );
+}
+
+export async function updateVendorNotifPrefs(prefs: VendorNotifPrefs) {
+  return apiJson<{ success: boolean }>("/api/vendor/notifications", {
+    method: "POST",
+    body: JSON.stringify(prefs),
+  });
+}
+
+/* ------------------------------------------------------------------ */
 /*  Stripe Products & Sessions                                         */
 /* ------------------------------------------------------------------ */
 
@@ -1225,5 +1524,946 @@ export async function fetchStripeSession(sessionId: string) {
 export async function fetchStripeSessionLineItems(sessionId: string) {
   return apiJson<Record<string, unknown>>(
     `/api/stripe/sessions/${encodeURIComponent(sessionId)}/line_items`
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Influencer                                                         */
+/* ------------------------------------------------------------------ */
+
+export interface MyInfluencerProfile {
+  id?: number;
+  user_id?: number;
+  handle?: string;
+  display_name?: string;
+  bio?: string;
+  profile_image_url?: string | null;
+  instagram_handle?: string;
+  tiktok_handle?: string;
+  youtube_handle?: string;
+  content_niche?: string;
+  content_categories?: Record<string, unknown>;
+  primary_platform?: string;
+  total_followers?: number;
+  tier?: string;
+  plan_tier?: string;
+  is_verified?: boolean;
+  verified_at?: number;
+  total_redemptions?: number;
+  total_earnings?: number;
+  total_venues_partnered?: number;
+  referral_count?: number;
+  vibes_score?: number;
+}
+
+export interface InfluencerOffer {
+  id: number;
+  offer_type: string;
+  offer_title: string;
+  offer_description?: string;
+  promo_code?: string;
+  unique_code?: string;
+  discount_value?: number | string;
+  discount_type?: string;
+  max_redemptions?: number;
+  redemption_count?: number;
+  redemptions_used?: number;
+  status: string;
+  expires_at?: string | number;
+  venue_id?: number;
+  total_clicks?: number;
+  rejection_reason?: string;
+  reviewed_at?: string | number;
+}
+
+export interface InfluencerDashboardData {
+  active_codes_count?: number;
+  total_redemptions?: number;
+  total_commission_earned?: number;
+  referral_signups?: number;
+  pending_commission?: number;
+  paid_commission?: number;
+  offers?: InfluencerOffer[];
+  landing_url?: string;
+  referral_url?: string;
+}
+
+export async function fetchMyInfluencerProfile() {
+  return apiJson<MyInfluencerProfile>("/api/genie/influencer-profile");
+}
+
+export async function createInfluencerProfile(payload: {
+  display_name: string;
+  bio?: string;
+  instagram_handle?: string;
+  tiktok_handle?: string;
+  content_niche?: string;
+}) {
+  return apiJson<MyInfluencerProfile>("/api/genie/create-influencer-profile", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchInfluencerDashboard() {
+  return apiJson<InfluencerDashboardData>("/api/genie/influencer-dashboard");
+}
+
+export async function fetchInfluencerOffers(handle: string) {
+  const params = new URLSearchParams({ handle });
+  return apiJson<{ offers?: InfluencerOffer[]; success?: boolean }>(
+    `/api/genie/influencer-offers?${params.toString()}`,
+    { auth: false }
+  );
+}
+
+export interface CreatedInfluencerOffer {
+  success?: boolean;
+  offer_id?: number;
+  status?: string;
+  promo_code?: string;
+  offer_type?: string;
+  offer_title?: string;
+  landing_url?: string;
+}
+
+/**
+ * Influencer creates an offer tied to a venue. Offer starts in `pending`
+ * status until the venue owner approves it. `venue_id` is required.
+ * (`discount_type` is intentionally omitted — the backend has no column for it.)
+ */
+export async function createInfluencerOffer(payload: {
+  venue_id: number;
+  offer_title: string;
+  offer_type: string;
+  offer_description?: string;
+  discount_value?: number;
+  promo_code?: string;
+  max_redemptions?: number;
+  expires_at?: string;
+}) {
+  return apiJson<CreatedInfluencerOffer>("/api/genie/create-influencer-offer", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export type InfluencerOfferAnalytics = InfluencerOffer & {
+  total_redemptions?: number;
+  new_user_count?: number;
+  vibbee_conversions?: number;
+};
+
+/**
+ * Per-offer aggregate analytics for the calling influencer (all statuses).
+ * Returns aggregate counts only — there is no per-redemption list.
+ */
+export async function fetchInfluencerOfferAnalytics() {
+  return apiJson<{
+    influencer_id?: number;
+    offers?: InfluencerOfferAnalytics[];
+  }>("/api/genie/influencer-offer-analytics");
+}
+
+/* ------------------------------------------------------------------ */
+/*  Producer                                                           */
+/* ------------------------------------------------------------------ */
+
+export type ProducerProfile = {
+  id?: number;
+  user_id?: number;
+  display_name?: string;
+  bio?: string;
+  instagram_handle?: string;
+  instagram_url?: string;
+  tiktok_url?: string;
+  website_url?: string;
+  event_type_tags?: string[];
+  profile_photo_url?: string;
+  city?: string;
+  status?: string;
+  is_verified?: boolean;
+  follower_count?: number;
+  total_events_created?: number;
+  total_events_live?: number;
+  average_going_count?: number;
+};
+
+export type ProducerEvent = {
+  id: number;
+  title: string;
+  category?: string;
+  description?: string;
+  event_date?: string;
+  start_time?: string;
+  end_time?: string;
+  venue_name?: string;
+  venue_address?: string;
+  city?: string;
+  cover_image_url?: string;
+  ticket_url?: string;
+  ticket_price_min?: number;
+  is_free?: boolean;
+  age_requirement?: string;
+  rsvp_limit?: number;
+  rsvp_count?: number;
+  created_at?: number;
+};
+
+export type ProducerPost = {
+  id: number;
+  author_id?: number;
+  author_type?: string;
+  post_text: string;
+  image_url?: string;
+  like_count?: number;
+  comment_count?: number;
+  created_at?: number;
+};
+
+export type ProducerEventAnalytics = {
+  event_id: number;
+  rsvp_count?: number;
+  view_count?: number;
+  save_count?: number;
+  [key: string]: unknown;
+};
+
+export type ProducerAudienceAnalytics = {
+  producer_id?: number;
+  follower_count?: number;
+  total_events?: number;
+  total_going?: number;
+  total_views?: number;
+  cities?: Array<{ city: string; count: number }>;
+  [key: string]: unknown;
+};
+
+export type ProducerRsvpEntry = {
+  id: number;
+  user_id?: number;
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  rsvped_at?: number;
+  [key: string]: unknown;
+};
+
+/**
+ * Gate check: look up the current user's producer profile via JWT.
+ * Returns { profile: ProducerProfile } if found (any status), { profile: null } if not.
+ * Uses /api/producer/profile → ep_get_my_producer_profile_dev.
+ */
+export async function fetchMyProducerProfile() {
+  return apiJson<{ profile: ProducerProfile | null }>(`/api/producer/profile`);
+}
+
+export async function fetchMyEvents(page = 1, perPage = 20) {
+  return apiJson<{ success: boolean; events: ProducerEvent[]; total: number }>(
+    `/api/producer/events?page=${page}&per_page=${perPage}`
+  );
+}
+
+export async function fetchMyPosts(page = 1, perPage = 20) {
+  return apiJson<{ success: boolean; posts: ProducerPost[]; total: number }>(
+    `/api/producer/post?page=${page}&per_page=${perPage}`
+  );
+}
+
+export async function setupProducerProfile(payload: {
+  display_name: string;
+  bio?: string;
+  instagram_handle?: string;
+  event_type_tags?: string[];
+}) {
+  return apiJson<ProducerProfile>("/api/producer/profile", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createProducerEvent(payload: {
+  title: string;
+  category: string;
+  producer_id?: number;
+  description?: string;
+  event_date?: string;
+  start_time?: string;
+  end_time?: string;
+  venue_id?: number;
+  venue_name?: string;
+  venue_address?: string;
+  city?: string;
+  cover_image_url?: string;
+  ticket_url?: string;
+  ticket_price_min?: number;
+  is_free?: boolean;
+  age_requirement?: string;
+  rsvp_limit?: number;
+  event_id?: number;
+}) {
+  return apiJson<ProducerEvent>("/api/producer/event", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchProducerEventAnalytics(eventId: number) {
+  return apiJson<ProducerEventAnalytics>(
+    `/api/producer/event-analytics?event_id=${eventId}`
+  );
+}
+
+export async function fetchProducerAudienceAnalytics() {
+  return apiJson<ProducerAudienceAnalytics>("/api/producer/audience-analytics");
+}
+
+export async function fetchProducerRsvpList(eventId: number) {
+  return apiJson<ProducerRsvpEntry[] | { rsvps?: ProducerRsvpEntry[] }>(
+    `/api/producer/rsvp-list?event_id=${eventId}`
+  );
+}
+
+export async function createProducerPost(payload: {
+  post_text: string;
+  image_url?: string;
+}) {
+  return apiJson<ProducerPost>("/api/producer/post", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export type ProducerNotifPrefs = {
+  notify_new_follower?: boolean;
+  notify_post_like?: boolean;
+  notify_post_comment?: boolean;
+  notify_going_match?: boolean;
+  notify_venue_energy_alert?: boolean;
+  notify_event_reminder?: boolean;
+  notify_promoter_new_event?: boolean;
+  notify_new_message?: boolean;
+  notify_genie_alerts?: boolean;
+};
+
+export async function fetchProducerNotifPrefs() {
+  return apiJson<ProducerNotifPrefs>("/api/producer/notifications");
+}
+
+export async function updateProducerNotifPrefs(prefs: ProducerNotifPrefs) {
+  return apiJson<{ success: boolean }>("/api/producer/notifications", {
+    method: "POST",
+    body: JSON.stringify(prefs),
+  });
+}
+
+export type FollowProducerResult = {
+  success: boolean;
+  action: "followed" | "unfollowed";
+  followed_id: number;
+  followed_type: string;
+};
+
+export async function followProducer(
+  producerId: number,
+  source: string = "profile"
+) {
+  return apiJson<FollowProducerResult>("/api/producer/follow", {
+    method: "POST",
+    body: JSON.stringify({
+      followed_id: producerId,
+      followed_type: "producer",
+      follow_source: source,
+    }),
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Producer public profile page                                       */
+/* ------------------------------------------------------------------ */
+
+export type ProducerPublicPageData = {
+  success: boolean;
+  producer: ProducerProfile;
+  is_following: boolean;
+  upcoming_events: ProducerEvent[];
+  event_count: number;
+};
+
+export async function fetchProducerPublicProfile(producerId: number) {
+  return apiJson<ProducerPublicPageData>(
+    `/api/producer/profile-public?producer_id=${producerId}`
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Notifications                                                       */
+/* ------------------------------------------------------------------ */
+
+export type UserNotification = {
+  id: number;
+  type: string;
+  title: string;
+  body: string;
+  is_read: boolean;
+  created_at: number;
+  target_url?: string;
+  actor_name?: string;
+  actor_image_url?: string;
+};
+
+/** Raw notification row as returned by Xano (genie/get-notifications-dev). */
+type RawNotification = {
+  id: number;
+  notification_type?: string;
+  title?: string;
+  body?: string;
+  is_read?: boolean;
+  created_at?: string | number;
+  data_json?: Record<string, unknown> | null;
+};
+
+function normalizeNotification(row: RawNotification): UserNotification {
+  const data = (row.data_json ?? {}) as Record<string, unknown>;
+  // The UI's timeAgo() expects Unix *seconds*. Xano returns created_at as a Unix
+  // millisecond number (e.g. 1782859974610); tolerate an ISO string too.
+  let createdAt = 0;
+  if (typeof row.created_at === "number") {
+    // Values >= 1e11 are milliseconds; smaller ones are already seconds.
+    createdAt =
+      row.created_at >= 1e11
+        ? Math.floor(row.created_at / 1000)
+        : row.created_at;
+  } else if (typeof row.created_at === "string") {
+    const parsed = Date.parse(row.created_at);
+    createdAt = Number.isNaN(parsed) ? 0 : Math.floor(parsed / 1000);
+  }
+  const pickString = (key: string) =>
+    typeof data[key] === "string" ? (data[key] as string) : undefined;
+
+  return {
+    id: row.id,
+    type: row.notification_type ?? "notification",
+    title: row.title ?? "",
+    body: row.body ?? "",
+    is_read: Boolean(row.is_read),
+    created_at: createdAt,
+    target_url: pickString("target_url"),
+    actor_name: pickString("actor_name"),
+    actor_image_url: pickString("actor_image_url"),
+  };
+}
+
+export async function fetchUserNotifications() {
+  const raw = await apiJson<{ notifications?: RawNotification[] }>(
+    "/api/user/notifications"
+  );
+  return {
+    notifications: (raw.notifications ?? []).map(normalizeNotification),
+  };
+}
+
+export async function fetchUnreadNotifCount() {
+  return apiJson<{ unread_count: number }>(
+    "/api/user/notifications/unread-count"
+  );
+}
+
+/** Mark one or many notifications as read (single tap → pass [id]). */
+export async function markNotificationsRead(notificationIds: number[]) {
+  return apiJson<{ success: boolean }>("/api/user/notifications", {
+    method: "PATCH",
+    body: JSON.stringify({ notification_ids: notificationIds }),
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Messaging                                                           */
+/* ------------------------------------------------------------------ */
+
+export type MessageThreadType = "producer" | "user";
+
+/** Max characters allowed in a single message (mirrored by the composer's maxLength). */
+export const MAX_MESSAGE_LENGTH = 2000;
+
+function assertMessageLength(text: string) {
+  if (text.length > MAX_MESSAGE_LENGTH) {
+    throw new Error(`Message is too long (max ${MAX_MESSAGE_LENGTH} characters).`);
+  }
+}
+
+type RawProducerThread = {
+  id: number;
+  user_id: number;
+  producer_id: number;
+  producer_display_name?: string;
+  producer_profile_photo_url?: string;
+  user_unread_count?: number;
+  producer_unread_count?: number;
+  last_message_at?: number | string;
+  last_message_preview?: string;
+  status?: "request" | "active" | "archived";
+  thread_origin?: string;
+};
+
+type RawUserThread = {
+  id: number;
+  participant_one_id: number;
+  participant_two_id: number;
+  participant_one_unread?: number;
+  participant_two_unread?: number;
+  last_message_preview?: string;
+  last_message_at?: number | string;
+  status?: string;
+};
+
+export type Conversation = {
+  threadId: number;
+  threadType: MessageThreadType;
+  counterpartId: number;
+  counterpartName?: string;
+  counterpartAvatarUrl?: string;
+  lastMessagePreview?: string;
+  lastMessageAt: number;
+  unreadCount: number;
+  status?: string;
+  /**
+   * For threadType "producer" only: whether the current viewer IS the
+   * producer (business owner reading their inbox) or the consumer who
+   * messaged that producer. genie_message_threads is asymmetric — the
+   * producer replies via a different endpoint (ep_producer_reply_dev) and
+   * the counterpart is the other party, not always producer_id.
+   */
+  viewerRole?: "consumer" | "producer";
+};
+
+export type RawMessage = {
+  id: number;
+  thread_id: number;
+  sender_id: number;
+  recipient_id: number;
+  recipient_type: MessageThreadType;
+  message_text: string;
+  is_read: boolean;
+  created_at: string | number;
+};
+
+function toEpochMs(value: number | string | undefined): number {
+  if (!value) return 0;
+  if (typeof value === "number") return value;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/** Raw threads fetch — caller must merge producer_threads + user_threads (different shapes). */
+export async function fetchMessageThreads(
+  threadType: "all" | MessageThreadType = "all",
+  page = 1,
+  perPage = 20
+) {
+  return apiJson<{
+    success?: boolean;
+    producer_threads?: RawProducerThread[];
+    user_threads?: RawUserThread[];
+  }>(
+    `/api/messages/threads?page=${page}&per_page=${perPage}&thread_type=${threadType}`
+  );
+}
+
+/** Normalizes + merges both thread shapes into one sorted-by-recency list for the unified inbox UI. */
+export function mergeThreadsToConversations(
+  raw: { producer_threads?: RawProducerThread[]; user_threads?: RawUserThread[] },
+  currentUserId?: number
+): Conversation[] {
+  const fromProducer: Conversation[] = (raw.producer_threads ?? []).map((t) => {
+    // If the viewer isn't the thread's consumer (user_id), they must be the
+    // producer owner looking at their business inbox — the counterpart is
+    // then the consumer, not the producer (themselves).
+    const viewerIsProducerOwner = currentUserId !== undefined && t.user_id !== currentUserId;
+    return {
+      threadId: t.id,
+      threadType: "producer" as const,
+      counterpartId: viewerIsProducerOwner ? t.user_id : t.producer_id,
+      counterpartName: viewerIsProducerOwner ? undefined : t.producer_display_name,
+      counterpartAvatarUrl: viewerIsProducerOwner ? undefined : t.producer_profile_photo_url,
+      lastMessagePreview: t.last_message_preview,
+      lastMessageAt: toEpochMs(t.last_message_at),
+      unreadCount: (viewerIsProducerOwner ? t.producer_unread_count : t.user_unread_count) ?? 0,
+      status: t.status,
+      viewerRole: viewerIsProducerOwner ? ("producer" as const) : ("consumer" as const),
+    };
+  });
+
+  const fromUser: Conversation[] = (raw.user_threads ?? []).map((t) => {
+    const isP1 = t.participant_one_id === currentUserId;
+    return {
+      threadId: t.id,
+      threadType: "user" as const,
+      counterpartId: isP1 ? t.participant_two_id : t.participant_one_id,
+      lastMessagePreview: t.last_message_preview,
+      lastMessageAt: toEpochMs(t.last_message_at),
+      unreadCount: (isP1 ? t.participant_one_unread : t.participant_two_unread) ?? 0,
+      status: t.status,
+    };
+  });
+
+  return [...fromProducer, ...fromUser].sort((a, b) => b.lastMessageAt - a.lastMessageAt);
+}
+
+/** No dedicated unread-count endpoint exists; derive it from the inbox fetch. */
+export async function fetchUnreadMessageCount(currentUserId?: number) {
+  const raw = await fetchMessageThreads("all", 1, 100);
+  const conversations = mergeThreadsToConversations(raw, currentUserId);
+  return conversations.reduce((sum, c) => sum + c.unreadCount, 0);
+}
+
+/** Generic dispatcher so future entry points (vendor/consumer profiles) are a one-line wire-up. */
+export async function sendMessage(input: {
+  recipientId: number;
+  recipientType: MessageThreadType;
+  text: string;
+}) {
+  if (input.recipientType === "producer") {
+    return sendMessageToProducer(input.recipientId, input.text);
+  }
+  return sendMessageToUser(input.recipientId, input.text);
+}
+
+export async function sendMessageToProducer(producerId: number, text: string) {
+  assertMessageLength(text);
+  return apiJson<{ success: boolean; message: RawMessage; thread_id: number; is_new_thread?: boolean }>(
+    "/api/messages/producer",
+    {
+      method: "POST",
+      body: JSON.stringify({ recipient_id: producerId, recipient_type: "producer", message_text: text }),
+    }
+  );
+}
+
+export async function sendMessageToUser(recipientUserId: number, text: string) {
+  assertMessageLength(text);
+  return apiJson<{ success: boolean; message: RawMessage; thread_id: number; is_new_thread: boolean }>(
+    "/api/messages/user",
+    {
+      method: "POST",
+      body: JSON.stringify({ recipient_id: recipientUserId, message_text: text }),
+    }
+  );
+}
+
+/** The producer-owner side of a business thread replies here — a different
+ * endpoint than sendMessageToProducer, since the producer isn't "messaging
+ * a producer" (themselves), they're replying within an existing thread. */
+export async function replyAsProducer(threadId: number, text: string) {
+  assertMessageLength(text);
+  return apiJson<{ success: boolean; message: RawMessage; thread_id: number }>(
+    "/api/messages/producer-reply",
+    {
+      method: "POST",
+      body: JSON.stringify({ thread_id: threadId, message_text: text }),
+    }
+  );
+}
+
+/** Zeroes the caller's own unread counter for a thread (fire-and-forget from the UI). */
+export async function markThreadRead(threadType: MessageThreadType, threadId: number) {
+  return apiJson<{ success: boolean }>("/api/messages/mark-read", {
+    method: "POST",
+    body: JSON.stringify({ thread_id: threadId, thread_type: threadType }),
+  });
+}
+
+export async function fetchThreadMessages(
+  threadType: MessageThreadType,
+  threadId: number,
+  page = 1,
+  perPage = 30
+) {
+  const path = threadType === "producer" ? "/api/messages/producer-thread" : "/api/messages/user-thread";
+  return apiJson<{
+    success?: boolean;
+    thread?: Record<string, unknown>;
+    total?: number;
+    page?: number;
+    per_page?: number;
+    messages?: RawMessage[];
+  }>(`${path}?thread_id=${threadId}&page=${page}&per_page=${perPage}`);
+}
+
+export async function blockUser(userId: number) {
+  return apiJson<{ success: boolean }>("/api/messages/block", {
+    method: "POST",
+    body: JSON.stringify({ blocked_user_id: userId }),
+  });
+}
+
+export async function unblockUser(userId: number) {
+  return apiJson<{ success: boolean }>("/api/messages/unblock", {
+    method: "POST",
+    body: JSON.stringify({ blocked_user_id: userId }),
+  });
+}
+
+export async function fetchBlockedUsers() {
+  return apiJson<{ success?: boolean; blocked_user_ids?: number[]; count?: number }>(
+    "/api/messages/blocked"
+  );
+}
+
+export async function reportUserProfile(payload: {
+  userId: number;
+  reason: "spam" | "inappropriate" | "false_info" | "harassment" | "hate_speech" | "other";
+  details?: string;
+}) {
+  return apiJson<{ success: boolean }>("/api/messages/report", {
+    method: "POST",
+    body: JSON.stringify({
+      content_type: "profile",
+      content_id: payload.userId,
+      report_reason: payload.reason,
+      report_details: payload.details,
+    }),
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Homescreen Feed                                                     */
+/* ------------------------------------------------------------------ */
+
+export type UpcomingEvent = {
+  id: number;
+  title: string;
+  producer_id?: number;
+  producer?: {
+    id?: number;
+    name?: string;
+    display_name?: string;
+    image_url?: string;
+    profile_photo_url?: string;
+    event_count?: number;
+    total_events_live?: number;
+    is_verified?: boolean;
+    is_following?: boolean;
+  };
+  cover_image_url?: string;
+  event_date?: string;
+  start_time?: string;
+  end_time?: string;
+  venue_name?: string;
+  venue_address?: string;
+  neighborhood?: string;
+  city?: string;
+  description?: string;
+  category?: string;
+  event_category?: string;
+  going_count?: number;
+  rsvp_count?: number;
+  is_free?: boolean;
+  is_sold_out?: boolean;
+  ticket_url?: string;
+  ticket_price_min?: number;
+  ticket_price_max?: number;
+  age_requirement?: number;
+  public_slug?: string;
+  status?: string;
+  is_on_fire?: boolean;
+  [key: string]: unknown;
+};
+
+export type TrendingVenue = {
+  id: number | string;
+  venue_name: string;
+  image_primary_url?: string;
+  image_fallback_url?: string;
+  cover_image_url?: string;
+  image_url?: string;
+  neighborhood?: string;
+  area_neighborhood?: string;
+  neighborhood_text?: string;
+  energy_level?: string;
+  going_count?: number;
+  is_on_fire?: boolean;
+  address?: string;
+  [key: string]: unknown;
+};
+
+export type HomescreenApiResponse = {
+  success: boolean;
+  city_id: number;
+  city_name: string;
+  weather?: Record<string, unknown>;
+  trending_venues?: TrendingVenue[];
+  upcoming_events?: UpcomingEvent[];
+  active_placements?: Record<string, unknown>[];
+  top_neighborhoods?: Record<string, unknown>[];
+  generated_at?: string;
+};
+
+export type HomescreenStory = {
+  id: number;
+  name: string;
+  image_url: string;
+};
+
+export type HomescreenFeatured = {
+  id: number;
+  type: "event" | "venue";
+  title: string;
+  image_url: string;
+};
+
+export type EventFeedItem = {
+  feed_type: "event";
+  id: number;
+  title: string;
+  venue_name?: string;
+  start_time?: string;
+  event_date?: string;
+  cover_image_url?: string;
+  going_count?: number;
+  people_you_know?: number;
+  is_on_fire?: boolean;
+  badge?: string;
+  producer_id?: number;
+  producer?: {
+    name: string;
+    image_url?: string;
+    event_count?: number;
+    producer_id?: number;
+    handle?: string;
+    is_verified?: boolean;
+    is_following?: boolean;
+  };
+  reason?: string;
+  raw: UpcomingEvent;
+};
+
+export type SocialEnergyAlertItem = {
+  feed_type: "social_energy_alert";
+  id: number;
+  message: string;
+};
+
+export type SocialPostItem = {
+  feed_type: "social_post";
+  id: number;
+  author_name: string;
+  author_image_url?: string;
+  time_ago: string;
+  body: string;
+  image_url?: string;
+  comment_count?: number;
+  notification_count?: number;
+};
+
+export type OnFireVenueItem = {
+  feed_type: "on_fire_venue";
+  id: number;
+  venue_name: string;
+  venue_address?: string;
+  neighborhood?: string;
+  category?: string;
+  description?: string;
+  going_count?: number;
+  badge?: string;
+};
+
+export type SuggestedProducerItem = {
+  feed_type: "suggested_producer";
+  id: number;
+  name: string;
+  image_url?: string;
+  event_count?: number;
+  producer_id?: number;
+  handle?: string;
+};
+
+export type FeedItem =
+  | EventFeedItem
+  | SocialEnergyAlertItem
+  | SocialPostItem
+  | OnFireVenueItem
+  | SuggestedProducerItem;
+
+export type HomescreenData = {
+  stories: HomescreenStory[];
+  featured: HomescreenFeatured[];
+  feed: FeedItem[];
+  raw?: HomescreenApiResponse;
+};
+
+export async function fetchHomescreen(options: {
+  cityId?: number;
+  cityName?: string;
+  userId?: number;
+  lat?: number;
+  lng?: number;
+  page?: number;
+} = {}): Promise<HomescreenApiResponse> {
+  const { cityId = 1, cityName = "Houston", userId, lat, lng, page = 1 } = options;
+  const params = new URLSearchParams();
+  params.set("city_id", String(cityId));
+  params.set("city_name", cityName);
+  params.set("page", String(page));
+  if (userId) params.set("user_id", String(userId));
+  if (lat != null) params.set("lat", String(lat));
+  if (lng != null) params.set("lng", String(lng));
+  return apiJson<HomescreenApiResponse>(
+    `/api/genie/homescreen?${params.toString()}`,
+    { auth: false }
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Event Detail                                                        */
+/* ------------------------------------------------------------------ */
+
+export type EventDetailProducer = {
+  id?: number;
+  name?: string;
+  image_url?: string;
+  event_count?: number;
+  is_verified?: boolean;
+  is_following?: boolean;
+};
+
+export type EventDetailMiniEvent = {
+  id: number;
+  title?: string;
+  cover_image_url?: string;
+  category?: string;
+  event_date?: string;
+  [key: string]: unknown;
+};
+
+export type EventDetailResponse = {
+  id: number;
+  title: string;
+  cover_image_url?: string;
+  event_date?: string;
+  start_time?: string;
+  end_time?: string;
+  venue_name?: string;
+  venue_address?: string;
+  description?: string;
+  category?: string;
+  ticket_url?: string;
+  is_free?: boolean;
+  ticket_price_min?: number;
+  public_slug?: string;
+  going_count?: number;
+  is_on_fire?: boolean;
+  producer?: EventDetailProducer;
+  offer_type?: string;
+  offer_title?: string;
+  offer_description?: string;
+  related_events?: EventDetailMiniEvent[];
+  venue_events?: EventDetailMiniEvent[];
+  [key: string]: unknown;
+};
+
+export async function fetchEventDetail(eventId: number): Promise<EventDetailResponse> {
+  return apiJson<EventDetailResponse>(
+    `/api/genie/event-detail?event_id=${eventId}`
   );
 }

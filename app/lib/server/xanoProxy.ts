@@ -31,14 +31,33 @@ export class XanoError extends Error {
   body: unknown;
 
   constructor(status: number, body: unknown) {
-    super(
-      typeof body === "object" && body && "message" in body
-        ? String((body as Record<string, unknown>).message)
-        : `Xano request failed with status ${status}`
-    );
+    super(readXanoErrorMessage(body) || `Xano request failed with status ${status}`);
     this.status = status;
     this.body = body;
   }
+}
+
+function readXanoErrorMessage(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") {
+    return typeof payload === "string" ? payload : null;
+  }
+
+  const record = payload as Record<string, unknown>;
+  for (const key of ["message", "Message", "error", "detail"]) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+  }
+
+  for (const value of Object.values(record)) {
+    const nested = readXanoErrorMessage(value);
+    if (nested) {
+      return nested;
+    }
+  }
+
+  return null;
 }
 
 async function baseFetch<T = unknown>(
@@ -47,37 +66,30 @@ async function baseFetch<T = unknown>(
   init: XanoRequestInit = {}
 ): Promise<T> {
   const { method = "GET", body, authToken, params } = init;
-
   let url = `${base}/${path.replace(/^\//, "")}`;
   if (params) {
     const qs = new URLSearchParams(params).toString();
     url += `?${qs}`;
   }
-
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
   if (authToken) {
     headers.Authorization = `Bearer ${authToken}`;
   }
-
   const res = await fetch(url, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
     cache: "no-store",
   });
-
   const json = await res.json().catch(() => null);
-
   if (!res.ok) {
     throw new XanoError(res.status, json);
   }
-
   return json as T;
 }
 
-/** Genie endpoints — /api:pgMKWi2e */
 export async function xanoFetch<T = unknown>(
   path: string,
   init: XanoRequestInit = {}
@@ -108,4 +120,25 @@ export function extractBearerToken(
   const auth = request.headers.get("Authorization");
   if (!auth?.startsWith("Bearer ")) return undefined;
   return auth.slice(7);
+}
+
+/**
+ * Maps a caught proxy error to a client-safe { status, message }.
+ * 4xx messages (validation/auth) are safe to surface; 5xx / unknown errors are
+ * masked behind `fallback` so backend internals never leak to the browser — the
+ * detail is logged server-side instead.
+ */
+export function toClientError(
+  error: unknown,
+  fallback: string
+): { status: number; message: string } {
+  if (error instanceof XanoError) {
+    if (error.status >= 400 && error.status < 500) {
+      return { status: error.status, message: error.message };
+    }
+    console.error("[xano] upstream error", error.status, error.message, error.body);
+    return { status: error.status, message: fallback };
+  }
+  console.error("[xano] proxy error", error);
+  return { status: 500, message: fallback };
 }

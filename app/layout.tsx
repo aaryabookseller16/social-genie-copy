@@ -30,11 +30,7 @@ export const metadata: Metadata = {
     "Ask Genie and she'll find your vibe - brunches, happy hours, lounges, patios, and more.",
   metadataBase: new URL("https://genie.socialbevy.com"),
   icons: {
-    icon: [
-      { url: "/favicon.ico" },
-      { url: "/favicon-32x32.png", type: "image/png", sizes: "32x32" },
-      { url: "/favicon-16x16.png", type: "image/png", sizes: "16x16" },
-    ],
+    icon: [{ url: "/favicon-bevy.png", type: "image/png", sizes: "32x32" }],
     apple: "/apple-touch-icon.png",
   },
   manifest: "/site.webmanifest",

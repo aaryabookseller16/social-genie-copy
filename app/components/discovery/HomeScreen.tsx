@@ -13,6 +13,7 @@ type HomeScreenProps = {
   showBottomNav?: boolean;
   pendingTranscript?: boolean;
   onMenuOpen: () => void;
+  onShareApp: () => void;
   onInputChange: (value: string) => void;
   onChipSelect: (prompt: string) => void;
   onOrbTap: () => void;
@@ -28,6 +29,7 @@ export function HomeScreen({
   showBottomNav = false,
   pendingTranscript = false,
   onMenuOpen,
+  onShareApp,
   onInputChange,
   onChipSelect,
   onOrbTap,
@@ -45,11 +47,34 @@ export function HomeScreen({
     >
 
       <div className="relative mx-auto flex w-full max-w-sm flex-1 flex-col items-center text-center">
-        <div className="flex w-full justify-end">
+        <div className="flex w-full justify-end gap-2">
+          <button
+            type="button"
+            onClick={onShareApp}
+            className="flex h-10 w-10 items-center justify-center rounded-full text-red-600 dark:text-white/85"
+            aria-label="Share Genie"
+          >
+            <Image
+              src="/icons/share-red.png"
+              alt=""
+              aria-hidden="true"
+              width={22}
+              height={22}
+              className="h-5 w-5 object-contain dark:hidden"
+            />
+            <Image
+              src="/icons/shareIcon.png"
+              alt=""
+              aria-hidden="true"
+              width={22}
+              height={22}
+              className="hidden h-5 w-5 object-contain dark:block"
+            />
+          </button>
           <button
             type="button"
             onClick={onMenuOpen}
-            className="flex flex-col gap-[5px] p-2"
+            className="flex h-10 w-10 flex-col items-center justify-center gap-[5px]"
             aria-label="Menu"
           >
             <span className="block h-[2.5px] w-6 rounded-full bg-red-600 dark:bg-white/80" />
