@@ -10,6 +10,7 @@ import {
 import { DrawerMenu, type DrawerMenuActionId } from "@/app/components/single-page/DrawerMenu";
 import { RoleSwitcherDialog } from "@/app/components/single-page/RoleSwitcherDialog";
 import { ProfileSection } from "@/app/components/single-page/ProfileSection";
+import { NotificationSettingsSection } from "@/app/components/single-page/NotificationSettingsSection";
 import { VendorSection } from "@/app/components/single-page/VendorSection";
 import { ProducerSection } from "@/app/components/single-page/ProducerSection";
 import { RoleIdentifierSection } from "@/app/components/single-page/RoleIdentifierSection";
@@ -18,6 +19,8 @@ import { OnboardingCompleteSection } from "@/app/components/single-page/Onboardi
 import { VerifyEmailGate } from "@/app/components/single-page/VerifyEmailGate";
 import { InfluencerSection } from "@/app/components/single-page/InfluencerSection";
 import { NotificationsScreen } from "@/app/components/single-page/NotificationsScreen";
+import { MessagesScreen } from "@/app/components/single-page/MessagesScreen";
+import { ConversationScreen } from "@/app/components/single-page/ConversationScreen";
 import { HomescreenSection } from "@/app/components/homescreen/HomescreenSection";
 import { EventDetailSection } from "@/app/components/event-detail/EventDetailSection";
 import {
@@ -38,7 +41,11 @@ import {
 } from "@/app/components/single-page/ui";
 import { HomeScreen } from "@/app/components/discovery/HomeScreen";
 import { GenieOrb } from "@/app/components/shared/GenieOrb";
-import { requestPushPermission } from "@/app/components/shared/NotificationsBoot";
+import {
+  requestPushPermission,
+  isPushPermissionGranted,
+  getPushSubscriptionId,
+} from "@/app/components/shared/NotificationsBoot";
 import {
   trackEvent,
   trackHomeScreenViewed,
@@ -101,6 +108,10 @@ import {
   saveProducerDetails,
   saveInfluencerDetails,
   fetchUnreadNotifCount,
+  fetchUnreadMessageCount,
+  fetchMessageThreads,
+  mergeThreadsToConversations,
+  type MessageThreadType,
 } from "@/app/lib/publicApiClient";
 import { getRuntimeConfig } from "@/app/lib/runtimeConfig";
 import { extractCityFromMessage, mentionsNearMe } from "@/app/lib/cityExtractor";
@@ -475,6 +486,15 @@ export function SinglePageGenieApp({
   const roleUnlockRef = useRef<HTMLElement | null>(null);
   const [activeScreen, setActiveScreen] = useState<FlowAnchor>(initialScreen);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
+  const [activeConversation, setActiveConversation] = useState<{
+    threadId: number | null;
+    threadType: MessageThreadType;
+    counterpartId: number;
+    counterpartName?: string;
+    counterpartAvatarUrl?: string;
+    viewerRole?: "consumer" | "producer";
+  } | null>(null);
   const [isRoleSwitcherOpen, setIsRoleSwitcherOpen] = useState(false);
   const [detailReturnScreen, setDetailReturnScreen] = useState<
     "decision" | "more" | "saved"
@@ -605,6 +625,33 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     [userCoords]
   );
   const hasPromptedForPushRef = useRef(false);
+  // The external_user_id this device's push token was last registered under.
+  // Lets us re-register on login (guest → real user) so the recipient's token
+  // is tied to the right account, without re-prompting every render.
+  const lastRegisteredPushExtIdRef = useRef<string | null>(null);
+
+  // Register this device's OneSignal token under the current user so DM pushes
+  // can reach them. Silent when permission is already granted; prompts at most
+  // once per session otherwise (never on cold start — callers gate on login /
+  // a meaningful screen). No-op if already registered under this external id.
+  const syncPushRegistration = useCallback(async () => {
+    const externalUserId = readExternalUserId();
+    if (!externalUserId) return;
+    if (lastRegisteredPushExtIdRef.current === externalUserId) return;
+
+    let playerId = isPushPermissionGranted() ? getPushSubscriptionId() : null;
+    if (!playerId && !hasPromptedForPushRef.current) {
+      hasPromptedForPushRef.current = true;
+      playerId = await requestPushPermission();
+    }
+    if (!playerId) return;
+
+    lastRegisteredPushExtIdRef.current = externalUserId;
+    await registerPushToken(playerId).catch((error) => {
+      console.error("Failed to register push token", error);
+    });
+  }, []);
+
   const offersLoadedRef = useRef(false);
   const profileLoadedRef = useRef(false);
   const resultVenues = useMemo(
@@ -833,6 +880,29 @@ const [trialSuccess, setTrialSuccess] = useState(false);
       .then((r) => setUnreadNotifCount(r.unread_count ?? 0))
       .catch(() => {});
   }, [account]);
+
+  // Keep the homescreen message badge live: fetch on load, poll while the app
+  // is open, and refetch on every screen change (so a recipient sees a new
+  // message's badge, and it clears right after reading a thread + navigating
+  // back). The unread count has no dedicated endpoint — it's derived from the
+  // thread list — so this is intentionally lightweight, not per-second.
+  useEffect(() => {
+    if (!account) return;
+    let cancelled = false;
+    const refresh = () => {
+      fetchUnreadMessageCount(account.id)
+        .then((count) => {
+          if (!cancelled) setUnreadMessageCount(count);
+        })
+        .catch(() => {});
+    };
+    refresh();
+    const interval = setInterval(refresh, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [account, activeScreen]);
 
   const loadSocialPreferences = useCallback(async () => {
     if (profileLoadedRef.current) {
@@ -1821,11 +1891,68 @@ setResponse(nextResponse);
       "role-identifier",
       "role-setup",
       "onboarding-complete",
+      "messages",
     ];
-    if (allowed.includes(screen as FlowAnchor)) {
+    if (screen === "conversation") {
+      const threadType = url.searchParams.get("thread_type");
+      const producerId = url.searchParams.get("producer_id");
+      const threadIdParam = url.searchParams.get("thread_id");
+      const counterpartName = url.searchParams.get("counterpart_name");
+      if (threadType === "producer" && producerId && !isNaN(Number(producerId))) {
+        setActiveConversation({
+          threadId: null,
+          threadType: "producer",
+          counterpartId: Number(producerId),
+          counterpartName: counterpartName ?? undefined,
+        });
+        navigateTo("conversation");
+      } else if (
+        threadType === "user" &&
+        threadIdParam &&
+        !isNaN(Number(threadIdParam))
+      ) {
+        // Notification tap into a 1:1 DM: we only have thread_id. Open the chat
+        // immediately (history loads by thread_id + clears unread), then resolve
+        // the counterpart (name/avatar/id, needed for the header and replies)
+        // from the thread list. Use the stored account id so this is correct
+        // even before React state hydrates on a cold notification open.
+        const tid = Number(threadIdParam);
+        setActiveConversation({
+          threadId: tid,
+          threadType: "user",
+          counterpartId: 0,
+          counterpartName: counterpartName ?? undefined,
+        });
+        navigateTo("conversation");
+        const selfId = readConsumerAccount()?.id;
+        void fetchMessageThreads("user", 1, 100)
+          .then((raw) => {
+            const conv = mergeThreadsToConversations(raw, selfId).find(
+              (c) => c.threadType === "user" && c.threadId === tid
+            );
+            if (!conv) return;
+            setActiveConversation((prev) =>
+              prev && prev.threadId === tid
+                ? {
+                    ...prev,
+                    counterpartId: conv.counterpartId,
+                    counterpartName: conv.counterpartName ?? prev.counterpartName,
+                    counterpartAvatarUrl: conv.counterpartAvatarUrl,
+                    viewerRole: conv.viewerRole,
+                  }
+                : prev
+            );
+          })
+          .catch(() => {});
+      }
+    } else if (allowed.includes(screen as FlowAnchor)) {
       navigateTo(screen as FlowAnchor);
     }
     url.searchParams.delete("screen");
+    url.searchParams.delete("thread_type");
+    url.searchParams.delete("producer_id");
+    url.searchParams.delete("thread_id");
+    url.searchParams.delete("counterpart_name");
     window.history.replaceState(
       {},
       "",
@@ -1968,20 +2095,17 @@ setResponse(nextResponse);
       });
     });
 
-    if (!hasPromptedForPushRef.current) {
-      hasPromptedForPushRef.current = true;
-      void (async () => {
-        const playerId = await requestPushPermission();
-        if (!playerId) {
-          return;
-        }
+    void syncPushRegistration();
+  }, [response, syncPushRegistration]);
 
-        await registerPushToken(playerId).catch((error) => {
-          console.error("Failed to register push token", error);
-        });
-      })();
-    }
-  }, [response]);
+  // Register (or re-register) this device for push as soon as we have a
+  // logged-in account, so message pushes reach users who go straight to
+  // messaging — not just those who run a Genie search. Re-runs on login when
+  // account.id becomes available (or changes from guest to real user).
+  useEffect(() => {
+    if (!account?.id) return;
+    void syncPushRegistration();
+  }, [account?.id, syncPushRegistration]);
 
   useEffect(() => {
     if (
@@ -2219,6 +2343,9 @@ setResponse(nextResponse);
         case "saved":
           navigateTo("saved");
           break;
+        case "messages":
+          navigateTo("messages");
+          break;
         case "membership":
           navigateTo("membership");
           break;
@@ -2401,6 +2528,8 @@ activeScreen !== "vibbee-trial" &&
     activeScreen !== "role-unlock" &&
     activeScreen !== "producer-dashboard" &&
     activeScreen !== "notifications" &&
+    activeScreen !== "messages" &&
+    activeScreen !== "conversation" &&
     activeScreen !== "detail";
 
   const isAiFallbackLayout =
@@ -2425,6 +2554,7 @@ activeScreen !== "vibbee-trial" &&
     activeScreen === "offer-activated" ||
     activeScreen === "redemptions" ||
     activeScreen === "profile" ||
+    activeScreen === "notification-settings" ||
     activeScreen === "account" ||
     activeScreen === "membership" ||
     activeScreen === "contact" ||
@@ -4989,6 +5119,7 @@ navigateTo("event-detail");
                 onEditPreferences={() => navigateTo("preferences")}
                 onOpenMembership={() => navigateTo("membership")}
                 onUpgradeMembership={() => navigateTo("membership")}
+                onOpenNotifications={() => navigateTo("notification-settings")}
                 onBack={() => goBack("home")}
                 onSave={async (data) => {
                   if (!account) return;
@@ -5035,6 +5166,14 @@ navigateTo("event-detail");
               />
             )}
           </section>
+        ) : null}
+
+        {/* ── NOTIFICATION SETTINGS ── */}
+        {activeScreen === "notification-settings" ? (
+          <NotificationSettingsSection
+            visible
+            onBack={() => goBack("profile")}
+          />
         ) : null}
 
         {/* ── CONTACT ── */}
@@ -5350,6 +5489,8 @@ navigateTo("event-detail");
     onOrbTap={startListening}
     onNotifications={() => navigateTo("notifications")}
     unreadNotifCount={unreadNotifCount}
+    onMessages={() => navigateTo("messages")}
+    unreadMessageCount={unreadMessageCount}
   />
 ) : null}
 
@@ -5357,6 +5498,35 @@ navigateTo("event-detail");
   <NotificationsScreen
     onBack={() => goBack("homescreen")}
     onClearUnread={() => setUnreadNotifCount(0)}
+  />
+) : null}
+
+{activeScreen === "messages" ? (
+  <MessagesScreen
+    account={account}
+    onBack={() => goBack("homescreen")}
+    onOpenConversation={(conv) => {
+      setActiveConversation(conv);
+      navigateTo("conversation");
+    }}
+  />
+) : null}
+
+{activeScreen === "conversation" && activeConversation ? (
+  <ConversationScreen
+    account={account}
+    threadId={activeConversation.threadId}
+    threadType={activeConversation.threadType}
+    counterpartId={activeConversation.counterpartId}
+    counterpartName={activeConversation.counterpartName}
+    counterpartAvatarUrl={activeConversation.counterpartAvatarUrl}
+    viewerRole={activeConversation.viewerRole}
+    onBack={() => goBack("messages")}
+    onThreadCreated={(threadId, viewerRole) =>
+      setActiveConversation((prev) =>
+        prev ? { ...prev, threadId, viewerRole: viewerRole ?? prev.viewerRole } : prev
+      )
+    }
   />
 ) : null}
 

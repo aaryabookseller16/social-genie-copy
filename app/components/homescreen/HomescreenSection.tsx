@@ -802,6 +802,8 @@ type HomescreenSectionProps = {
   onOrbTap: () => void;
   onNotifications?: () => void;
   unreadNotifCount?: number;
+  onMessages?: () => void;
+  unreadMessageCount?: number;
   userCoords?: { latitude: number; longitude: number } | null;
 };
 
@@ -813,6 +815,8 @@ export function HomescreenSection({
   onMenuOpen,
   onNotifications,
   unreadNotifCount,
+  onMessages,
+  unreadMessageCount,
   userCoords,
 }: HomescreenSectionProps) {
   const isLoggedIn = !!account;
@@ -940,6 +944,16 @@ export function HomescreenSection({
               {account.firstName.slice(0, 1).toUpperCase()}
             </div>
           ) : null}
+          <button type="button" aria-label="Messages" onClick={onMessages} className="relative flex h-9 w-9 items-center justify-center text-white/70 hover:text-white">
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+            </svg>
+            {(unreadMessageCount ?? 0) > 0 && (
+              <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[0.55rem] font-bold leading-none text-white">
+                {unreadMessageCount! > 9 ? "9+" : unreadMessageCount}
+              </span>
+            )}
+          </button>
           <button type="button" aria-label="Notifications" onClick={onNotifications} className="relative flex h-9 w-9 items-center justify-center text-white/70 hover:text-white">
             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />

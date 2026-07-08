@@ -319,7 +319,11 @@ export default function ProducerProfilePage() {
           <button
             type="button"
             className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-semibold text-white hover:bg-red-500"
-            onClick={() => router.push("/?screen=messages")}
+            onClick={() =>
+              router.push(
+                `/?screen=conversation&thread_type=producer&producer_id=${producer.id}&counterpart_name=${encodeURIComponent(displayName)}`
+              )
+            }
           >
             Message
           </button>

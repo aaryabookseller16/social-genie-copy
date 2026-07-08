@@ -1978,6 +1978,255 @@ export async function markNotificationsRead(notificationIds: number[]) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Messaging                                                           */
+/* ------------------------------------------------------------------ */
+
+export type MessageThreadType = "producer" | "user";
+
+/** Max characters allowed in a single message (mirrored by the composer's maxLength). */
+export const MAX_MESSAGE_LENGTH = 2000;
+
+function assertMessageLength(text: string) {
+  if (text.length > MAX_MESSAGE_LENGTH) {
+    throw new Error(`Message is too long (max ${MAX_MESSAGE_LENGTH} characters).`);
+  }
+}
+
+type RawProducerThread = {
+  id: number;
+  user_id: number;
+  producer_id: number;
+  producer_display_name?: string;
+  producer_profile_photo_url?: string;
+  user_unread_count?: number;
+  producer_unread_count?: number;
+  last_message_at?: number | string;
+  last_message_preview?: string;
+  status?: "request" | "active" | "archived";
+  thread_origin?: string;
+};
+
+type RawUserThread = {
+  id: number;
+  participant_one_id: number;
+  participant_two_id: number;
+  participant_one_unread?: number;
+  participant_two_unread?: number;
+  last_message_preview?: string;
+  last_message_at?: number | string;
+  status?: string;
+};
+
+export type Conversation = {
+  threadId: number;
+  threadType: MessageThreadType;
+  counterpartId: number;
+  counterpartName?: string;
+  counterpartAvatarUrl?: string;
+  lastMessagePreview?: string;
+  lastMessageAt: number;
+  unreadCount: number;
+  status?: string;
+  /**
+   * For threadType "producer" only: whether the current viewer IS the
+   * producer (business owner reading their inbox) or the consumer who
+   * messaged that producer. genie_message_threads is asymmetric — the
+   * producer replies via a different endpoint (ep_producer_reply_dev) and
+   * the counterpart is the other party, not always producer_id.
+   */
+  viewerRole?: "consumer" | "producer";
+};
+
+export type RawMessage = {
+  id: number;
+  thread_id: number;
+  sender_id: number;
+  recipient_id: number;
+  recipient_type: MessageThreadType;
+  message_text: string;
+  is_read: boolean;
+  created_at: string | number;
+};
+
+function toEpochMs(value: number | string | undefined): number {
+  if (!value) return 0;
+  if (typeof value === "number") return value;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/** Raw threads fetch — caller must merge producer_threads + user_threads (different shapes). */
+export async function fetchMessageThreads(
+  threadType: "all" | MessageThreadType = "all",
+  page = 1,
+  perPage = 20
+) {
+  return apiJson<{
+    success?: boolean;
+    producer_threads?: RawProducerThread[];
+    user_threads?: RawUserThread[];
+  }>(
+    `/api/messages/threads?page=${page}&per_page=${perPage}&thread_type=${threadType}`
+  );
+}
+
+/** Normalizes + merges both thread shapes into one sorted-by-recency list for the unified inbox UI. */
+export function mergeThreadsToConversations(
+  raw: { producer_threads?: RawProducerThread[]; user_threads?: RawUserThread[] },
+  currentUserId?: number
+): Conversation[] {
+  const fromProducer: Conversation[] = (raw.producer_threads ?? []).map((t) => {
+    // If the viewer isn't the thread's consumer (user_id), they must be the
+    // producer owner looking at their business inbox — the counterpart is
+    // then the consumer, not the producer (themselves).
+    const viewerIsProducerOwner = currentUserId !== undefined && t.user_id !== currentUserId;
+    return {
+      threadId: t.id,
+      threadType: "producer" as const,
+      counterpartId: viewerIsProducerOwner ? t.user_id : t.producer_id,
+      counterpartName: viewerIsProducerOwner ? undefined : t.producer_display_name,
+      counterpartAvatarUrl: viewerIsProducerOwner ? undefined : t.producer_profile_photo_url,
+      lastMessagePreview: t.last_message_preview,
+      lastMessageAt: toEpochMs(t.last_message_at),
+      unreadCount: (viewerIsProducerOwner ? t.producer_unread_count : t.user_unread_count) ?? 0,
+      status: t.status,
+      viewerRole: viewerIsProducerOwner ? ("producer" as const) : ("consumer" as const),
+    };
+  });
+
+  const fromUser: Conversation[] = (raw.user_threads ?? []).map((t) => {
+    const isP1 = t.participant_one_id === currentUserId;
+    return {
+      threadId: t.id,
+      threadType: "user" as const,
+      counterpartId: isP1 ? t.participant_two_id : t.participant_one_id,
+      lastMessagePreview: t.last_message_preview,
+      lastMessageAt: toEpochMs(t.last_message_at),
+      unreadCount: (isP1 ? t.participant_one_unread : t.participant_two_unread) ?? 0,
+      status: t.status,
+    };
+  });
+
+  return [...fromProducer, ...fromUser].sort((a, b) => b.lastMessageAt - a.lastMessageAt);
+}
+
+/** No dedicated unread-count endpoint exists; derive it from the inbox fetch. */
+export async function fetchUnreadMessageCount(currentUserId?: number) {
+  const raw = await fetchMessageThreads("all", 1, 100);
+  const conversations = mergeThreadsToConversations(raw, currentUserId);
+  return conversations.reduce((sum, c) => sum + c.unreadCount, 0);
+}
+
+/** Generic dispatcher so future entry points (vendor/consumer profiles) are a one-line wire-up. */
+export async function sendMessage(input: {
+  recipientId: number;
+  recipientType: MessageThreadType;
+  text: string;
+}) {
+  if (input.recipientType === "producer") {
+    return sendMessageToProducer(input.recipientId, input.text);
+  }
+  return sendMessageToUser(input.recipientId, input.text);
+}
+
+export async function sendMessageToProducer(producerId: number, text: string) {
+  assertMessageLength(text);
+  return apiJson<{ success: boolean; message: RawMessage; thread_id: number; is_new_thread?: boolean }>(
+    "/api/messages/producer",
+    {
+      method: "POST",
+      body: JSON.stringify({ recipient_id: producerId, recipient_type: "producer", message_text: text }),
+    }
+  );
+}
+
+export async function sendMessageToUser(recipientUserId: number, text: string) {
+  assertMessageLength(text);
+  return apiJson<{ success: boolean; message: RawMessage; thread_id: number; is_new_thread: boolean }>(
+    "/api/messages/user",
+    {
+      method: "POST",
+      body: JSON.stringify({ recipient_id: recipientUserId, message_text: text }),
+    }
+  );
+}
+
+/** The producer-owner side of a business thread replies here — a different
+ * endpoint than sendMessageToProducer, since the producer isn't "messaging
+ * a producer" (themselves), they're replying within an existing thread. */
+export async function replyAsProducer(threadId: number, text: string) {
+  assertMessageLength(text);
+  return apiJson<{ success: boolean; message: RawMessage; thread_id: number }>(
+    "/api/messages/producer-reply",
+    {
+      method: "POST",
+      body: JSON.stringify({ thread_id: threadId, message_text: text }),
+    }
+  );
+}
+
+/** Zeroes the caller's own unread counter for a thread (fire-and-forget from the UI). */
+export async function markThreadRead(threadType: MessageThreadType, threadId: number) {
+  return apiJson<{ success: boolean }>("/api/messages/mark-read", {
+    method: "POST",
+    body: JSON.stringify({ thread_id: threadId, thread_type: threadType }),
+  });
+}
+
+export async function fetchThreadMessages(
+  threadType: MessageThreadType,
+  threadId: number,
+  page = 1,
+  perPage = 30
+) {
+  const path = threadType === "producer" ? "/api/messages/producer-thread" : "/api/messages/user-thread";
+  return apiJson<{
+    success?: boolean;
+    thread?: Record<string, unknown>;
+    total?: number;
+    page?: number;
+    per_page?: number;
+    messages?: RawMessage[];
+  }>(`${path}?thread_id=${threadId}&page=${page}&per_page=${perPage}`);
+}
+
+export async function blockUser(userId: number) {
+  return apiJson<{ success: boolean }>("/api/messages/block", {
+    method: "POST",
+    body: JSON.stringify({ blocked_user_id: userId }),
+  });
+}
+
+export async function unblockUser(userId: number) {
+  return apiJson<{ success: boolean }>("/api/messages/unblock", {
+    method: "POST",
+    body: JSON.stringify({ blocked_user_id: userId }),
+  });
+}
+
+export async function fetchBlockedUsers() {
+  return apiJson<{ success?: boolean; blocked_user_ids?: number[]; count?: number }>(
+    "/api/messages/blocked"
+  );
+}
+
+export async function reportUserProfile(payload: {
+  userId: number;
+  reason: "spam" | "inappropriate" | "false_info" | "harassment" | "hate_speech" | "other";
+  details?: string;
+}) {
+  return apiJson<{ success: boolean }>("/api/messages/report", {
+    method: "POST",
+    body: JSON.stringify({
+      content_type: "profile",
+      content_id: payload.userId,
+      report_reason: payload.reason,
+      report_details: payload.details,
+    }),
+  });
+}
+
+/* ------------------------------------------------------------------ */
 /*  Homescreen Feed                                                     */
 /* ------------------------------------------------------------------ */
 
