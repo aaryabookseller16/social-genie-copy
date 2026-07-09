@@ -51,3 +51,13 @@ codebase-reference.md
 MESSAGING_HANDOFF.md
 FEATURE_STATUS.md
 CLIENT_SPEC_GAP_ANALYSIS.md
+
+# Xano workspace export (may contain schema/credentials)
+database.xs
+**/database.xs
+
+# session handoff notes (working docs, never committed)
+docs/handoff/
+*_HANDOFF.md
+*-handoff.md
+HANDOFF_*.md
