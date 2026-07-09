@@ -3,7 +3,6 @@ import { type GenieVenue } from "./genieTypes";
 import {
   clearConsumerSession,
   readAuthToken,
-  readConsumerAccount,
   writeAuthToken,
   writeConsumerAccount,
   writeSavedVenueIds,
@@ -2545,12 +2544,10 @@ export async function checkOutOfVenue(venueId: number) {
 }
 
 export async function fetchVenueCheckins(venueId: number) {
-  // Pass the caller's own id so the route handler can compute
-  // `user_is_checked_in` server-side rather than shipping the raw
-  // per-user checkins list (which contains other users' ids) to the browser.
-  const ownUserId = readConsumerAccount()?.id;
-  const qs = ownUserId ? `&user_id=${ownUserId}` : "";
+  // The route handler resolves "is this user checked in" from the caller's
+  // own auth token server-side — no user id needs to (or should) be sent
+  // from here.
   return apiJson<VenueCheckinsResult>(
-    `/api/genie/venue-checkins?venue_id=${venueId}${qs}`
+    `/api/genie/venue-checkins?venue_id=${venueId}`
   );
 }

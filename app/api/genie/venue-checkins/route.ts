@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { xanoFetch, extractBearerToken, toClientError } from "@/app/lib/server/xanoProxy";
+import { xanoFetch, xanoAuthFetch, extractBearerToken, toClientError } from "@/app/lib/server/xanoProxy";
 
 type XanoCheckinRow = { user_id?: number };
 type XanoVenueCheckinsResponse = {
@@ -10,13 +10,14 @@ type XanoVenueCheckinsResponse = {
 };
 
 /**
- * GET /api/genie/venue-checkins?venue_id=&user_id=
+ * GET /api/genie/venue-checkins?venue_id=
  * Proxies to genie/get-venue-checkins-dev — requires auth.
  *
  * Xano's response includes the raw per-user checkin rows (each with a
  * user_id), which would leak other users' identities to the browser if
  * forwarded as-is. We only need "is *this* user checked in" — so we
- * resolve that boolean server-side against the caller-supplied user_id
+ * resolve the caller's own id from their auth token (never from client
+ * input, which would let anyone probe another user's presence at a venue)
  * and strip the row list before responding.
  */
 export async function GET(request: NextRequest) {
@@ -30,17 +31,16 @@ export async function GET(request: NextRequest) {
     if (!venueId || Number.isNaN(Number(venueId))) {
       return NextResponse.json({ error: "venue_id is required" }, { status: 400 });
     }
-    const userId = request.nextUrl.searchParams.get("user_id");
 
-    const result = await xanoFetch<XanoVenueCheckinsResponse>(
-      "genie/get-venue-checkins-dev",
-      { params: { venue_id: venueId }, authToken }
-    );
+    const [result, me] = await Promise.all([
+      xanoFetch<XanoVenueCheckinsResponse>("genie/get-venue-checkins-dev", {
+        params: { venue_id: venueId },
+        authToken,
+      }),
+      xanoAuthFetch<{ id: number }>("auth/me", { authToken }),
+    ]);
 
-    const userIdNum = userId ? Number(userId) : null;
-    const userIsCheckedIn =
-      userIdNum != null &&
-      (result.checkins ?? []).some((row) => row.user_id === userIdNum);
+    const userIsCheckedIn = (result.checkins ?? []).some((row) => row.user_id === me.id);
 
     return NextResponse.json({
       success: result.success,
