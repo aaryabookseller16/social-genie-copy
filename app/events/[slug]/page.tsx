@@ -82,6 +82,9 @@ interface SocialEvent {
   public_slug: string;
   status: string;
   rsvp_count?: number;
+  going_count?: number;
+  interested_count?: number;
+  user_rsvp_status?: "going" | "interested" | "saved" | null;
   view_count?: number;
   is_free?: boolean;
   is_sold_out?: boolean;

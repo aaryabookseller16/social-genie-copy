@@ -24,9 +24,13 @@
  *   using the same data shape.
  */
  
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
+import { fetchEventDetail } from "@/app/lib/publicApiClient";
+import { readAuthToken } from "@/app/lib/localState";
+import { useEventRsvp, type UserRsvpStatus } from "@/app/lib/useEventRsvp";
  
 // ─── Types (mirror server types) ─────────────────────────────────────────────
  
@@ -80,6 +84,9 @@ interface SocialEvent {
   public_slug: string;
   status: string;
   rsvp_count?: number;
+  going_count?: number;
+  interested_count?: number;
+  user_rsvp_status?: "going" | "interested" | "saved" | null;
   view_count?: number;
   is_free?: boolean;
   is_sold_out?: boolean;
@@ -176,9 +183,32 @@ export function EventDetailClient({
   slug,
 }: EventDetailClientProps) {
   const { event, venue, ticket_cta, ride_cta, reservation_cta } = data;
- 
+  const router = useRouter();
+
   // Track whether the user has tapped "Get Tickets" (optimistic sold-out UX)
   const [ticketTapped, setTicketTapped] = useState(false);
+
+  // This page is server-rendered with no auth context (it's a public,
+  // shareable microsite), so `event.user_rsvp_status` is never populated by
+  // the SSR fetch. If the visitor happens to be logged in on this device,
+  // fetch the authenticated event-detail view once on mount to learn their
+  // own RSVP state — same event, same endpoint the in-app screen uses.
+  const [authRsvpStatus, setAuthRsvpStatus] = useState<UserRsvpStatus>(null);
+  useEffect(() => {
+    if (!readAuthToken()) return;
+    fetchEventDetail(event.id)
+      .then((d) => setAuthRsvpStatus(d.event?.user_rsvp_status ?? null))
+      .catch(() => {});
+  }, [event.id]);
+
+  const rsvp = useEventRsvp(
+    event.id,
+    authRsvpStatus,
+    event.going_count ?? 0,
+    event.interested_count ?? 0,
+    "event-microsite",
+    () => router.push(`/?screen=login&redirect=/events/${slug}`)
+  );
  
   // Share sheet
   const handleShare = useCallback(async () => {
@@ -306,17 +336,45 @@ export function EventDetailClient({
           ) : null}
  
           {/* Social proof */}
-          {(event.rsvp_count ?? 0) > 0 ? (
+          {rsvp.goingCount > 0 ? (
             <div className="flex items-center gap-2 text-[0.85rem] text-gray-500">
               <svg viewBox="0 0 24 24" className="h-4 w-4 flex-none text-red-400" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
                 <path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
               </svg>
               <span>
-                <strong className="font-semibold text-gray-900">{event.rsvp_count}</strong> people going
+                <strong className="font-semibold text-gray-900">{rsvp.goingCount}</strong> people going
               </span>
             </div>
           ) : null}
+        </div>
+
+        {/* ── GOING / INTERESTED ─────────────────────────────────────── */}
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            disabled={rsvp.busy}
+            onClick={() => rsvp.setRsvp("going")}
+            className={`rounded-[16px] border px-4 py-3 text-center text-[0.85rem] font-semibold transition disabled:pointer-events-none disabled:opacity-60 ${
+              rsvp.status === "going"
+                ? "border-red-600 bg-red-600 text-white"
+                : "border-gray-200 bg-white text-gray-700 hover:border-red-300"
+            }`}
+          >
+            {rsvp.status === "going" ? "✓ Going" : "Going"}
+          </button>
+          <button
+            type="button"
+            disabled={rsvp.busy}
+            onClick={() => rsvp.setRsvp("interested")}
+            className={`rounded-[16px] border px-4 py-3 text-center text-[0.85rem] font-semibold transition disabled:pointer-events-none disabled:opacity-60 ${
+              rsvp.status === "interested"
+                ? "border-red-600 bg-red-600 text-white"
+                : "border-gray-200 bg-white text-gray-700 hover:border-red-300"
+            }`}
+          >
+            {rsvp.status === "interested" ? "✓ Interested" : "Interested"}
+          </button>
         </div>
  
         {/* ── TRANSACTION CTAs ─────────────────────────────────────────── */}

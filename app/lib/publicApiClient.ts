@@ -3,6 +3,7 @@ import { type GenieVenue } from "./genieTypes";
 import {
   clearConsumerSession,
   readAuthToken,
+  readConsumerAccount,
   writeAuthToken,
   writeConsumerAccount,
   writeSavedVenueIds,
@@ -1707,6 +1708,7 @@ export type ProducerEvent = {
   age_requirement?: string;
   rsvp_limit?: number;
   rsvp_count?: number;
+  going_count?: number;
   created_at?: number;
 };
 
@@ -2436,34 +2438,119 @@ export type EventDetailMiniEvent = {
   [key: string]: unknown;
 };
 
+// Mirrors the actual (nested) shape /api/genie/event-detail returns from Xano's
+// ep_get_event_detail_dev — { success, event, venue, related_events, related_count }.
+// Per-event fields (title, going_count, user_rsvp_status, ...) live under `event`,
+// not at the top level; this used to be declared flat, which is how the
+// user_rsvp_status/going_count merge bug in EventDetailSection went unnoticed.
 export type EventDetailResponse = {
-  id: number;
-  title: string;
-  cover_image_url?: string;
-  event_date?: string;
-  start_time?: string;
-  end_time?: string;
-  venue_name?: string;
-  venue_address?: string;
-  description?: string;
-  category?: string;
-  ticket_url?: string;
-  is_free?: boolean;
-  ticket_price_min?: number;
-  public_slug?: string;
-  going_count?: number;
-  is_on_fire?: boolean;
-  producer?: EventDetailProducer;
-  offer_type?: string;
-  offer_title?: string;
-  offer_description?: string;
+  success?: boolean;
+  event: {
+    id: number;
+    title: string;
+    cover_image_url?: string;
+    event_date?: string;
+    start_time?: string;
+    end_time?: string;
+    venue_name?: string;
+    venue_address?: string;
+    description?: string;
+    category?: string;
+    ticket_url?: string;
+    is_free?: boolean;
+    ticket_price_min?: number;
+    public_slug?: string;
+    going_count?: number;
+    interested_count?: number;
+    user_rsvp_status?: "going" | "interested" | "saved" | null;
+    is_on_fire?: boolean;
+    producer?: EventDetailProducer;
+    offer_type?: string;
+    offer_title?: string;
+    offer_description?: string;
+    [key: string]: unknown;
+  };
+  venue?: Record<string, unknown> | null;
   related_events?: EventDetailMiniEvent[];
-  venue_events?: EventDetailMiniEvent[];
+  related_count?: number;
   [key: string]: unknown;
 };
 
 export async function fetchEventDetail(eventId: number): Promise<EventDetailResponse> {
   return apiJson<EventDetailResponse>(
     `/api/genie/event-detail?event_id=${eventId}`
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Event RSVP (Going / Interested)                                    */
+/* ------------------------------------------------------------------ */
+
+export type RsvpStatus = "going" | "interested" | "saved" | "removed";
+
+export type RsvpEventResult = {
+  success: boolean;
+  message: string;
+  rsvp: unknown;
+};
+
+export async function rsvpToEvent(
+  eventId: number,
+  status: RsvpStatus,
+  source = "event-detail"
+) {
+  return apiJson<RsvpEventResult>("/api/genie/rsvp-event", {
+    method: "POST",
+    body: JSON.stringify({ event_id: eventId, status, source }),
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Venue Check-in                                                      */
+/* ------------------------------------------------------------------ */
+
+export type CheckinResult = {
+  success: boolean;
+  checkin?: { id: number; venue_id: number; checked_in_at: string; expires_at: number } | null;
+  already_checked_in?: boolean;
+  social_energy_score?: number;
+  social_energy_state?: string;
+};
+
+export type CheckoutResult = {
+  success: boolean;
+  checked_out: boolean;
+  venue_id: number;
+};
+
+export type VenueCheckinsResult = {
+  success: boolean;
+  venue_id: number;
+  active_checkins: number;
+  user_is_checked_in: boolean;
+};
+
+export async function checkInToVenue(venueId: number) {
+  return apiJson<CheckinResult>("/api/genie/checkin", {
+    method: "POST",
+    body: JSON.stringify({ venue_id: venueId }),
+  });
+}
+
+export async function checkOutOfVenue(venueId: number) {
+  return apiJson<CheckoutResult>("/api/genie/checkout", {
+    method: "POST",
+    body: JSON.stringify({ venue_id: venueId }),
+  });
+}
+
+export async function fetchVenueCheckins(venueId: number) {
+  // Pass the caller's own id so the route handler can compute
+  // `user_is_checked_in` server-side rather than shipping the raw
+  // per-user checkins list (which contains other users' ids) to the browser.
+  const ownUserId = readConsumerAccount()?.id;
+  const qs = ownUserId ? `&user_id=${ownUserId}` : "";
+  return apiJson<VenueCheckinsResult>(
+    `/api/genie/venue-checkins?venue_id=${venueId}${qs}`
   );
 }

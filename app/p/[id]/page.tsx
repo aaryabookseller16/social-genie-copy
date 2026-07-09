@@ -56,7 +56,10 @@ function NotFoundScreen() {
 }
 
 function EventCard({ ev, initials, displayName }: { ev: ProducerEvent; initials: string; displayName: string }) {
-  const goingCount = ev.rsvp_count ?? 0;
+  // `going_count` reflects actual attendees; `rsvp_count` counts RSVP
+  // actions (including cancellations) and only ever increases, so it's
+  // kept only as a fallback for events written before going_count existed.
+  const goingCount = ev.going_count ?? ev.rsvp_count ?? 0;
 
   return (
     <div className="overflow-hidden rounded-[22px] border border-white/10 bg-black/30">
