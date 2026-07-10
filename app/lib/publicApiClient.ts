@@ -1943,6 +1943,20 @@ export async function fetchProducerPublicProfile(producerId: number) {
   );
 }
 
+export type UserBasicProfile = {
+  success: boolean;
+  user_id: number;
+  display_name: string;
+  avatar_url: string;
+};
+
+/** Minimal public lookup for a plain genie_user (name + avatar only) — used
+ * to resolve a real customer name in the producer's message inbox instead
+ * of the generic "Customer" placeholder. */
+export async function fetchUserBasicProfile(userId: number) {
+  return apiJson<UserBasicProfile>(`/api/user/basic-profile?user_id=${userId}`);
+}
+
 /* ------------------------------------------------------------------ */
 /*  Notifications                                                       */
 /* ------------------------------------------------------------------ */

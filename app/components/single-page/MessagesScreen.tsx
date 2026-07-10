@@ -6,6 +6,7 @@ import { ScrollUnlock } from "@/app/p/[id]/ScrollUnlock";
 import {
   fetchMessageThreads,
   fetchProducerPublicProfile,
+  fetchUserBasicProfile,
   mergeThreadsToConversations,
   type Conversation,
   type MessageThreadType,
@@ -92,24 +93,60 @@ export function MessagesScreen({ account, onBack, onOpenConversation }: Props) {
             .map((c) => c.counterpartId)
         )
       );
-      if (producerIds.length === 0) return;
 
-      const profiles = await Promise.all(
-        producerIds.map((id) => fetchProducerPublicProfile(id).catch(() => null))
+      // Symmetric case: we're the producer owner looking at a customer's
+      // thread. The threads list never includes the customer's name either
+      // — it only gives us their raw user id — so it falls back to a
+      // generic "Customer" placeholder unless we look it up here.
+      const customerIds = Array.from(
+        new Set(
+          merged
+            .filter(
+              (c) =>
+                c.threadType === "producer" &&
+                c.viewerRole === "producer" &&
+                !c.counterpartName
+            )
+            .map((c) => c.counterpartId)
+        )
       );
-      const nameById = new Map<number, { name?: string; avatar?: string }>();
-      profiles.forEach((p, i) => {
+
+      if (producerIds.length === 0 && customerIds.length === 0) return;
+
+      const [producerProfiles, customerProfiles] = await Promise.all([
+        Promise.all(producerIds.map((id) => fetchProducerPublicProfile(id).catch(() => null))),
+        Promise.all(customerIds.map((id) => fetchUserBasicProfile(id).catch(() => null))),
+      ]);
+
+      // Two separate maps: producer_id and user_id are different id spaces
+      // and can collide numerically, so they must never share one lookup.
+      const producerNameById = new Map<number, { name?: string; avatar?: string }>();
+      producerProfiles.forEach((p, i) => {
         if (p?.producer) {
-          nameById.set(producerIds[i], {
+          producerNameById.set(producerIds[i], {
             name: p.producer.display_name,
             avatar: p.producer.profile_photo_url,
           });
         }
       });
+
+      const customerNameById = new Map<number, { name?: string; avatar?: string }>();
+      customerProfiles.forEach((p, i) => {
+        if (p?.display_name) {
+          customerNameById.set(customerIds[i], {
+            name: p.display_name,
+            avatar: p.avatar_url,
+          });
+        }
+      });
+
       setConversations((prev) =>
         prev.map((c) => {
           if (c.threadType !== "producer") return c;
-          const info = nameById.get(c.counterpartId);
+          const info =
+            c.viewerRole === "producer"
+              ? customerNameById.get(c.counterpartId)
+              : producerNameById.get(c.counterpartId);
           if (!info) return c;
           return {
             ...c,
