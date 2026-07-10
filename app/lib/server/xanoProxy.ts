@@ -43,7 +43,7 @@ function readXanoErrorMessage(payload: unknown): string | null {
   }
 
   const record = payload as Record<string, unknown>;
-  for (const key of ["message", "Message", "error", "detail"]) {
+  for (const key of ["message", "Message", "error", "detail", "payload"]) {
     const value = record[key];
     if (typeof value === "string" && value.trim()) {
       return value;
@@ -58,6 +58,29 @@ function readXanoErrorMessage(payload: unknown): string | null {
   }
 
   return null;
+}
+
+/**
+ * Some Xano functions `throw { name = ..., value = ... }` without an explicit
+ * response-code configured on the throw block, so Xano defaults to HTTP 200
+ * even though the request failed. The body still identifies itself as an
+ * error: `{ statement: "Throw Error", payload: "<message>" }`. Without this
+ * check, baseFetch would treat that 200 as success and callers would never
+ * see the failure (confirmed live: a failed RSVP silently looked identical
+ * to a successful one). Status is inferred from the message text since the
+ * original throw `name` isn't present in this response shape.
+ */
+function isXanoThrowError(payload: unknown): payload is { statement: string; payload: string } {
+  if (!payload || typeof payload !== "object") return false;
+  const record = payload as Record<string, unknown>;
+  return record.statement === "Throw Error" && typeof record.payload === "string";
+}
+
+function inferThrowStatus(message: string): number {
+  const lower = message.toLowerCase();
+  if (lower.includes("already")) return 409;
+  if (lower.includes("not found") || lower.includes("no active")) return 404;
+  return 400;
 }
 
 async function baseFetch<T = unknown>(
@@ -86,6 +109,9 @@ async function baseFetch<T = unknown>(
   const json = await res.json().catch(() => null);
   if (!res.ok) {
     throw new XanoError(res.status, json);
+  }
+  if (isXanoThrowError(json)) {
+    throw new XanoError(inferThrowStatus(json.payload), json);
   }
   return json as T;
 }

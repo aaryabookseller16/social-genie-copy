@@ -3,6 +3,7 @@ const SIGNUP_PROMPT_STORAGE_KEY = "genie_signup_prompt_v1";
 export type SignupPromptTriggerReason =
   | "venue_tap"
   | "save_attempt"
+  | "checkin_attempt"
   | "repeated_browse"
   | "second_query"
   | "shared_venue_tap";
