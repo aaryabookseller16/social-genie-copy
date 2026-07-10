@@ -124,7 +124,10 @@ export function ConversationScreen({
   // Whether the user is currently scrolled to (near) the bottom — governs
   // whether an incoming message should auto-scroll or leave them where they are.
   const nearBottomRef = useRef(true);
-  // Oldest page number loaded so far (page 1 = newest; higher = older).
+  // Lowest page number currently loaded. The backend always sorts messages
+  // oldest-first and paginates from page 1 = the oldest window (there's no
+  // "give me the newest" sort option), so page 1 is the START of the thread,
+  // not the end — loadOlder() walks this DOWN toward 1, not up.
   const oldestPageRef = useRef(1);
   // When set, a load-older just prepended rows: hold the pre-prepend scrollHeight
   // so the layout effect can restore the visual position (no jump).
@@ -150,61 +153,69 @@ export function ConversationScreen({
   }, [onThreadCreated]);
 
   const loadMessages = useCallback(
-    (isInitial: boolean) => {
+    async (isInitial: boolean) => {
       if (threadId === null) return;
       if (isInitial) setLoading(true);
-      // Always fetch page 1 (the newest). Older pages are pulled in separately
-      // by loadOlder() and preserved via the id-keyed merge.
-      fetchThreadMessages(threadType, threadId, 1, PER_PAGE)
-        .then((raw) => {
-          const incoming = raw.messages ?? [];
-          if (isInitial) {
-            oldestPageRef.current = 1;
-            setHasMore(incoming.length >= PER_PAGE);
-            shouldScrollBottomRef.current = true;
-            setMessages(mergeMessages([], incoming));
-            markReadSafe();
-          } else {
-            // Don't merge poll results while a load-older is in flight — the
-            // prepend scroll-offset math would be thrown off by a concurrent
-            // height change. The next poll (or visibility refresh) catches up.
-            if (loadingOlderRef.current) return;
-            setMessages((prev) => {
-              const merged = mergeMessages(prev, incoming);
-              if (merged.length > prev.length) {
-                const newest = merged[merged.length - 1];
-                const isIncoming = newest && newest.sender_id !== account?.id;
-                if (isIncoming) {
-                  markReadSafe();
-                  if (nearBottomRef.current) shouldScrollBottomRef.current = true;
-                }
+      try {
+        // The backend sorts oldest-first and paginates from page 1 = the
+        // oldest window, so page 1 stops holding the newest messages once a
+        // thread grows past PER_PAGE. Learn the total first, then fetch
+        // whichever page currently holds the tail of the conversation.
+        const first = await fetchThreadMessages(threadType, threadId, 1, PER_PAGE);
+        const total = first.total ?? (first.messages ?? []).length;
+        const lastPage = Math.max(1, Math.ceil(total / PER_PAGE));
+        const raw =
+          lastPage === 1 ? first : await fetchThreadMessages(threadType, threadId, lastPage, PER_PAGE);
+        const incoming = raw.messages ?? [];
+
+        if (isInitial) {
+          oldestPageRef.current = lastPage;
+          setHasMore(lastPage > 1);
+          shouldScrollBottomRef.current = true;
+          setMessages(mergeMessages([], incoming));
+          markReadSafe();
+        } else {
+          // Don't merge poll results while a load-older is in flight — the
+          // prepend scroll-offset math would be thrown off by a concurrent
+          // height change. The next poll (or visibility refresh) catches up.
+          if (loadingOlderRef.current) return;
+          setMessages((prev) => {
+            const merged = mergeMessages(prev, incoming);
+            if (merged.length > prev.length) {
+              const newest = merged[merged.length - 1];
+              const isIncoming = newest && newest.sender_id !== account?.id;
+              if (isIncoming) {
+                markReadSafe();
+                if (nearBottomRef.current) shouldScrollBottomRef.current = true;
               }
-              return merged;
-            });
-          }
-        })
-        .catch(() => {
-          if (isInitial) setError("This conversation could not be loaded.");
-        })
-        .finally(() => {
-          if (isInitial) setLoading(false);
-        });
+            }
+            return merged;
+          });
+        }
+      } catch {
+        if (isInitial) setError("This conversation could not be loaded.");
+      } finally {
+        if (isInitial) setLoading(false);
+      }
     },
     [threadId, threadType, account?.id, markReadSafe]
   );
 
   const loadOlder = useCallback(() => {
     if (threadId === null || !hasMore || loadingOlder) return;
+    if (oldestPageRef.current <= 1) return;
     const container = scrollRef.current;
     pendingOlderAdjustRef.current = container ? container.scrollHeight : null;
     loadingOlderRef.current = true;
     setLoadingOlder(true);
-    const nextPage = oldestPageRef.current + 1;
-    fetchThreadMessages(threadType, threadId, nextPage, PER_PAGE)
+    // Page 1 is the oldest window (ascending sort), so "older" means walking
+    // the page number DOWN, not up.
+    const prevPage = oldestPageRef.current - 1;
+    fetchThreadMessages(threadType, threadId, prevPage, PER_PAGE)
       .then((raw) => {
         const incoming = raw.messages ?? [];
-        oldestPageRef.current = nextPage;
-        if (incoming.length < PER_PAGE) setHasMore(false);
+        oldestPageRef.current = prevPage;
+        if (prevPage <= 1) setHasMore(false);
         if (incoming.length > 0) {
           setMessages((prev) => mergeMessages(prev, incoming));
         } else {
