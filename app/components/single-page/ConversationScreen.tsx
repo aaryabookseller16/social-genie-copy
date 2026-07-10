@@ -32,7 +32,7 @@ function toMs(value: string | number): number {
 }
 
 /** A server message, optionally with client-only optimistic-send state. */
-type DisplayMessage = RawMessage & { pending?: boolean; failed?: boolean };
+type DisplayMessage = RawMessage & { pending?: boolean; failed?: boolean; blocked?: boolean };
 
 /** Union by id, sorted oldest→newest for top-to-bottom display. */
 function mergeMessages<T extends RawMessage>(existing: T[], incoming: T[]): T[] {
@@ -109,6 +109,10 @@ export function ConversationScreen({
   const [composerText, setComposerText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isBlocked, setIsBlocked] = useState(false);
+  // Set when the backend rejects a send because the OTHER person has blocked
+  // us (as opposed to `isBlocked`, which is us having blocked them). Distinct
+  // from a generic network/server failure — retrying will never succeed.
+  const [blockedByOther, setBlockedByOther] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showReportPicker, setShowReportPicker] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -301,6 +305,13 @@ export function ConversationScreen({
       .catch(() => {});
   }, [counterpartId]);
 
+  // This component instance is reused across different conversations (no
+  // `key` prop from the parent), so per-conversation client state must be
+  // reset explicitly when the counterpart changes.
+  useEffect(() => {
+    setBlockedByOther(false);
+  }, [counterpartId]);
+
   // Auto-dismiss the transient action banner ("Blocked", "Report submitted", …).
   useEffect(() => {
     if (!actionMessage) return;
@@ -384,13 +395,26 @@ export function ConversationScreen({
         onThreadCreated(result.thread_id, viewerRole);
       }
     } catch (err) {
-      // Leave the bubble in place but mark it failed; restore the text so the
-      // user can immediately retry.
+      const message = err instanceof Error ? err.message : "Could not send message.";
+      // The backend rejects sends to someone who's blocked us (or who we've
+      // blocked) with this exact text — see app/api/messages/*/route.ts and
+      // the Xano ep_send_*/ep_producer_reply_dev block checks. Unlike a
+      // network hiccup, retrying this will never succeed, so treat it
+      // differently: hide the composer instead of inviting a retry.
+      const isBlockRejection = message.toLowerCase().includes("cannot send messages to this user");
       setMessages((prev) =>
-        prev.map((m) => (m.id === tempId ? { ...m, pending: false, failed: true } : m))
+        prev.map((m) =>
+          m.id === tempId ? { ...m, pending: false, failed: true, blocked: isBlockRejection } : m
+        )
       );
-      setComposerText((cur) => cur || text);
-      setError(err instanceof Error ? err.message : "Could not send message.");
+      if (isBlockRejection) {
+        setBlockedByOther(true);
+      } else {
+        // Leave the bubble in place but mark it failed; restore the text so
+        // the user can immediately retry.
+        setComposerText((cur) => cur || text);
+      }
+      setError(message);
     } finally {
       setSending(false);
     }
@@ -597,7 +621,9 @@ export function ConversationScreen({
                         }`}
                       >
                         {message.failed ? (
-                          <span className="text-red-300">Failed — tap Send to retry</span>
+                          <span className="text-red-300">
+                            {message.blocked ? "Not delivered" : "Failed — tap Send to retry"}
+                          </span>
                         ) : message.pending ? (
                           <span>Sending…</span>
                         ) : (
@@ -621,6 +647,10 @@ export function ConversationScreen({
           {isBlocked ? (
             <p className="py-2 text-center text-[0.78rem] text-white/40">
               You&apos;ve blocked this person. Unblock to send messages.
+            </p>
+          ) : blockedByOther ? (
+            <p className="py-2 text-center text-[0.78rem] text-white/40">
+              You can&apos;t send messages to this person right now.
             </p>
           ) : (
             <form
