@@ -1048,6 +1048,7 @@ export async function updateVendorVenue(payload: {
   reservation_url?: string;
   reservation_platform?: string;
   hours_text?: string;
+  is_open_now?: boolean;
   image_primary_url?: string;
   address?: string;
   city?: string;
