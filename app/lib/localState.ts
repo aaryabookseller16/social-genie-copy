@@ -11,6 +11,8 @@ export type ConsumerAccount = {
   lastName: string;
   email: string;
   phone?: string;
+  displayName?: string;
+  avatarUrl?: string;
   membership: ConsumerMembership;
   subscriptionStatus?: ConsumerSubscriptionStatus;
   vendorId?: number | null;

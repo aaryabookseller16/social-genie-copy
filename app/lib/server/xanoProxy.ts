@@ -87,7 +87,22 @@ async function baseFetch<T = unknown>(
   if (!res.ok) {
     throw new XanoError(res.status, json);
   }
+  if (isXanoThrow(json)) {
+    throw new XanoError(400, { message: json.payload });
+  }
   return json as T;
+}
+
+/**
+ * A XanoScript `throw` comes back as HTTP 200 with this envelope rather than a
+ * 4xx, so `res.ok` alone would let a rejected request look like a success.
+ */
+function isXanoThrow(payload: unknown): payload is { payload: string } {
+  return (
+    !!payload &&
+    typeof payload === "object" &&
+    (payload as Record<string, unknown>).statement === "Throw Error"
+  );
 }
 
 export async function xanoFetch<T = unknown>(

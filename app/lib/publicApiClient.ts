@@ -26,6 +26,8 @@ export type PublicApiUser = {
   last_name: string;
   email: string;
   phone?: string | null;
+  display_name?: string | null;
+  avatar_url?: string | null;
   membership: "free" | "vibee";
   subscription_status?: ConsumerSubscriptionStatus;
   vendor_id?: number | null;
@@ -142,7 +144,7 @@ async function readErrorMessage(response: Response) {
   }
 }
 
-async function apiJson<T>(path: string, init: JsonInit = {}) {
+export async function apiJson<T>(path: string, init: JsonInit = {}) {
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json");
 
@@ -180,6 +182,8 @@ export function toConsumerAccount(
     lastName: user.last_name,
     email: user.email,
     phone: user.phone ?? undefined,
+    displayName: user.display_name ?? undefined,
+    avatarUrl: user.avatar_url ?? undefined,
     membership: status === "active" ? "vibee" : user.membership,
     subscriptionStatus: status,
     vendorId: user.vendor_id ?? null,
@@ -288,11 +292,16 @@ export async function fetchCurrentUser() {
   return apiJson<{ user: PublicApiUser }>("/api/auth/me");
 }
 
+/**
+ * `email` is intentionally absent — it is the identity the magic-link login
+ * resolves against, so it cannot be changed without a re-verification flow.
+ */
 export async function updateUserProfile(payload: {
   first_name?: string;
   last_name?: string;
-  email?: string;
   phone?: string;
+  display_name?: string;
+  avatar_url?: string;
 }) {
   return apiJson<{ user: PublicApiUser }>("/api/auth/update-profile", {
     method: "POST",
@@ -1029,6 +1038,36 @@ export type VendorVenueDetails = {
   venue: VenueRecord | null;
 };
 
+export type VenueImage = {
+  id: number;
+  venue_id: number;
+  image_url: string;
+  image_type?: "primary" | "fallback" | "gallery";
+  sort_order?: number;
+  source?: string;
+  is_active?: boolean;
+};
+
+type VenueImagesResponse = {
+  success: boolean;
+  venue_id: number;
+  images: VenueImage[];
+};
+
+/** Ordered venue photos for the signed-in vendor. Index 0 is the primary. */
+export async function fetchVenueImages() {
+  const { images } = await apiJson<VenueImagesResponse>("/api/vendor/venue-images");
+  return images.map((image) => image.image_url);
+}
+
+/** Replaces the whole gallery. Pass [] to remove every photo. */
+export async function saveVenueImages(images: string[]) {
+  return apiJson<VenueImagesResponse>("/api/vendor/venue-images", {
+    method: "POST",
+    body: JSON.stringify({ images }),
+  });
+}
+
 export async function fetchVendorVenue() {
   const external_user_id = readExternalUserId();
   if (!external_user_id) {
@@ -1701,6 +1740,8 @@ export type ProducerEvent = {
   venue_address?: string;
   city?: string;
   cover_image_url?: string;
+  /** Ordered gallery; index 0 is the cover. Legacy rows may return `{}` from Xano. */
+  image_urls?: string[];
   ticket_url?: string;
   ticket_price_min?: number;
   is_free?: boolean;
@@ -1716,6 +1757,8 @@ export type ProducerPost = {
   author_type?: string;
   post_text: string;
   image_url?: string;
+  /** Ordered gallery; index 0 is the primary. Legacy rows may return `{}` from Xano. */
+  image_urls?: string[];
   like_count?: number;
   comment_count?: number;
   created_at?: number;
@@ -1795,6 +1838,7 @@ export async function createProducerEvent(payload: {
   venue_address?: string;
   city?: string;
   cover_image_url?: string;
+  image_urls?: string[];
   ticket_url?: string;
   ticket_price_min?: number;
   is_free?: boolean;
@@ -1827,6 +1871,7 @@ export async function fetchProducerRsvpList(eventId: number) {
 export async function createProducerPost(payload: {
   post_text: string;
   image_url?: string;
+  image_urls?: string[];
 }) {
   return apiJson<ProducerPost>("/api/producer/post", {
     method: "POST",

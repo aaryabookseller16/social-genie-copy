@@ -20,6 +20,28 @@ export function pickVenueImage(v: any): string {
 }
 
 /**
+ * Normalizes a Xano `json` image column into a list of URLs.
+ *
+ * Xano returns an empty `json` column as `{}` rather than `[]`, and rows created
+ * before the column existed have no value at all — so callers can't assume an array.
+ */
+export function toImageList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((url): url is string => typeof url === "string" && url.trim().length > 0);
+}
+
+/**
+ * The full ordered gallery for a record that has both a cover field and a gallery
+ * array. The cover leads, and is not repeated if it already appears in the array.
+ */
+export function galleryFor(cover: string | null | undefined, images: unknown): string[] {
+  const list = toImageList(images);
+  const trimmedCover = (cover ?? "").trim();
+  if (!trimmedCover) return list;
+  return list.includes(trimmedCover) ? list : [trimmedCover, ...list];
+}
+
+/**
  * Optional: safe hostname extraction for remote images
  * (handy for debugging + next.config.js allowlists)
  */
