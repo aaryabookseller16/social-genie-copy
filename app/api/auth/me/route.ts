@@ -23,6 +23,8 @@ export async function GET(request: NextRequest) {
       last_name: string;
       email: string;
       phone?: string;
+      display_name?: string;
+      avatar_url?: string;
       verified?: boolean;
       membership_plan?: string;
       membership_active?: boolean;
@@ -37,6 +39,8 @@ export async function GET(request: NextRequest) {
         last_name: user.last_name,
         email: user.email,
         phone: user.phone ?? null,
+        display_name: user.display_name ?? null,
+        avatar_url: user.avatar_url ?? null,
         membership: user.membership_active ? "vibee" : "free",
         subscription_status: user.membership_active ? "active" : "inactive",
         vendor_id: user.vendor_id ?? null,

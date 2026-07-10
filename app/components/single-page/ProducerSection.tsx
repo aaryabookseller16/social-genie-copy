@@ -24,6 +24,9 @@ import {
   type ProducerRsvpEntry,
 } from "@/app/lib/publicApiClient";
 import { type GenieVenue } from "@/app/lib/genieTypes";
+import { galleryFor } from "@/app/lib/image";
+import ImageUploader from "@/app/components/ImageUploader";
+import ImageGallery from "@/app/components/ImageGallery";
 import { ActionButton } from "./ui";
 
 /* ------------------------------------------------------------------ */
@@ -388,7 +391,9 @@ export function ProducerSection({
   const [evFree, setEvFree] = useState(false);
   const [evTicketPrice, setEvTicketPrice] = useState("");
   const [evTicketUrl, setEvTicketUrl] = useState("");
-  const [evCoverImageUrl, setEvCoverImageUrl] = useState("");
+  /** Ordered event gallery; index 0 is the cover. Capped at 5 by Xano. */
+  const [evImageUrls, setEvImageUrls] = useState<string[]>([]);
+  const [evUploading, setEvUploading] = useState(false);
   const [evRsvpLimit, setEvRsvpLimit] = useState("");
   const [evAgeReq, setEvAgeReq] = useState("");
   const [evBusy, setEvBusy] = useState(false);
@@ -397,8 +402,10 @@ export function ProducerSection({
 
   /* create-post form state */
   const [postText, setPostText] = useState("");
-  const [postImageUrl, setPostImageUrl] = useState("");
+  /** Ordered post gallery; index 0 is the primary. Capped at 5 by Xano. */
+  const [postImageUrls, setPostImageUrls] = useState<string[]>([]);
   const [postShowImageInput, setPostShowImageInput] = useState(false);
+  const [postUploading, setPostUploading] = useState(false);
   const [postBusy, setPostBusy] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
   const [postSuccess, setPostSuccess] = useState(false);
@@ -547,7 +554,8 @@ export function ProducerSection({
     setEvFree(ev.is_free ?? false);
     setEvTicketPrice(ev.ticket_price_min !== undefined ? String(ev.ticket_price_min) : "");
     setEvTicketUrl(ev.ticket_url ?? "");
-    setEvCoverImageUrl(ev.cover_image_url ?? "");
+    setEvImageUrls(galleryFor(ev.cover_image_url, ev.image_urls));
+    setEvUploading(false);
     setEvRsvpLimit(ev.rsvp_limit !== undefined ? String(ev.rsvp_limit) : "");
     setEvAgeReq(ev.age_requirement ?? "");
     setEvError(null);
@@ -598,13 +606,15 @@ export function ProducerSection({
     setEvTitle(""); setEvCategory(""); setEvDescription(""); setEvDate("");
     setEvStartTime(""); setEvEndTime(""); setEvVenue(""); setEvCity("");
     setEvFree(false); setEvTicketPrice(""); setEvTicketUrl("");
+    setEvImageUrls([]); setEvUploading(false);
     setEvRsvpLimit(""); setEvAgeReq(""); setEvError(null);
     setStep("create-event");
   }
 
   /* ---- Open create-post (fresh) ---- */
   function openCreatePost() {
-    setPostText(""); setPostImageUrl(""); setPostShowImageInput(false);
+    setPostText(""); setPostImageUrls([]); setPostShowImageInput(false);
+    setPostUploading(false);
     setPostError(null); setPostSuccess(false);
     setStep("create-post");
   }
@@ -677,6 +687,7 @@ export function ProducerSection({
     e.preventDefault();
     if (!evTitle.trim()) { setEvError("Event title is required."); return; }
     if (!evCategory) { setEvError("Please select a category."); return; }
+    if (evUploading) { setEvError("Please wait for your photos to finish uploading."); return; }
     setEvBusy(true);
     setEvError(null);
     try {
@@ -694,7 +705,8 @@ export function ProducerSection({
         is_free: evFree,
         ticket_price_min: evTicketPrice ? Number(evTicketPrice) : undefined,
         ticket_url: evTicketUrl.trim() || undefined,
-        cover_image_url: evCoverImageUrl.trim() || undefined,
+        cover_image_url: evImageUrls[0] || undefined,
+        image_urls: evImageUrls,
         rsvp_limit: evRsvpLimit ? Number(evRsvpLimit) : undefined,
         age_requirement: evAgeReq.trim() || undefined,
         event_id: editingEventId.current ?? undefined,
@@ -719,12 +731,14 @@ export function ProducerSection({
   async function handlePostSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!postText.trim()) { setPostError("Post text is required."); return; }
+    if (postUploading) { setPostError("Please wait for your photos to finish uploading."); return; }
     setPostBusy(true);
     setPostError(null);
     try {
       const raw = await createProducerPost({
         post_text: postText.trim(),
-        image_url: postImageUrl.trim() || undefined,
+        image_url: postImageUrls[0] || undefined,
+        image_urls: postImageUrls,
       });
       // Xano returns { success: true, post: { id, post_text, ... } }
       const r = raw as unknown as Record<string, unknown>;
@@ -1146,9 +1160,17 @@ export function ProducerSection({
                   className="rounded-2xl border border-red-900/30 bg-black/30 p-4 dark:border-red-900/40 dark:bg-black/40"
                 >
                   <p className="text-sm leading-relaxed text-white/80 line-clamp-3">{p.post_text}</p>
-                  {p.image_url ? (
-                    <img src={p.image_url} alt="" className="mt-3 w-full rounded-xl object-cover" style={{ maxHeight: "160px" }} />
-                  ) : null}
+                  {(() => {
+                    const gallery = galleryFor(p.image_url, p.image_urls);
+                    return gallery.length > 0 ? (
+                      <ImageGallery
+                        images={gallery}
+                        className="mt-3 overflow-hidden rounded-xl"
+                        heightClass="h-40"
+                        showThumbnails={false}
+                      />
+                    ) : null;
+                  })()}
                   <div className="mt-2 flex items-center gap-3">
                     {p.created_at ? (
                       <span className="text-xs text-white/30">
@@ -1436,23 +1458,18 @@ export function ProducerSection({
             />
           </FormField>
 
-          <FormField label="Cover image URL">
-            <input
-              type="url"
-              value={evCoverImageUrl}
-              onChange={(e) => setEvCoverImageUrl(e.target.value)}
-              placeholder="https://… (image link)"
-              className={inputClass}
-              style={{ fontSize: "16px" }}
+          <FormField label="Photos">
+            <ImageUploader
+              mode="multi"
+              max={5}
+              folder="events"
+              value={evImageUrls}
+              onChange={setEvImageUrls}
+              onUploadingChange={setEvUploading}
             />
-            {evCoverImageUrl.trim() && (
-              <img
-                src={evCoverImageUrl.trim()}
-                alt="Cover preview"
-                className="mt-2 h-32 w-full rounded-xl object-cover"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-              />
-            )}
+            <p className="mt-1.5 text-[11px] text-gray-400 dark:text-white/40">
+              Up to 5 photos. The first one is used as the event cover.
+            </p>
           </FormField>
 
           <div className="grid grid-cols-2 gap-3">
@@ -1494,9 +1511,15 @@ export function ProducerSection({
             <ActionButton
               type="submit"
               className="flex-1"
-              disabled={evBusy}
+              disabled={evBusy || evUploading}
             >
-              {evBusy ? "Saving…" : isEdit ? "Save changes" : "Create event"}
+              {evUploading
+                ? "Uploading photos…"
+                : evBusy
+                  ? "Saving…"
+                  : isEdit
+                    ? "Save changes"
+                    : "Create event"}
             </ActionButton>
           </div>
         </form>
@@ -1512,17 +1535,19 @@ export function ProducerSection({
     const timeLine = [timeRange, formattedDate].filter(Boolean).join("  ·  ");
     const venueLine2 = [selectedEvent.venue_address, selectedEvent.city].filter(Boolean).join(", ");
     const longDesc = (selectedEvent.description ?? "").length > 180;
+    const eventGallery = galleryFor(selectedEvent.cover_image_url, selectedEvent.image_urls);
 
     return (
       <section className="pb-28">
 
         {/* ── Hero image ─────────────────────────────────────── */}
         <div className="relative -mx-4 h-60 overflow-hidden bg-gradient-to-b from-red-950 to-black">
-          {selectedEvent.cover_image_url ? (
-            <img
-              src={selectedEvent.cover_image_url}
+          {eventGallery.length > 0 ? (
+            <ImageGallery
+              images={eventGallery}
               alt={selectedEvent.title}
-              className="h-full w-full object-cover"
+              heightClass="h-60"
+              showThumbnails={false}
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center">
@@ -1531,8 +1556,8 @@ export function ProducerSection({
               </svg>
             </div>
           )}
-          {/* Bottom gradient overlay */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-black/40" />
+          {/* Bottom gradient overlay — must not swallow the gallery's arrow taps */}
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-black/40" />
 
           {/* Back button */}
           <button
@@ -1849,16 +1874,15 @@ export function ProducerSection({
               autoFocus
             />
 
-            {/* Image URL input (shown when icon tapped) */}
-            {postShowImageInput ? (
-              <input
-                type="url"
-                value={postImageUrl}
-                onChange={(e) => setPostImageUrl(e.target.value)}
-                placeholder="Paste image URL…"
-                className={inputClass}
-                style={{ fontSize: "16px" }}
-                autoFocus
+            {/* Photo picker (shown when the image icon is tapped, or once photos exist) */}
+            {postShowImageInput || postImageUrls.length > 0 ? (
+              <ImageUploader
+                mode="multi"
+                max={5}
+                folder="posts"
+                value={postImageUrls}
+                onChange={setPostImageUrls}
+                onUploadingChange={setPostUploading}
               />
             ) : null}
 
@@ -1893,10 +1917,10 @@ export function ProducerSection({
             {/* Post It button */}
             <button
               type="submit"
-              disabled={postBusy || !postText.trim()}
+              disabled={postBusy || postUploading || !postText.trim()}
               className="w-full rounded-2xl bg-gradient-to-r from-red-700 to-red-500 py-4 text-base font-semibold text-white shadow-lg transition hover:from-red-600 hover:to-red-400 disabled:opacity-50"
             >
-              {postBusy ? "Publishing…" : "Post It"}
+              {postUploading ? "Uploading photos…" : postBusy ? "Publishing…" : "Post It"}
             </button>
           </form>
         )}

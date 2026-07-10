@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { type GenieVenue } from "@/app/lib/genieTypes";
+import { galleryFor } from "@/app/lib/image";
+import ImageGallery from "@/app/components/ImageGallery";
 import {
   buildVenueTags,
   getGenieTake,
@@ -149,6 +151,8 @@ export function VenueDetailClient({ venue }: { venue: GenieVenue }) {
   }, [venue.id, venue.venue_name]);
 
   const heroImage = venue.image || "/sample-venue-1.jpeg";
+  // Vendor-uploaded gallery, cover first. Venues without one keep the single hero.
+  const gallery = galleryFor(venue.image, venue.image_urls);
 
   // Ghost pill — matches the app's secondary button style
   const pillClass =
@@ -179,16 +183,26 @@ export function VenueDetailClient({ venue }: { venue: GenieVenue }) {
 
         {/* ── HERO IMAGE — rounded card, same width as content ────────── */}
         <div className="relative h-56 w-full overflow-hidden rounded-[22px]">
-          <Image
-            src={heroImage}
-            alt={venue.venue_name}
-            fill
-            className="object-cover"
-            priority
-            sizes="(max-width: 448px) 100vw, 448px"
-          />
-          {/* Bottom gradient for name legibility */}
-          <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_40%,rgba(0,0,0,0.72)_100%)]" />
+          {gallery.length > 1 ? (
+            <ImageGallery
+              images={gallery}
+              alt={venue.venue_name}
+              heightClass="h-56"
+              showThumbnails={false}
+            />
+          ) : (
+            <Image
+              src={heroImage}
+              alt={venue.venue_name}
+              fill
+              className="object-cover"
+              priority
+              sizes="(max-width: 448px) 100vw, 448px"
+            />
+          )}
+          {/* Bottom gradient for name legibility. pointer-events-none so it does
+              not swallow the gallery's arrow taps. */}
+          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,transparent_40%,rgba(0,0,0,0.72)_100%)]" />
 
           {/* Venue name overlaid at bottom */}
           <div className="absolute inset-x-0 bottom-0 px-4 pb-3.5">

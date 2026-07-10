@@ -5,6 +5,7 @@ import {
   type RawGenieVenue,
   type RawHandleMessageResponse,
 } from "./genieTypes";
+import { toImageList } from "./image";
 
 export function getVenueImage(rawVenue: RawGenieVenue): string | null {
   const candidates = [
@@ -43,6 +44,8 @@ export function mapVenue(rawVenue: RawGenieVenue): GenieVenue {
     ...rawVenue,
     image: normalizedImage,
     image_url: normalizedImage,
+    // Xano returns an empty json column as `{}`, and older callers omit it entirely.
+    image_urls: toImageList(rawVenue.image_urls),
     latitude: normalizeCoordinate(rawVenue.latitude),
     longitude: normalizeCoordinate(rawVenue.longitude),
   };

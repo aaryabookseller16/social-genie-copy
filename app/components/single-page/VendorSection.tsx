@@ -23,7 +23,9 @@ import {
   fetchVendorNotifPrefs,
   fetchVendorInfluencerOffers,
   fetchVendorVenue,
+  fetchVenueImages,
   reviewInfluencerOffer,
+  saveVenueImages,
   searchVendorBusinesses,
   toggleVendorOffer,
   updateVendorNotifPrefs,
@@ -42,6 +44,7 @@ import {
   clearVendorDraft,
 } from "@/app/lib/vendorOnboarding";
 
+import ImageUploader from "@/app/components/ImageUploader";
 import { ActionButton } from "./ui";
 
 /* ------------------------------------------------------------------ */
@@ -55,6 +58,7 @@ type VendorStep =
   | "not-found"
   | "match"
   | "contact"
+  | "photos"
   | "location"
   | "plan"
   | "success"
@@ -101,7 +105,6 @@ type ManualProfileInfo = {
   music: string;
   hookah: string;
   happyHour: string;
-  mainPhotoUrl: string;
 };
 
 type ManualContactInfo = {
@@ -448,6 +451,40 @@ function VendorInput({
   );
 }
 
+/**
+ * Venue photos, up to 5, first one is the main photo. Optional everywhere —
+ * a vendor can skip this and add photos later from the dashboard.
+ */
+function VenuePhotoPicker({
+  photos,
+  onChange,
+  onUploadingChange,
+  label = "Photos",
+}: {
+  photos: string[];
+  onChange: (urls: string[]) => void;
+  onUploadingChange?: (busy: boolean) => void;
+  label?: string;
+}) {
+  return (
+    <div>
+      <ImageUploader
+        mode="multi"
+        max={5}
+        folder="venues"
+        label={label}
+        value={photos}
+        onChange={onChange}
+        onUploadingChange={onUploadingChange}
+      />
+      <p className="mt-1.5 text-[13px] text-gray-400 dark:text-white/40">
+        Optional — up to 5 photos. The first is your main photo. You can add or
+        change these later from your dashboard.
+      </p>
+    </div>
+  );
+}
+
 function SelectInput({
   value,
   placeholder,
@@ -580,8 +617,15 @@ export function VendorSection({
     music: "",
     hookah: "",
     happyHour: "",
-    mainPhotoUrl: "",
   });
+
+  /**
+   * Venue photos picked during onboarding. They upload to Cloudinary immediately,
+   * but the venue does not exist until createVendorBusiness() runs on the plan
+   * step — so the URLs are held here and attached in completeRegistration().
+   */
+  const [onboardingPhotos, setOnboardingPhotos] = useState<string[]>([]);
+  const [photosUploading, setPhotosUploading] = useState(false);
   const [manualContact, setManualContact] = useState<ManualContactInfo>({
     firstName: account?.firstName ?? "",
     lastName: account?.lastName ?? "",
@@ -599,8 +643,16 @@ export function VendorSection({
     website_url: "",
     reservation_url: "",
     hours: "",
-    image_primary_url: "",
   });
+  /** Venue gallery, ordered; index 0 is the primary. Saved separately from the form. */
+  const [venuePhotos, setVenuePhotos] = useState<string[]>([]);
+  const [venuePhotosUploading, setVenuePhotosUploading] = useState(false);
+  /**
+   * False when the gallery failed to load. Saving is a whole-set replace, so
+   * writing an empty list we never successfully read would delete the vendor's
+   * existing photos.
+   */
+  const [venuePhotosLoaded, setVenuePhotosLoaded] = useState(false);
   const [isProfileSaving, setIsProfileSaving] = useState(false);
   const [isProfileLoading, setIsProfileLoading] = useState(false);
   const [profileMessage, setProfileMessage] = useState<string | null>(null);
@@ -652,6 +704,7 @@ export function VendorSection({
     "not-found": 1,
     match: 1,
     contact: 2,
+    photos: 3,
     "manual-info": 1,
     "manual-location": 2,
     "manual-profile": 3,
@@ -687,7 +740,7 @@ export function VendorSection({
           const draft = readVendorDraft();
           if (draft.vendorId && draft.currentStep) {
             const saved = draft.currentStep as VendorStep;
-            if (["contact", "plan", "success", "dashboard", "manual-info", "manual-location", "manual-profile", "manual-contact"].includes(saved)) {
+            if (["contact", "photos", "plan", "success", "dashboard", "manual-info", "manual-location", "manual-profile", "manual-contact"].includes(saved)) {
               setVendorId(draft.vendorId);
               setStep(saved);
               return;
@@ -702,7 +755,7 @@ export function VendorSection({
         const draft = readVendorDraft();
         if (draft.vendorId && draft.currentStep) {
           const saved = draft.currentStep as VendorStep;
-          if (["contact", "plan", "success", "dashboard", "manual-info", "manual-location", "manual-profile", "manual-contact"].includes(saved)) {
+          if (["contact", "photos", "plan", "success", "dashboard", "manual-info", "manual-location", "manual-profile", "manual-contact"].includes(saved)) {
             setVendorId(draft.vendorId);
             setStep(saved);
             return;
@@ -750,9 +803,15 @@ export function VendorSection({
     Promise.all([
       fetchVendorDashboard(vid).catch(() => null),
       fetchVendorVenue().catch(() => null),
+      fetchVenueImages().then(
+        (photos) => ({ photos, ok: true }),
+        () => ({ photos: [] as string[], ok: false })
+      ),
     ])
-      .then(([d, venueResp]) => {
+      .then(([d, venueResp, photoResult]) => {
         if (cancelled) return;
+        setVenuePhotos(photoResult.photos);
+        setVenuePhotosLoaded(photoResult.ok);
         const venue = venueResp?.venue ?? null;
         const vendor = venueResp?.vendor ?? null;
         setProfileForm({
@@ -767,9 +826,6 @@ export function VendorSection({
               d?.reservation_url
           ),
           hours: str(venue?.hours_text ?? d?.hours_text),
-          image_primary_url: str(
-            venue?.image_primary_url ?? d?.image_primary_url
-          ),
         });
       })
       .catch(() => {
@@ -1243,9 +1299,9 @@ export function VendorSection({
         ...readVendorDraft(),
         vendorId,
         onboardingId,
-        currentStep: "plan",
+        currentStep: "photos",
       });
-      setStep("plan");
+      setStep("photos");
       trackEvent(analyticsEvents.vendorContactInfoCompleted);
     } catch (error) {
       setStatusMessage(
@@ -1289,7 +1345,7 @@ export function VendorSection({
           music: manualProfile.music,
           hookah: manualProfile.hookah,
           happy_hour: manualProfile.happyHour,
-          main_photo_url: manualProfile.mainPhotoUrl,
+          main_photo_url: onboardingPhotos[0] ?? "",
           role_title: manualContact.roleTitle,
         });
         setVendorId(createResult.vendor_id);
@@ -1307,6 +1363,21 @@ export function VendorSection({
         trackEvent(analyticsEvents.vendorManualAddCompleted, {
           businessName: manualInfo.businessName.trim(),
         });
+      }
+
+      // Attach the photos now that the vendor and its venue exist. Do this before
+      // any Stripe redirect, or the URLs are lost when we leave the page.
+      // A failure here is not fatal — the vendor is created, and they can add
+      // photos from the dashboard — but it must not pass silently.
+      if (onboardingPhotos.length > 0) {
+        try {
+          await saveVenueImages(onboardingPhotos);
+        } catch (error) {
+          console.error("Could not attach venue photos during onboarding", error);
+          setStatusMessage(
+            "Your business was created, but the photos didn't save. You can add them from your dashboard."
+          );
+        }
       }
 
       if (selectedPlan === "pro" && finalVendorId) {
@@ -1380,10 +1451,13 @@ export function VendorSection({
         payload.reservation_url = profileForm.reservation_url.trim();
       if (profileForm.hours.trim())
         payload.hours_text = profileForm.hours.trim();
-      if (profileForm.image_primary_url.trim())
-        payload.image_primary_url = profileForm.image_primary_url.trim();
 
+      // The gallery is its own endpoint, and it keeps image_primary_url in sync
+      // with photo 0 — so this must not also send image_primary_url.
       await updateVendorVenue(payload);
+      if (venuePhotosLoaded) {
+        await saveVenueImages(venuePhotos);
+      }
       setProfileMessage("Profile updated successfully.");
     } catch (error) {
       setProfileMessage(
@@ -1404,6 +1478,7 @@ export function VendorSection({
     "not-found": "Add your business",
     match: "Select your business",
     contact: "Your contact info",
+    photos: "Add your photos",
     "manual-info": "Business Info",
     "manual-location": "Location - Required",
     "manual-profile": "Genie Profile",
@@ -1427,6 +1502,31 @@ export function VendorSection({
       <section ref={sectionRef} className="flex min-h-[40vh] flex-col items-center justify-center gap-4 pb-28">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-red-200 border-t-red-600 dark:border-white/10 dark:border-t-red-500" />
         <p className="text-sm text-gray-500 dark:text-white/50">Checking your profile…</p>
+      </section>
+    );
+  }
+
+  // Onboarding needs an account: photo upload and the final createVendorBusiness
+  // call both require a bearer token. Ask up front rather than letting someone
+  // fill in five screens of business details and fail at the last step.
+  if (!account && step !== "dashboard") {
+    return (
+      <section ref={sectionRef} className="relative min-h-screen px-5 pb-32 pt-6">
+        <h2 className="mt-8 text-center text-[1.65rem] font-semibold leading-tight text-gray-900 dark:text-white">
+          Sign in to list your business
+        </h2>
+        <p className="mx-auto mt-3 max-w-sm text-center text-[15px] leading-relaxed text-gray-500 dark:text-white/60">
+          You&apos;ll need an account so we can save your business, your photos, and
+          your plan. It only takes a moment.
+        </p>
+        <div className="mx-auto mt-8 flex max-w-sm flex-col gap-3">
+          <ActionButton onClick={onOpenAccount} className="w-full">
+            Sign in or create an account
+          </ActionButton>
+          <ActionButton onClick={onContinueHome} variant="secondary" className="w-full">
+            Not now
+          </ActionButton>
+        </div>
       </section>
     );
   }
@@ -1693,6 +1793,31 @@ export function VendorSection({
         </form>
       )}
 
+      {/* ======== STEP: Photos (claim/match path) ======== */}
+      {step === "photos" && (
+        <form
+          className="mt-6 space-y-4"
+          onSubmit={(e: FormEvent<HTMLFormElement>) => {
+            e.preventDefault();
+            writeVendorDraft({ ...readVendorDraft(), currentStep: "plan" });
+            setStep("plan");
+          }}
+        >
+          <VenuePhotoPicker
+            photos={onboardingPhotos}
+            onChange={setOnboardingPhotos}
+            onUploadingChange={setPhotosUploading}
+          />
+          <ActionButton type="submit" className="w-full" disabled={photosUploading}>
+            {photosUploading
+              ? "Uploading photos…"
+              : onboardingPhotos.length > 0
+                ? "Next"
+                : "Skip for now"}
+          </ActionButton>
+        </form>
+      )}
+
       {/* ======== STEP: MANUAL — Business Info ======== */}
       {step === "manual-info" && (
         <form
@@ -1750,8 +1875,14 @@ export function VendorSection({
         >
           <VendorInput label="Short Description / Vibe" value={manualProfile.shortDescription} placeholder="Short Description / Vibe" onChange={(v) => setManualProfile((c) => ({ ...c, shortDescription: v }))} />
           <SelectInput label="Price Band" value={manualProfile.priceBand} placeholder="$, $$, $$$, $$$$ - (Optional)" options={["$", "$$", "$$$", "$$$$"]} onChange={(v) => setManualProfile((c) => ({ ...c, priceBand: v }))} />
-          <VendorInput label="Main Photo - Required" value={manualProfile.mainPhotoUrl} placeholder="Main Photo URL" type="url" onChange={(v) => setManualProfile((c) => ({ ...c, mainPhotoUrl: v }))} />
-          <ActionButton type="submit" className="w-full">Next</ActionButton>
+          <VenuePhotoPicker
+            photos={onboardingPhotos}
+            onChange={setOnboardingPhotos}
+            onUploadingChange={setPhotosUploading}
+          />
+          <ActionButton type="submit" className="w-full" disabled={photosUploading}>
+            {photosUploading ? "Uploading photos…" : "Next"}
+          </ActionButton>
         </form>
       )}
 
@@ -2281,10 +2412,23 @@ export function VendorSection({
           <VendorInput value={profileForm.website_url} placeholder="Website URL" type="url" onChange={(v) => setProfileForm((c) => ({ ...c, website_url: v }))} />
           <VendorInput value={profileForm.reservation_url} placeholder="Reservation URL" type="url" onChange={(v) => setProfileForm((c) => ({ ...c, reservation_url: v }))} />
           <VendorInput value={profileForm.hours} placeholder="Hours (e.g. Open Until 2 AM)" onChange={(v) => setProfileForm((c) => ({ ...c, hours: v }))} />
-          <VendorInput value={profileForm.image_primary_url} placeholder="Primary image URL" type="url" onChange={(v) => setProfileForm((c) => ({ ...c, image_primary_url: v }))} />
+          <VenuePhotoPicker
+            photos={venuePhotos}
+            onChange={setVenuePhotos}
+            onUploadingChange={setVenuePhotosUploading}
+            label="Venue photos"
+          />
 
-          <ActionButton type="submit" className="w-full" disabled={isProfileSaving}>
-            {isProfileSaving ? "Saving..." : "Save Profile"}
+          <ActionButton
+            type="submit"
+            className="w-full"
+            disabled={isProfileSaving || venuePhotosUploading}
+          >
+            {venuePhotosUploading
+              ? "Uploading photos…"
+              : isProfileSaving
+                ? "Saving..."
+                : "Save Profile"}
           </ActionButton>
           <ActionButton onClick={() => { setStep("dashboard"); setProfileMessage(null); }} variant="secondary" className="w-full">
             Back to Dashboard

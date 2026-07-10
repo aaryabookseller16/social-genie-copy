@@ -33,6 +33,8 @@ export type RawGenieVenue = {
   image_url?: string | null;
   image_primary_url?: string | null;
   image_fallback_url?: string | null;
+  /** Ordered vendor-uploaded gallery; index 0 is the primary. */
+  image_urls?: string[] | null;
   energy_level?: string | null;
   music?: string | null;
   crowd?: string | null;

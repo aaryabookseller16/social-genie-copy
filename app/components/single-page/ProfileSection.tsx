@@ -3,6 +3,7 @@
 import { type ReactNode, useEffect, useState } from "react";
 
 import { BackIcon } from "@/app/components/single-page/ui";
+import ImageUploader from "@/app/components/ImageUploader";
 import { type ConsumerAccount } from "@/app/lib/localState";
 import { type SocialProfile } from "@/app/lib/publicApiClient";
 
@@ -17,6 +18,8 @@ type ProfileSectionProps = {
     lastName: string;
     email: string;
     phone: string;
+    displayName: string;
+    avatarUrl: string;
   }) => Promise<void>;
   onEditPreferences?: () => void;
   onOpenMembership?: () => void;
@@ -274,12 +277,16 @@ function StyledInput({
   placeholder,
   type = "text",
   onChange,
+  disabled = false,
+  helperText,
 }: {
   label: string;
   value: string;
   placeholder: string;
   type?: string;
   onChange: (v: string) => void;
+  disabled?: boolean;
+  helperText?: string;
 }) {
   return (
     <label className="block">
@@ -291,9 +298,16 @@ function StyledInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        disabled={disabled}
+        readOnly={disabled}
         style={{ fontSize: "16px" }}
-        className="w-full rounded-[16px] border border-[#E7070380] bg-gray-50 px-4 py-3 text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#E7070380] dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
+        className={`w-full rounded-[16px] border border-[#E7070380] bg-gray-50 px-4 py-3 text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#E7070380] dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a] ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
       />
+      {helperText ? (
+        <span className="mt-1.5 block text-[11px] text-gray-400 dark:text-white/40">
+          {helperText}
+        </span>
+      ) : null}
     </label>
   );
 }
@@ -316,6 +330,9 @@ export function ProfileSection({
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [avatarUrls, setAvatarUrls] = useState<string[]>([]);
+  const [avatarUploading, setAvatarUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [deleteSheetOpen, setDeleteSheetOpen] = useState(false);
@@ -326,6 +343,8 @@ export function ProfileSection({
       setLastName(account.lastName ?? "");
       setEmail(account.email ?? "");
       setPhone(account.phone ?? "");
+      setDisplayName(account.displayName ?? "");
+      setAvatarUrls(account.avatarUrl ? [account.avatarUrl] : []);
       setStatusMsg(null);
     }
     if (!visible) {
@@ -357,6 +376,18 @@ export function ProfileSection({
 
         {/* Form */}
         <div className="space-y-4">
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium text-gray-600 dark:text-white/72">
+              Profile photo
+            </span>
+            <ImageUploader
+              mode="single"
+              folder="avatars"
+              value={avatarUrls}
+              onChange={setAvatarUrls}
+              onUploadingChange={setAvatarUploading}
+            />
+          </label>
           <StyledInput
             label="First Name"
             value={firstName}
@@ -370,11 +401,19 @@ export function ProfileSection({
             onChange={setLastName}
           />
           <StyledInput
+            label="Display Name"
+            value={displayName}
+            placeholder="How Genie should greet you"
+            onChange={setDisplayName}
+          />
+          <StyledInput
             label="Email"
             value={email}
             placeholder="Email address"
             type="email"
             onChange={setEmail}
+            disabled
+            helperText="Your email is how you sign in, so it can't be changed here."
           />
           <StyledInput
             label="Phone"
@@ -394,10 +433,21 @@ export function ProfileSection({
         <button
           type="button"
           onClick={async () => {
+            if (avatarUploading) {
+              setStatusMsg("Please wait for your photo to finish uploading.");
+              return;
+            }
             setSaving(true);
             setStatusMsg(null);
             try {
-              await onSave({ firstName, lastName, email, phone });
+              await onSave({
+                firstName,
+                lastName,
+                email,
+                phone,
+                displayName,
+                avatarUrl: avatarUrls[0] ?? "",
+              });
               setEditing(false);
             } catch (error) {
               setStatusMsg(
@@ -452,7 +502,23 @@ export function ProfileSection({
           editAriaLabel="Edit details"
         >
           <div className="space-y-4">
+            {account?.avatarUrl ? (
+              <div className="mx-auto h-16 w-16 overflow-hidden rounded-full border-2 border-red-400 shadow-[0_0_16px_rgba(220,38,38,0.35)]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={account.avatarUrl}
+                  alt={account.displayName || fullName}
+                  className="h-full w-full object-cover"
+                />
+              </div>
+            ) : null}
             <DetailField label="Name" value={fullName} />
+            {account?.displayName ? (
+              <>
+                <div className="h-px bg-black/10 dark:bg-white/10" />
+                <DetailField label="Display Name" value={account.displayName} />
+              </>
+            ) : null}
             <div className="h-px bg-black/10 dark:bg-white/10" />
             <DetailField label="Email" value={account?.email ?? ""} />
             <div className="h-px bg-black/10 dark:bg-white/10" />
