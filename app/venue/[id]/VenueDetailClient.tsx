@@ -2,7 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { type GenieVenue } from "@/app/lib/genieTypes";
 import { galleryFor } from "@/app/lib/image";
 import ImageGallery from "@/app/components/ImageGallery";
@@ -11,6 +12,8 @@ import {
   getGenieTake,
   getOpenUntil,
 } from "@/app/components/single-page/ui";
+import { readAuthToken } from "@/app/lib/localState";
+import { checkInToVenue, checkOutOfVenue, fetchVenueCheckins } from "@/app/lib/publicApiClient";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -37,6 +40,8 @@ function StarRating({ rating }: { rating: number }) {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function VenueDetailClient({ venue }: { venue: GenieVenue }) {
+  const router = useRouter();
+
   // globals.css sets body { overflow: hidden; height: 100dvh } for
   // SinglePageGenieApp. Undo that so this standalone page scrolls normally.
   useEffect(() => {
@@ -47,6 +52,54 @@ export function VenueDetailClient({ venue }: { venue: GenieVenue }) {
       document.body.style.height = "";
     };
   }, []);
+
+  // ── Check-in state ──────────────────────────────────────────────────────
+  const [isCheckedIn, setIsCheckedIn] = useState(false);
+  const [activeCheckins, setActiveCheckins] = useState<number | null>(null);
+  const [checkinBusy, setCheckinBusy] = useState(false);
+
+  useEffect(() => {
+    if (!readAuthToken()) return;
+    let cancelled = false;
+    void fetchVenueCheckins(Number(venue.id))
+      .then((result) => {
+        if (cancelled) return;
+        setActiveCheckins(result.active_checkins ?? 0);
+        setIsCheckedIn(result.user_is_checked_in ?? false);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [venue.id]);
+
+  const handleToggleCheckin = useCallback(async () => {
+    if (checkinBusy) return;
+    if (!readAuthToken()) {
+      router.push(`/?screen=login&redirect=/venue/${venue.id}`);
+      return;
+    }
+
+    const venueId = Number(venue.id);
+    setCheckinBusy(true);
+    try {
+      if (isCheckedIn) {
+        await checkOutOfVenue(venueId);
+        setIsCheckedIn(false);
+        setActiveCheckins((prev) => (prev != null ? Math.max(0, prev - 1) : prev));
+      } else {
+        const result = await checkInToVenue(venueId);
+        setIsCheckedIn(true);
+        if (!result.already_checked_in) {
+          setActiveCheckins((prev) => (prev != null ? prev + 1 : prev));
+        }
+      }
+    } catch {
+      // Leave state as-is — a failed toggle isn't worth an error banner here.
+    } finally {
+      setCheckinBusy(false);
+    }
+  }, [checkinBusy, isCheckedIn, router, venue.id]);
 
   const lat = venue.latitude;
   const lng = venue.longitude;
@@ -208,6 +261,25 @@ export function VenueDetailClient({ venue }: { venue: GenieVenue }) {
 
         {/* ── ACTION PILLS ────────────────────────────────────────────── */}
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={checkinBusy}
+            onClick={() => void handleToggleCheckin()}
+            className={
+              isCheckedIn
+                ? "flex items-center gap-1.5 rounded-full bg-red-600 px-3.5 py-2 text-[0.8rem] font-semibold text-white shadow-sm transition disabled:pointer-events-none disabled:opacity-60 dark:bg-white dark:text-gray-900"
+                : `${pillClass} disabled:pointer-events-none disabled:opacity-60`
+            }
+          >
+            <svg viewBox="0 0 24 24" className="h-[15px] w-[15px] flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 1 1 18 0z" /><circle cx="12" cy="10" r="3" />
+            </svg>
+            {isCheckedIn ? "Checked In" : "Check In"}
+            {activeCheckins != null && activeCheckins > 0 ? (
+              <span className="opacity-70">· {activeCheckins} here</span>
+            ) : null}
+          </button>
+
           {phone ? (
             <a href={`tel:${phone}`} className={pillClass}>
               <svg viewBox="0 0 24 24" className="h-[15px] w-[15px] flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

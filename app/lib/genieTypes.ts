@@ -94,6 +94,8 @@ export type RawGenieEvent = {
   age_requirement?: number;
   rsvp_count?: number;
   going_count?: number;
+  interested_count?: number;
+  user_rsvp_status?: "going" | "interested" | "saved" | null;
   category?: string;
   event_category?: string;
   venue_address?: string;

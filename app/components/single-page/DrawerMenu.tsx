@@ -138,7 +138,7 @@ export function DrawerMenu({
 
   return (
     <div
-      className="fixed inset-0 z-[70]"
+      className="fixed inset-0 z-[90]"
       role="dialog"
       aria-modal="true"
       aria-label="Navigation menu"

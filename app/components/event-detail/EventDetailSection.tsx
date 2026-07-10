@@ -8,6 +8,7 @@ import {
   type EventDetailResponse,
 } from "@/app/lib/publicApiClient";
 import { readAuthToken } from "@/app/lib/localState";
+import { useEventRsvp, type UserRsvpStatus } from "@/app/lib/useEventRsvp";
 
 type Props = {
   eventId: number | null;
@@ -287,6 +288,26 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
     setIsFollowing(fromApi ?? fromInitial ?? false);
   }, [data, initialData]);
 
+  // Merge here (not just below the loading/error guards) because this feeds
+  // useEventRsvp, which — like all hooks — must run on every render.
+  // The Xano response is nested ({ event, venue, related_events, related_count }),
+  // not flat — spreading `data` alone only ever overrides venue/related_events/
+  // related_count (the keys that genuinely sit at the top level). Per-event
+  // fields (title, going_count, user_rsvp_status, ...) live under `data.event`
+  // and need spreading on top separately, or a fresh fetch never actually
+  // overrides the stale tap-through initialData for any of them.
+  const freshEvent = data?.event ?? {};
+  const mergedEvent: Record<string, unknown> = { ...initialData, ...(data ?? {}), ...freshEvent };
+  const rsvpEventId = typeof mergedEvent.id === "number" ? mergedEvent.id : null;
+  const rsvp = useEventRsvp(
+    rsvpEventId,
+    (mergedEvent.user_rsvp_status as UserRsvpStatus | undefined) ?? null,
+    Number(mergedEvent.going_count) || 0,
+    Number(mergedEvent.interested_count) || 0,
+    "event-detail",
+    onAuthRequired
+  );
+
   async function handleFollow(producerId?: number) {
     if (!producerId || followBusy) return;
     if (!readAuthToken()) {
@@ -330,7 +351,7 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
   if (error)   return <ErrorState onBack={onBack} onRetry={load} />;
 
   // Merge: real API data takes priority, fall back to initialData for any missing field
-  const ev: Record<string, unknown> = { ...initialData, ...(data ?? {}) };
+  const ev = mergedEvent;
 
   const evTitle    = (ev.title as string) || "Event";
   const coverImg   = (ev.cover_image_url as string) || "/sample-venue-1.jpeg";
@@ -474,6 +495,42 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
               ) : null}
             </div>
           ) : null}
+        </div>
+
+        {/* ── Going / Interested ── */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={rsvp.busy || !rsvpEventId}
+            onClick={() => {
+              void rsvp.setRsvp("going");
+              logInteraction?.("going", (ev.id as number) ?? 0, "event-detail");
+            }}
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-2.5 text-[0.8rem] font-semibold transition-transform active:scale-95 disabled:pointer-events-none disabled:opacity-60 ${
+              rsvp.status === "going"
+                ? "bg-white text-[#1a0202]"
+                : "border border-white/30 bg-white/10 text-white"
+            }`}
+          >
+            {rsvp.status === "going" ? "✓ Going" : "Going"}
+            {rsvp.goingCount > 0 ? <span className="opacity-70">· {rsvp.goingCount}</span> : null}
+          </button>
+          <button
+            type="button"
+            disabled={rsvp.busy || !rsvpEventId}
+            onClick={() => {
+              void rsvp.setRsvp("interested");
+              logInteraction?.("interested", (ev.id as number) ?? 0, "event-detail");
+            }}
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-2.5 text-[0.8rem] font-semibold transition-transform active:scale-95 disabled:pointer-events-none disabled:opacity-60 ${
+              rsvp.status === "interested"
+                ? "bg-white text-[#1a0202]"
+                : "border border-white/30 bg-white/10 text-white"
+            }`}
+          >
+            {rsvp.status === "interested" ? "✓ Interested" : "Interested"}
+            {rsvp.interestedCount > 0 ? <span className="opacity-70">· {rsvp.interestedCount}</span> : null}
+          </button>
         </div>
 
         {/* ── CTAs: Buy Tickets | Ride | Share ── */}

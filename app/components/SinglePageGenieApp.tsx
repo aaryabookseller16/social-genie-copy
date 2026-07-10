@@ -97,6 +97,9 @@ import {
   registerPushToken,
   redeemVibeeOffer,
   saveVenueForUser,
+  checkInToVenue,
+  checkOutOfVenue,
+  fetchVenueCheckins,
   submitContactForm,
   syncSavedVenueIds,
   trackSocialSignal,
@@ -507,6 +510,10 @@ export function SinglePageGenieApp({
   const [response, setResponse] = useState<GenieResponseEnvelope | null>(null);
   const [savedVenueIds, setSavedVenueIds] = useState<string[]>([]);
   const [savedVenues, setSavedVenues] = useState<GenieVenue[]>([]);
+  // ── Venue check-in state ────────────────────────────────────────────────
+  const [checkedInVenueIds, setCheckedInVenueIds] = useState<number[]>([]);
+  const [venueActiveCheckins, setVenueActiveCheckins] = useState<number | null>(null);
+  const [checkinBusy, setCheckinBusy] = useState(false);
   const [offers, setOffers] = useState<VibeeOffer[]>([]);
   const [offersLoading, setOffersLoading] = useState(false);
   const [offersError, setOffersError] = useState<string | null>(null);
@@ -1290,6 +1297,41 @@ setResponse(nextResponse);
     }
   };
 
+  const handleToggleCheckin = async (venue: GenieVenue) => {
+    if (checkinBusy) return;
+    if (!account || !readAuthToken()) {
+      maybeTriggerSignup("checkin_attempt");
+      return;
+    }
+
+    const venueId = Number(venue.id);
+    const isCheckedIn = checkedInVenueIds.includes(venueId);
+
+    setCheckinBusy(true);
+    try {
+      if (isCheckedIn) {
+        await checkOutOfVenue(venueId);
+        logVenueInteraction("checkout", venueId, activeScreen);
+        setCheckedInVenueIds((prev) => prev.filter((id) => id !== venueId));
+        setVenueActiveCheckins((prev) => (prev != null ? Math.max(0, prev - 1) : prev));
+      } else {
+        const result = await checkInToVenue(venueId);
+        logVenueInteraction("checkin", venueId, activeScreen);
+        setCheckedInVenueIds((prev) => (prev.includes(venueId) ? prev : [...prev, venueId]));
+        // Xano returns already_checked_in when a stale local state missed an
+        // existing session — don't double-count in that case.
+        if (!result.already_checked_in) {
+          setVenueActiveCheckins((prev) => (prev != null ? prev + 1 : prev));
+        }
+      }
+    } catch (error) {
+      console.error("Failed to update check-in", error);
+      setStatusMessage("Could not update check-in right now.");
+    } finally {
+      setCheckinBusy(false);
+    }
+  };
+
   const handleShareVenue = async (venue: GenieVenue) => {
     const venueId = getVenueId(venue);
     const text = `Check out ${venue.venue_name} on Genie by Social Bevy`;
@@ -1683,6 +1725,33 @@ setResponse(nextResponse);
       cancelled = true;
     };
   }, [activeScreen, selectedVenueId, venueMap]);
+
+  // Load this venue's check-in state whenever the detail screen opens for it.
+  useEffect(() => {
+    if (activeScreen !== "detail" || !selectedVenue || !account || !readAuthToken()) {
+      return;
+    }
+
+    let cancelled = false;
+    const venueId = Number(selectedVenue.id);
+
+    void fetchVenueCheckins(venueId)
+      .then((result) => {
+        if (cancelled) return;
+        setVenueActiveCheckins(result.active_checkins ?? 0);
+        setCheckedInVenueIds((prev) => {
+          const withoutThis = prev.filter((id) => id !== venueId);
+          return result.user_is_checked_in ? [...withoutThis, venueId] : withoutThis;
+        });
+      })
+      .catch((error) => {
+        console.error("Failed to load check-in state", error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeScreen, selectedVenue, account]);
 
   useEffect(() => {
     if (
@@ -3407,6 +3476,25 @@ navigateTo("event-detail");
                     .join(" - ")}
                 </span>
               </div>
+
+              <button
+                type="button"
+                disabled={checkinBusy}
+                onClick={() => void handleToggleCheckin(selectedVenue)}
+                className={`flex items-center gap-1.5 self-start rounded-full px-3.5 py-2 text-[0.78rem] font-semibold transition disabled:pointer-events-none disabled:opacity-60 ${
+                  checkedInVenueIds.includes(Number(selectedVenue.id))
+                    ? "bg-red-600 text-white dark:bg-white dark:text-gray-900"
+                    : "border border-red-300 text-red-600 dark:border-[#E7070380] dark:text-white/85"
+                }`}
+              >
+                <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 1 1 18 0z" /><circle cx="12" cy="10" r="3" />
+                </svg>
+                {checkedInVenueIds.includes(Number(selectedVenue.id)) ? "Checked In" : "Check In"}
+                {venueActiveCheckins != null && venueActiveCheckins > 0 ? (
+                  <span className="opacity-70">· {venueActiveCheckins} here</span>
+                ) : null}
+              </button>
 
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.82rem] text-gray-700 dark:text-white/80">
                 <span className="flex items-center gap-1">

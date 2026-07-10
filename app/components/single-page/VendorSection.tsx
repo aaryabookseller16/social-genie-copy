@@ -170,6 +170,9 @@ type FullDashboardData = {
   boost_active?: boolean;
   boost_amount?: number;
   boost_period_label?: string;
+  // Dashboard widgets (offer_count is already declared above, non-optional)
+  checkins_today?: number;
+  is_open_now?: boolean | null;
 };
 
 /* ------------------------------------------------------------------ */
@@ -674,6 +677,9 @@ export function VendorSection({
   const [selectedBoostTier, setSelectedBoostTier] = useState<string | null>(null);
   const [isBoostLoading, setIsBoostLoading] = useState(false);
 
+  // Open/closed switch
+  const [isOpenToggleSaving, setIsOpenToggleSaving] = useState(false);
+
   // Influencer codes screen
   const [influencerCodes, setInfluencerCodes] = useState<VendorInfluencerCode[]>([]);
   const [influencerLoading, setInfluencerLoading] = useState(false);
@@ -929,6 +935,7 @@ export function VendorSection({
           merged.vibe_notes = venue.vibe_notes;
         }
         if (venue.phone) merged.phone = venue.phone;
+        if (venue.is_open_now != null) merged.is_open_now = venue.is_open_now;
         if (venue.hours_text) merged.hours_text = venue.hours_text;
         if (venue.image_primary_url) merged.image_primary_url = venue.image_primary_url;
       } else if (vendor?.reservation_url) {
@@ -946,6 +953,27 @@ export function VendorSection({
       setIsDashboardLoading(false);
     }
   }, [vendorId, account]);
+
+  // Optimistic open/closed switch — revert on failure so the control never
+  // shows a state the venue record doesn't actually have.
+  const toggleOpenNow = useCallback(async (next: boolean) => {
+    setIsOpenToggleSaving(true);
+    setDashboardData((prev) => (prev ? { ...prev, is_open_now: next } : prev));
+    try {
+      await updateVendorVenue({ is_open_now: next });
+    } catch (error) {
+      setDashboardData((prev) =>
+        prev ? { ...prev, is_open_now: !next } : prev
+      );
+      setStatusMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not update your open/closed status."
+      );
+    } finally {
+      setIsOpenToggleSaving(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!visible || step !== "dashboard") return;
@@ -2144,6 +2172,63 @@ export function VendorSection({
                     </>
                   ) : null}
 
+                  {/* ── Widgets: check-ins today | active offers | open-closed ── */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-3 py-4 text-center dark:bg-black/25">
+                      <p className="text-[1.35rem] font-bold text-gray-900 dark:text-white">
+                        {d.checkins_today ?? 0}
+                      </p>
+                      <p className="mt-0.5 text-[0.72rem] text-gray-500 dark:text-white/55">
+                        Check-ins Today
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setStep("offers")}
+                      className="rounded-2xl border border-[#E7070380] bg-white/5 px-3 py-4 text-center transition hover:bg-white/10 dark:bg-black/25 dark:hover:bg-black/35"
+                    >
+                      <p className="text-[1.35rem] font-bold text-gray-900 dark:text-white">
+                        {d.offer_count ?? 0}
+                      </p>
+                      <p className="mt-0.5 text-[0.72rem] text-gray-500 dark:text-white/55">
+                        Active Offers
+                      </p>
+                    </button>
+
+                    {(() => {
+                      const isOpen = d.is_open_now ?? false;
+                      return (
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={isOpen}
+                          aria-label="We're open"
+                          disabled={isOpenToggleSaving}
+                          onClick={() => void toggleOpenNow(!isOpen)}
+                          className="flex flex-col items-center justify-center rounded-2xl border border-[#E7070380] bg-white/5 px-3 py-4 transition hover:bg-white/10 disabled:opacity-50 dark:bg-black/25 dark:hover:bg-black/35"
+                        >
+                          <span
+                            className={`flex h-6 w-11 items-center rounded-full p-0.5 transition ${
+                              isOpen
+                                ? "bg-green-500 dark:bg-[#34c059]"
+                                : "bg-gray-300 dark:bg-white/25"
+                            }`}
+                          >
+                            <span
+                              className={`h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                                isOpen ? "translate-x-5" : "translate-x-0"
+                              }`}
+                            />
+                          </span>
+                          <p className="mt-1.5 text-[0.72rem] text-gray-500 dark:text-white/55">
+                            {isOpen ? "We're Open" : "We're Closed"}
+                          </p>
+                        </button>
+                      );
+                    })()}
+                  </div>
+
                   {/* ── Business Details ── */}
                   <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-5 dark:bg-black/25">
                     <div className="flex items-center justify-between py-4">
@@ -2760,11 +2845,13 @@ export function VendorSection({
 
       {/* ======== STEP: BOOST ======== */}
       {step === "boost" && (() => {
+        // `id` is the Stripe tier code Xano's checkout_vendor_plan expects as
+        // `boost_tier` — it must stay in sync with the stripe_price_boost_* env vars.
         const tiers = [
-          { id: "boost_3day",   label: "3-Day Boost",   price: "$9.99",  desc: "Quick visibility spike for a weekend or event" },
-          { id: "boost_7day",   label: "7-Day Boost",   price: "$19.99", desc: "Week-long push — great for new menu launches" },
-          { id: "boost_14day",  label: "14-Day Boost",  price: "$34.99", desc: "Two-week momentum for sustained discovery" },
-          { id: "boost_monthly",label: "Monthly Boost", price: "$59.99", desc: "30 days of top placement in Genie results" },
+          { id: "1999", label: "3-Day Boost",   price: "$19.99", desc: "Quick visibility spike for a weekend or event" },
+          { id: "3999", label: "7-Day Boost",   price: "$39.99", desc: "Week-long push — great for new menu launches" },
+          { id: "5999", label: "14-Day Boost",  price: "$59.99", desc: "Two-week momentum for sustained discovery" },
+          { id: "7999", label: "Monthly Boost", price: "$79.99", desc: "30 days of top placement in Genie results" },
         ];
         return (
           <div className="mt-2 space-y-4 pb-24">
@@ -2797,7 +2884,7 @@ export function VendorSection({
                 setIsBoostLoading(true);
                 const vid = vendorId ?? dashboardData?.vendor_id;
                 if (!vid) { setStatusMessage("Vendor not found. Please try again."); setIsBoostLoading(false); return; }
-                void createSubscriptionCheckout({ vendor_id: vid, plan_type: "founding_partner" })
+                void createSubscriptionCheckout({ vendor_id: vid, plan_type: "boost", boost_tier: selectedBoostTier })
                   .then(({ checkout_url }) => { window.location.href = checkout_url; })
                   .catch((err) => { setStatusMessage(err instanceof Error ? err.message : "Could not start checkout."); })
                   .finally(() => setIsBoostLoading(false));
