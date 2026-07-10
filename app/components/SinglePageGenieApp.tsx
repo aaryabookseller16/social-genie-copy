@@ -5123,21 +5123,23 @@ navigateTo("event-detail");
                 onBack={() => goBack("home")}
                 onSave={async (data) => {
                   if (!account) return;
-                  const { saveVendorContactInfo } = await import(
+                  const { updateUserProfile } = await import(
                     "@/app/lib/publicApiClient"
                   );
-                  await saveVendorContactInfo({
+                  await updateUserProfile({
                     first_name: data.firstName,
                     last_name: data.lastName,
-                    email: data.email,
                     phone: data.phone,
+                    display_name: data.displayName,
+                    avatar_url: data.avatarUrl,
                   });
                   const updated = {
                     ...account,
                     firstName: data.firstName,
                     lastName: data.lastName,
-                    email: data.email,
                     phone: data.phone,
+                    displayName: data.displayName,
+                    avatarUrl: data.avatarUrl,
                   };
                   setAccount(updated);
                   const { writeConsumerAccount } = await import(

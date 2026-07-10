@@ -34,9 +34,9 @@ export function toImageList(value: unknown): string[] {
  * The full ordered gallery for a record that has both a cover field and a gallery
  * array. The cover leads, and is not repeated if it already appears in the array.
  */
-export function galleryFor(cover: string | null | undefined, images: unknown): string[] {
+export function galleryFor(cover: unknown, images: unknown): string[] {
   const list = toImageList(images);
-  const trimmedCover = (cover ?? "").trim();
+  const trimmedCover = typeof cover === "string" ? cover.trim() : "";
   if (!trimmedCover) return list;
   return list.includes(trimmedCover) ? list : [trimmedCover, ...list];
 }

@@ -24,7 +24,6 @@ export const MAX_INPUT_BYTES = 25 * 1024 * 1024;
  * sources only inflate the base64 payload, which must clear Xano's body cap.
  */
 export const MAX_EDGE = 1600;
-export const OUTPUT_QUALITY = 0.82;
 
 export type UploadFolder = "avatars" | "events" | "posts" | "venues";
 
@@ -71,15 +70,13 @@ async function decode(file: File): Promise<ImageBitmap | HTMLImageElement> {
 }
 
 /**
- * WebP is the output format everywhere: one codec path, alpha support (so a logo
- * with a transparent background doesn't get a black box composited behind it the
- * way JPEG would), and smaller than both JPEG and PNG. Safari <14 can't encode it,
- * so we sniff the result and fall back to JPEG.
+ * PNG is the output format everywhere. WebP was tried first but the Cloudinary
+ * upload path rejects it ("Cloudinary upload failed") while PNG works — swapped
+ * as a stopgap until that's root-caused. Lossless, so output is larger than WebP
+ * would have been, but it keeps alpha support (transparent logos) that JPEG lacks.
  */
 function encode(canvas: HTMLCanvasElement): string {
-  const webp = canvas.toDataURL("image/webp", OUTPUT_QUALITY);
-  if (webp.startsWith("data:image/webp")) return webp;
-  return canvas.toDataURL("image/jpeg", OUTPUT_QUALITY);
+  return canvas.toDataURL("image/png");
 }
 
 export async function downscaleToDataUrl(file: File): Promise<string> {

@@ -63,27 +63,21 @@ export async function GET(request: NextRequest) {
  * PUT /api/vendor/venue
  * Proxies to `genie/ep_save_venue_details_dev`.
  *
- * Accepts venue-level fields (description → vibe_notes, hours_text, etc.).
- * `external_user_id` is required; all other fields are optional.
+ * Accepts venue-level fields (description → vibe_notes, hours_text, etc.), all
+ * optional. The venue is resolved server-side from the bearer token — no user
+ * or venue id is accepted from the caller, so one vendor cannot edit another's.
  */
 export async function PUT(request: NextRequest) {
   try {
     const authToken = extractBearerToken(request);
+    if (!authToken) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = (await request.json().catch(() => ({}))) as Record<
       string,
       unknown
     >;
-
-    const externalUserId =
-      typeof body.external_user_id === "string"
-        ? body.external_user_id.trim()
-        : "";
-    if (!externalUserId) {
-      return NextResponse.json(
-        { error: "external_user_id is required" },
-        { status: 400 }
-      );
-    }
 
     const allowed: ReadonlyArray<keyof typeof body> = [
       "venue_name",
@@ -100,9 +94,7 @@ export async function PUT(request: NextRequest) {
       "zip",
     ];
 
-    const payload: Record<string, unknown> = {
-      external_user_id: externalUserId,
-    };
+    const payload: Record<string, unknown> = {};
     for (const key of allowed) {
       if (body[key] !== undefined) {
         payload[key as string] = body[key];

@@ -3,13 +3,14 @@ import { xanoFetch, extractBearerToken, XanoError } from "@/app/lib/server/xanoP
 
 /**
  * POST /api/upload/image
- * Body: { file: "data:image/webp;base64,...", folder?: "avatars"|"events"|"posts"|"venues" }
+ * Body: { file: "data:image/png;base64,...", folder?: "avatars"|"events"|"posts"|"venues" }
  * Proxies to: genie/ep_upload_image_dev → Cloudinary, returns the hosted URL.
  * Requires Bearer JWT.
  *
- * The client downscales before sending (app/lib/imageUpload.ts), so payloads land
- * around 660KB of base64. The size check below is a backstop against a caller that
- * skips that pipeline, not the primary defense.
+ * The client downscales before sending (app/lib/imageUpload.ts), then encodes PNG
+ * (lossless, so noticeably larger than the WebP payloads this used to send — see
+ * imageUpload.ts for why). The size check below is a backstop against a caller
+ * that skips that pipeline, not the primary defense.
  */
 
 const DATA_URI_PREFIX = /^data:image\/(?:jpeg|png|webp);base64,/;
