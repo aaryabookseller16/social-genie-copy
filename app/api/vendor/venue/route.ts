@@ -93,6 +93,7 @@ export async function PUT(request: NextRequest) {
       "reservation_url",
       "reservation_platform",
       "hours_text",
+      "is_open_now",
       "image_primary_url",
       "address",
       "city",
