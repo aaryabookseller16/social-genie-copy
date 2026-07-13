@@ -7,19 +7,9 @@
 
 import Link from "next/link";
 import { xanoFetch } from "@/app/lib/server/xanoProxy";
+import { type InfluencerOffer } from "@/app/lib/publicApiClient";
 import { ScrollUnlock } from "../ScrollUnlock";
 import { RedeemClient } from "./RedeemClient";
-
-interface InfluencerOffer {
-  id: number;
-  offer_type: string;
-  offer_title: string;
-  offer_description?: string;
-  promo_code?: string;
-  discount_value?: number | string;
-  discount_type?: string;
-  status: string;
-}
 
 async function loadInfluencerOffers(handle: string): Promise<InfluencerOffer[]> {
   try {

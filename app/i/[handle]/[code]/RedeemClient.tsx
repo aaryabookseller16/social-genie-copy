@@ -8,18 +8,13 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { readAuthToken } from "@/app/lib/localState";
-import { redeemInfluencerOffer } from "@/app/lib/publicApiClient";
+import {
+  redeemInfluencerOffer,
+  type InfluencerOffer,
+} from "@/app/lib/publicApiClient";
 import { ScrollUnlock } from "../ScrollUnlock";
 
-interface OfferProp {
-  id: number;
-  offer_type: string;
-  offer_title: string;
-  offer_description?: string;
-  promo_code?: string;
-  discount_value?: number | string;
-  discount_type?: string;
-}
+type OfferProp = InfluencerOffer;
 
 interface RedeemResult {
   redemption_id?: number;
@@ -145,6 +140,12 @@ export function RedeemClient({
                   {offer.offer_description ? (
                     <p className="mt-1 text-[0.85rem] text-gray-500 dark:text-white/60">
                       {offer.offer_description}
+                    </p>
+                  ) : null}
+                  {offer.event_id && offer.event_title ? (
+                    <p className="mt-1 text-[0.78rem] font-medium text-gray-500 dark:text-white/50">
+                      For {offer.event_title}
+                      {offer.event_date ? ` · ${offer.event_date}` : ""}
                     </p>
                   ) : null}
                   <p className="mt-2 text-[0.72rem] text-gray-400 dark:text-white/40">
