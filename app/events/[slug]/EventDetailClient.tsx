@@ -81,6 +81,8 @@ interface SocialEvent {
   event_end_time?: string;
   event_category?: string;
   cover_image_url?: string;
+  /** Separate from any photo gallery; combined count is capped at 5 by Xano. */
+  video_urls?: { url: string; thumbnail_url: string }[];
   public_slug: string;
   status: string;
   rsvp_count?: number;
@@ -297,7 +299,22 @@ export function EventDetailClient({
           </h1>
         </div>
       </div>
- 
+
+      {event.video_urls && event.video_urls.length > 0 ? (
+        <div className="mx-auto flex max-w-2xl gap-3 overflow-x-auto px-5 pt-5">
+          {event.video_urls.map((v) => (
+            <video
+              key={v.url}
+              src={v.url}
+              poster={v.thumbnail_url}
+              controls
+              playsInline
+              className="h-52 w-auto shrink-0 rounded-2xl"
+            />
+          ))}
+        </div>
+      ) : null}
+
       {/* ── CONTENT ────────────────────────────────────────────────────── */}
       <div className="mx-auto max-w-2xl space-y-6 px-5 pb-32 pt-5">
  

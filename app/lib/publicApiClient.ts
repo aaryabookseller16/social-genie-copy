@@ -1729,6 +1729,9 @@ export type ProducerProfile = {
   average_going_count?: number;
 };
 
+/** A hosted video plus its Cloudinary-derived thumbnail. Matches the Xano `video_urls` shape. */
+export type VideoItem = { url: string; thumbnail_url: string };
+
 export type ProducerEvent = {
   id: number;
   title: string;
@@ -1743,6 +1746,8 @@ export type ProducerEvent = {
   cover_image_url?: string;
   /** Ordered gallery; index 0 is the cover. Legacy rows may return `{}` from Xano. */
   image_urls?: string[];
+  /** Separate from image_urls; combined count with image_urls is capped at 5 by Xano. */
+  video_urls?: VideoItem[];
   ticket_url?: string;
   ticket_price_min?: number;
   is_free?: boolean;
@@ -1761,6 +1766,8 @@ export type ProducerPost = {
   image_url?: string;
   /** Ordered gallery; index 0 is the primary. Legacy rows may return `{}` from Xano. */
   image_urls?: string[];
+  /** Separate from image_urls; combined count with image_urls is capped at 5 by Xano. */
+  video_urls?: VideoItem[];
   like_count?: number;
   comment_count?: number;
   created_at?: number;
@@ -1841,6 +1848,7 @@ export async function createProducerEvent(payload: {
   city?: string;
   cover_image_url?: string;
   image_urls?: string[];
+  video_urls?: VideoItem[];
   ticket_url?: string;
   ticket_price_min?: number;
   is_free?: boolean;
@@ -1874,6 +1882,7 @@ export async function createProducerPost(payload: {
   post_text: string;
   image_url?: string;
   image_urls?: string[];
+  video_urls?: VideoItem[];
 }) {
   return apiJson<ProducerPost>("/api/producer/post", {
     method: "POST",

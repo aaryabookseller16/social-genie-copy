@@ -22,10 +22,12 @@ import {
   type ProducerPost,
   type ProducerProfile,
   type ProducerRsvpEntry,
+  type VideoItem,
 } from "@/app/lib/publicApiClient";
 import { type GenieVenue } from "@/app/lib/genieTypes";
 import { galleryFor } from "@/app/lib/image";
 import ImageUploader from "@/app/components/ImageUploader";
+import VideoUploader, { type VideoSlotValue } from "@/app/components/VideoUploader";
 import ImageGallery from "@/app/components/ImageGallery";
 import { ActionButton } from "./ui";
 
@@ -394,6 +396,9 @@ export function ProducerSection({
   /** Ordered event gallery; index 0 is the cover. Capped at 5 by Xano. */
   const [evImageUrls, setEvImageUrls] = useState<string[]>([]);
   const [evUploading, setEvUploading] = useState(false);
+  /** Separate video list; combined count with evImageUrls is capped at 5 by Xano. */
+  const [evVideos, setEvVideos] = useState<VideoSlotValue[]>([]);
+  const [evVideoUploading, setEvVideoUploading] = useState(false);
   const [evRsvpLimit, setEvRsvpLimit] = useState("");
   const [evAgeReq, setEvAgeReq] = useState("");
   const [evBusy, setEvBusy] = useState(false);
@@ -406,6 +411,9 @@ export function ProducerSection({
   const [postImageUrls, setPostImageUrls] = useState<string[]>([]);
   const [postShowImageInput, setPostShowImageInput] = useState(false);
   const [postUploading, setPostUploading] = useState(false);
+  /** Separate video list; combined count with postImageUrls is capped at 5 by Xano. */
+  const [postVideos, setPostVideos] = useState<VideoSlotValue[]>([]);
+  const [postVideoUploading, setPostVideoUploading] = useState(false);
   const [postBusy, setPostBusy] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
   const [postSuccess, setPostSuccess] = useState(false);
@@ -607,6 +615,7 @@ export function ProducerSection({
     setEvStartTime(""); setEvEndTime(""); setEvVenue(""); setEvCity("");
     setEvFree(false); setEvTicketPrice(""); setEvTicketUrl("");
     setEvImageUrls([]); setEvUploading(false);
+    setEvVideos([]); setEvVideoUploading(false);
     setEvRsvpLimit(""); setEvAgeReq(""); setEvError(null);
     setStep("create-event");
   }
@@ -615,6 +624,7 @@ export function ProducerSection({
   function openCreatePost() {
     setPostText(""); setPostImageUrls([]); setPostShowImageInput(false);
     setPostUploading(false);
+    setPostVideos([]); setPostVideoUploading(false);
     setPostError(null); setPostSuccess(false);
     setStep("create-post");
   }
@@ -687,10 +697,11 @@ export function ProducerSection({
     e.preventDefault();
     if (!evTitle.trim()) { setEvError("Event title is required."); return; }
     if (!evCategory) { setEvError("Please select a category."); return; }
-    if (evUploading) { setEvError("Please wait for your photos to finish uploading."); return; }
+    if (evUploading || evVideoUploading) { setEvError("Please wait for your photos and videos to finish uploading."); return; }
     setEvBusy(true);
     setEvError(null);
     try {
+      const videoUrls: VideoItem[] = evVideos.map((v) => ({ url: v.url, thumbnail_url: v.thumbnailUrl }));
       const created = await createProducerEvent({
         title: evTitle.trim(),
         category: evCategory,
@@ -707,6 +718,7 @@ export function ProducerSection({
         ticket_url: evTicketUrl.trim() || undefined,
         cover_image_url: evImageUrls[0] || undefined,
         image_urls: evImageUrls,
+        video_urls: videoUrls.length > 0 ? videoUrls : undefined,
         rsvp_limit: evRsvpLimit ? Number(evRsvpLimit) : undefined,
         age_requirement: evAgeReq.trim() || undefined,
         event_id: editingEventId.current ?? undefined,
@@ -731,14 +743,16 @@ export function ProducerSection({
   async function handlePostSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!postText.trim()) { setPostError("Post text is required."); return; }
-    if (postUploading) { setPostError("Please wait for your photos to finish uploading."); return; }
+    if (postUploading || postVideoUploading) { setPostError("Please wait for your photos and videos to finish uploading."); return; }
     setPostBusy(true);
     setPostError(null);
     try {
+      const postVideoUrls: VideoItem[] = postVideos.map((v) => ({ url: v.url, thumbnail_url: v.thumbnailUrl }));
       const raw = await createProducerPost({
         post_text: postText.trim(),
         image_url: postImageUrls[0] || undefined,
         image_urls: postImageUrls,
+        video_urls: postVideoUrls.length > 0 ? postVideoUrls : undefined,
       });
       // Xano returns { success: true, post: { id, post_text, ... } }
       const r = raw as unknown as Record<string, unknown>;
@@ -1171,6 +1185,20 @@ export function ProducerSection({
                       />
                     ) : null;
                   })()}
+                  {p.video_urls && p.video_urls.length > 0 ? (
+                    <div className="mt-3 flex gap-2 overflow-x-auto">
+                      {p.video_urls.map((v) => (
+                        <video
+                          key={v.url}
+                          src={v.url}
+                          poster={v.thumbnail_url}
+                          controls
+                          playsInline
+                          className="h-40 w-auto shrink-0 rounded-xl"
+                        />
+                      ))}
+                    </div>
+                  ) : null}
                   <div className="mt-2 flex items-center gap-3">
                     {p.created_at ? (
                       <span className="text-xs text-white/30">
@@ -1461,15 +1489,25 @@ export function ProducerSection({
           <FormField label="Photos">
             <ImageUploader
               mode="multi"
-              max={5}
+              max={Math.max(0, 5 - evVideos.length)}
               folder="events"
               value={evImageUrls}
               onChange={setEvImageUrls}
               onUploadingChange={setEvUploading}
             />
             <p className="mt-1.5 text-[11px] text-gray-400 dark:text-white/40">
-              Up to 5 photos. The first one is used as the event cover.
+              Up to 5 photos and videos combined. The first one is used as the event cover.
             </p>
+          </FormField>
+
+          <FormField label="Videos">
+            <VideoUploader
+              value={evVideos}
+              onChange={setEvVideos}
+              folder="events"
+              max={Math.max(0, 5 - evImageUrls.length)}
+              onUploadingChange={setEvVideoUploading}
+            />
           </FormField>
 
           <div className="grid grid-cols-2 gap-3">
@@ -1511,10 +1549,10 @@ export function ProducerSection({
             <ActionButton
               type="submit"
               className="flex-1"
-              disabled={evBusy || evUploading}
+              disabled={evBusy || evUploading || evVideoUploading}
             >
-              {evUploading
-                ? "Uploading photos…"
+              {evUploading || evVideoUploading
+                ? "Uploading…"
                 : evBusy
                   ? "Saving…"
                   : isEdit
@@ -1571,6 +1609,21 @@ export function ProducerSection({
             </svg>
           </button>
         </div>
+
+        {selectedEvent.video_urls && selectedEvent.video_urls.length > 0 ? (
+          <div className="mt-3 flex gap-2 overflow-x-auto px-4">
+            {selectedEvent.video_urls.map((v) => (
+              <video
+                key={v.url}
+                src={v.url}
+                poster={v.thumbnail_url}
+                controls
+                playsInline
+                className="h-40 w-auto shrink-0 rounded-xl"
+              />
+            ))}
+          </div>
+        ) : null}
 
         {/* ── Content ────────────────────────────────────────── */}
         <div className="space-y-5 pt-5">
@@ -1878,11 +1931,22 @@ export function ProducerSection({
             {postShowImageInput || postImageUrls.length > 0 ? (
               <ImageUploader
                 mode="multi"
-                max={5}
+                max={Math.max(0, 5 - postVideos.length)}
                 folder="posts"
                 value={postImageUrls}
                 onChange={setPostImageUrls}
                 onUploadingChange={setPostUploading}
+              />
+            ) : null}
+
+            {/* Video picker (same toggle-or-already-has-content pattern as photos) */}
+            {postShowImageInput || postVideos.length > 0 ? (
+              <VideoUploader
+                value={postVideos}
+                onChange={setPostVideos}
+                folder="posts"
+                max={Math.max(0, 5 - postImageUrls.length)}
+                onUploadingChange={setPostVideoUploading}
               />
             ) : null}
 
@@ -1917,10 +1981,10 @@ export function ProducerSection({
             {/* Post It button */}
             <button
               type="submit"
-              disabled={postBusy || postUploading || !postText.trim()}
+              disabled={postBusy || postUploading || postVideoUploading || !postText.trim()}
               className="w-full rounded-2xl bg-gradient-to-r from-red-700 to-red-500 py-4 text-base font-semibold text-white shadow-lg transition hover:from-red-600 hover:to-red-400 disabled:opacity-50"
             >
-              {postUploading ? "Uploading photos…" : postBusy ? "Publishing…" : "Post It"}
+              {postUploading || postVideoUploading ? "Uploading…" : postBusy ? "Publishing…" : "Post It"}
             </button>
           </form>
         )}

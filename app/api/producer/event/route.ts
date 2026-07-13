@@ -10,7 +10,10 @@ import { xanoFetch, extractBearerToken, XanoError } from "@/app/lib/server/xanoP
  * event_id is present. Writes to genie_social_events only. Requires Bearer JWT.
  *
  * `image_urls` is an ordered array of hosted Cloudinary URLs (index 0 is the cover),
- * produced client-side by /api/upload/image. Xano caps it at 5.
+ * produced client-side by /api/upload/image. `video_urls` is a separate array of
+ * {url, thumbnail_url} pairs, produced client-side by uploadVideo() in
+ * app/lib/videoUpload.ts (a direct-to-Cloudinary signed upload, not proxied through this
+ * route). Xano caps image_urls + video_urls combined at 5.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -58,6 +61,19 @@ export async function POST(request: NextRequest) {
       );
       if (urls.length > 0) payload.image_urls = urls;
       else if (isEdit) payload.clear_images = true;
+    }
+    // Same replace-whole-array semantics as image_urls, in a separate list — the combined
+    // count is validated by Xano, not here.
+    if (Array.isArray(body.video_urls)) {
+      const videos = body.video_urls.filter(
+        (v): v is { url: string; thumbnail_url: string } =>
+          !!v &&
+          typeof v === "object" &&
+          typeof (v as Record<string, unknown>).url === "string" &&
+          typeof (v as Record<string, unknown>).thumbnail_url === "string"
+      );
+      if (videos.length > 0) payload.video_urls = videos;
+      else if (isEdit) payload.clear_video = true;
     }
     if (body.ticket_url) payload.ticket_url = String(body.ticket_url).trim();
     if (body.ticket_price_min !== undefined) payload.ticket_price_min = Number(body.ticket_price_min) || 0;
