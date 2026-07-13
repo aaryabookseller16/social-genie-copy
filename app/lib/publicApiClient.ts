@@ -2316,6 +2316,9 @@ export type UpcomingEvent = {
     is_following?: boolean;
   };
   cover_image_url?: string;
+  image_urls?: string[];
+  /** Separate from image_urls; combined count is capped at 5 by Xano. */
+  video_urls?: VideoItem[];
   event_date?: string;
   start_time?: string;
   end_time?: string;

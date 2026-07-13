@@ -25,7 +25,7 @@ import {
   type VideoItem,
 } from "@/app/lib/publicApiClient";
 import { type GenieVenue } from "@/app/lib/genieTypes";
-import { galleryFor } from "@/app/lib/image";
+import { galleryFor, mediaGalleryFor } from "@/app/lib/image";
 import ImageUploader from "@/app/components/ImageUploader";
 import VideoUploader, { type VideoSlotValue } from "@/app/components/VideoUploader";
 import ImageGallery from "@/app/components/ImageGallery";
@@ -1175,30 +1175,16 @@ export function ProducerSection({
                 >
                   <p className="text-sm leading-relaxed text-white/80 line-clamp-3">{p.post_text}</p>
                   {(() => {
-                    const gallery = galleryFor(p.image_url, p.image_urls);
-                    return gallery.length > 0 ? (
+                    const media = mediaGalleryFor(p.image_url, p.image_urls, p.video_urls);
+                    return media.length > 0 ? (
                       <ImageGallery
-                        images={gallery}
+                        items={media}
                         className="mt-3 overflow-hidden rounded-xl"
                         heightClass="h-40"
                         showThumbnails={false}
                       />
                     ) : null;
                   })()}
-                  {p.video_urls && p.video_urls.length > 0 ? (
-                    <div className="mt-3 flex gap-2 overflow-x-auto">
-                      {p.video_urls.map((v) => (
-                        <video
-                          key={v.url}
-                          src={v.url}
-                          poster={v.thumbnail_url}
-                          controls
-                          playsInline
-                          className="h-40 w-auto shrink-0 rounded-xl"
-                        />
-                      ))}
-                    </div>
-                  ) : null}
                   <div className="mt-2 flex items-center gap-3">
                     {p.created_at ? (
                       <span className="text-xs text-white/30">
@@ -1573,16 +1559,16 @@ export function ProducerSection({
     const timeLine = [timeRange, formattedDate].filter(Boolean).join("  ·  ");
     const venueLine2 = [selectedEvent.venue_address, selectedEvent.city].filter(Boolean).join(", ");
     const longDesc = (selectedEvent.description ?? "").length > 180;
-    const eventGallery = galleryFor(selectedEvent.cover_image_url, selectedEvent.image_urls);
+    const eventMedia = mediaGalleryFor(selectedEvent.cover_image_url, selectedEvent.image_urls, selectedEvent.video_urls);
 
     return (
       <section className="pb-28">
 
         {/* ── Hero image ─────────────────────────────────────── */}
         <div className="relative -mx-4 h-60 overflow-hidden bg-gradient-to-b from-red-950 to-black">
-          {eventGallery.length > 0 ? (
+          {eventMedia.length > 0 ? (
             <ImageGallery
-              images={eventGallery}
+              items={eventMedia}
               alt={selectedEvent.title}
               heightClass="h-60"
               showThumbnails={false}
@@ -1609,21 +1595,6 @@ export function ProducerSection({
             </svg>
           </button>
         </div>
-
-        {selectedEvent.video_urls && selectedEvent.video_urls.length > 0 ? (
-          <div className="mt-3 flex gap-2 overflow-x-auto px-4">
-            {selectedEvent.video_urls.map((v) => (
-              <video
-                key={v.url}
-                src={v.url}
-                poster={v.thumbnail_url}
-                controls
-                playsInline
-                className="h-40 w-auto shrink-0 rounded-xl"
-              />
-            ))}
-          </div>
-        ) : null}
 
         {/* ── Content ────────────────────────────────────────── */}
         <div className="space-y-5 pt-5">
