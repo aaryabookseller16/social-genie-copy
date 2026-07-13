@@ -829,6 +829,23 @@ export async function searchVendorBusinesses(query: string, city = "Houston") {
   return (response.results ?? []).map(mapVenue);
 }
 
+export type PublicEventSearchResult = {
+  id: number;
+  title: string;
+  event_date?: string;
+  venue_name?: string | null;
+  city?: string;
+};
+
+export async function searchPublicEvents(query: string) {
+  const params = new URLSearchParams({ query });
+  const response = await apiJson<{
+    results: PublicEventSearchResult[];
+    count?: number;
+  }>(`/api/events/search?${params.toString()}`, { auth: false });
+  return response.results ?? [];
+}
+
 export async function vendorOnboardingSearch(payload: {
   business_name: string;
 }) {
@@ -1610,7 +1627,14 @@ export interface InfluencerOffer {
   redemptions_used?: number;
   status: string;
   expires_at?: string | number;
+  // Exactly one of these is set. Venue-based offers carry `venue_id` (event_id
+  // absent/null); event-based offers carry `event_id` (the API reports
+  // `venue_id: 0` on those rows rather than omitting it, so don't rely on
+  // `venue_id` being falsy to mean "no venue" — check `event_id` instead).
   venue_id?: number;
+  event_id?: number;
+  event_title?: string;
+  event_date?: string;
   total_clicks?: number;
   rejection_reason?: string;
   reviewed_at?: string | number;
@@ -1668,12 +1692,13 @@ export interface CreatedInfluencerOffer {
 }
 
 /**
- * Influencer creates an offer tied to a venue. Offer starts in `pending`
- * status until the venue owner approves it. `venue_id` is required.
- * (`discount_type` is intentionally omitted — the backend has no column for it.)
+ * Influencer creates an offer tied to either a venue or an event. Offer
+ * starts in `pending` status until the venue owner (vendor) or event owner
+ * (producer) approves it. Provide exactly one of `venue_id` / `event_id`.
  */
 export async function createInfluencerOffer(payload: {
-  venue_id: number;
+  venue_id?: number;
+  event_id?: number;
   offer_title: string;
   offer_type: string;
   offer_description?: string;
@@ -1729,6 +1754,9 @@ export type ProducerProfile = {
   average_going_count?: number;
 };
 
+/** A hosted video plus its Cloudinary-derived thumbnail. Matches the Xano `video_urls` shape. */
+export type VideoItem = { url: string; thumbnail_url: string };
+
 export type ProducerEvent = {
   id: number;
   title: string;
@@ -1743,6 +1771,8 @@ export type ProducerEvent = {
   cover_image_url?: string;
   /** Ordered gallery; index 0 is the cover. Legacy rows may return `{}` from Xano. */
   image_urls?: string[];
+  /** Separate from image_urls; combined count with image_urls is capped at 5 by Xano. */
+  video_urls?: VideoItem[];
   ticket_url?: string;
   ticket_price_min?: number;
   is_free?: boolean;
@@ -1761,6 +1791,8 @@ export type ProducerPost = {
   image_url?: string;
   /** Ordered gallery; index 0 is the primary. Legacy rows may return `{}` from Xano. */
   image_urls?: string[];
+  /** Separate from image_urls; combined count with image_urls is capped at 5 by Xano. */
+  video_urls?: VideoItem[];
   like_count?: number;
   comment_count?: number;
   created_at?: number;
@@ -1841,6 +1873,7 @@ export async function createProducerEvent(payload: {
   city?: string;
   cover_image_url?: string;
   image_urls?: string[];
+  video_urls?: VideoItem[];
   ticket_url?: string;
   ticket_price_min?: number;
   is_free?: boolean;
@@ -1874,6 +1907,7 @@ export async function createProducerPost(payload: {
   post_text: string;
   image_url?: string;
   image_urls?: string[];
+  video_urls?: VideoItem[];
 }) {
   return apiJson<ProducerPost>("/api/producer/post", {
     method: "POST",
@@ -2011,6 +2045,46 @@ export async function followProducer(
       followed_type: "producer",
       follow_source: source,
     }),
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Producer — Influencer Offer Review Queue                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * All influencer offers (any status, or filtered) for events the calling
+ * producer owns. Owned events are resolved server-side from the caller's JWT.
+ */
+export async function fetchProducerInfluencerOffers(
+  status?: "active" | "pending" | "rejected" | "cancelled"
+) {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+  return apiJson<{
+    success?: boolean;
+    offers?: InfluencerOffer[];
+    count?: number;
+  }>(`/api/producer/influencer-offers${qs}`);
+}
+
+/**
+ * Approve or reject a pending influencer offer targeting one of the caller's
+ * events. Same underlying review endpoint as the vendor flow — ownership is
+ * resolved server-side depending on whether the offer targets a venue or event.
+ */
+export async function reviewProducerOffer(payload: {
+  offer_id: number;
+  decision: "approve" | "reject" | "cancel";
+  rejection_reason?: string;
+}) {
+  return apiJson<{
+    success?: boolean;
+    offer_id?: number;
+    status?: string;
+    reviewed_at?: string | number;
+  }>("/api/producer/review-offer", {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }
 
@@ -2396,6 +2470,9 @@ export type UpcomingEvent = {
     is_following?: boolean;
   };
   cover_image_url?: string;
+  image_urls?: string[];
+  /** Separate from image_urls; combined count is capped at 5 by Xano. */
+  video_urls?: VideoItem[];
   event_date?: string;
   start_time?: string;
   end_time?: string;

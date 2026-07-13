@@ -8,10 +8,12 @@ import {
 const MAX_REASON_LENGTH = 500;
 
 /**
- * POST /api/vendor/review-offer
- * Body: { offer_id (required), decision ("approve"|"reject", required), rejection_reason? }
- * The caller must own the offer's venue.
- * Proxies to: genie/ep_review_influencer_offer_dev
+ * POST /api/producer/review-offer
+ * Body: { offer_id (required), decision ("approve"|"reject"|"cancel", required), rejection_reason? }
+ * The caller must own the offer's event.
+ * Proxies to: genie/ep_review_influencer_offer_dev (same endpoint the vendor
+ * flow uses — authorization branches server-side on whether the offer
+ * targets a venue or an event).
  */
 export async function POST(request: NextRequest) {
   try {
