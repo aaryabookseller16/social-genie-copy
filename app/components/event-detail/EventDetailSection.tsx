@@ -4,8 +4,11 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import {
   fetchEventDetail,
+  fetchEventOffers,
   followProducer,
   type EventDetailResponse,
+  type InfluencerEventOffer,
+  type VibbeeEventOffer,
 } from "@/app/lib/publicApiClient";
 import { readAuthToken } from "@/app/lib/localState";
 import { useEventRsvp, type UserRsvpStatus } from "@/app/lib/useEventRsvp";
@@ -20,6 +23,7 @@ type Props = {
   onAuthRequired?: () => void;
   onRideClick?: (address: string) => void;
   logInteraction?: (action: string, id: number, screen: string) => void;
+  onEventOpen?: (evt: Record<string, unknown>) => void;
 };
 
 function fmtTime(t: unknown): string {
@@ -238,9 +242,20 @@ function AuthRequiredState({ onBack, onLogin }: { onBack: () => void; onLogin: (
   );
 }
 
-function MiniEventCard({ evt }: { evt: { title?: string; cover_image_url?: string; category?: string } }) {
+function MiniEventCard({
+  evt,
+  onOpen,
+}: {
+  evt: { title?: string; cover_image_url?: string; category?: string };
+  onOpen?: () => void;
+}) {
   return (
-    <div className="relative h-44 w-44 flex-none overflow-hidden rounded-[14px]">
+    <button
+      type="button"
+      onClick={onOpen}
+      disabled={!onOpen}
+      className="relative h-44 w-44 flex-none overflow-hidden rounded-[14px] text-left"
+    >
       <Image
         src={evt.cover_image_url || "/sample-venue-2.jpeg"}
         alt={evt.title || "Event"}
@@ -259,11 +274,11 @@ function MiniEventCard({ evt }: { evt: { title?: string; cover_image_url?: strin
             {evt.category}
           </p>
         ) : null}
-        <button type="button" className="mt-1.5 text-[0.72rem] font-medium text-white/80">
+        <span className="mt-1.5 block text-[0.72rem] font-medium text-white/80">
           Learn more
-        </button>
+        </span>
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -273,7 +288,7 @@ function isAuthError(err: unknown): boolean {
   return msg.includes("401") || msg.includes("unauthorized") || msg.includes("authentication required");
 }
 
-export function EventDetailSection({ eventId, initialData, onBack, onAuthRequired, onRideClick, logInteraction }: Props) {
+export function EventDetailSection({ eventId, initialData, onBack, onAuthRequired, onRideClick, logInteraction, onEventOpen }: Props) {
   const [data, setData] = useState<EventDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -281,6 +296,32 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
   const [isFollowing, setIsFollowing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+  const [vibbeeOffers, setVibbeeOffers] = useState<VibbeeEventOffer[]>([]);
+  const [influencerOffers, setInfluencerOffers] = useState<InfluencerEventOffer[]>([]);
+
+  // Real offers (V.I.Bee house + influencer-driven) for this event. Auth-required
+  // endpoint, so skip the fetch entirely for guests rather than let it 401.
+  useEffect(() => {
+    if (!eventId || !readAuthToken()) {
+      setVibbeeOffers([]);
+      setInfluencerOffers([]);
+      return;
+    }
+    let cancelled = false;
+    fetchEventOffers(eventId)
+      .then((result) => {
+        if (cancelled) return;
+        setVibbeeOffers(result.vibbee_offers ?? []);
+        setInfluencerOffers(result.influencer_offers ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setVibbeeOffers([]);
+          setInfluencerOffers([]);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [eventId]);
 
   // Seed follow state from the embedded producer once data / initialData is ready.
   // Read `is_following` from whichever source actually provides it: the event-detail
@@ -602,25 +643,54 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
       {/* ── Remaining sections ── */}
       <div className="flex flex-col gap-5 px-4 pt-1 sm:px-6">
 
-        {/* ── V.I.Bee Offer (only rendered when the event has a real offer) ── */}
-        {ev.offer_title ? (
-          <div className="rounded-[14px] border border-white/10 bg-black/30 px-4 py-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[0.9rem] font-semibold text-white">V.I.Bee Offer</span>
-              {ev.offer_type ? (
-                <span className="rounded-full bg-red-600 px-2.5 py-0.5 text-[0.65rem] font-bold text-white">
-                  {ev.offer_type as string}
-                </span>
-              ) : null}
-            </div>
-            <p className="mt-1.5 text-[0.88rem] font-semibold text-red-400">
-              {ev.offer_title as string}
-            </p>
-            {ev.offer_description ? (
-              <p className="mt-1 text-[0.78rem] leading-5 text-white/60">
-                {ev.offer_description as string}
-              </p>
-            ) : null}
+        {/* ── Offers (V.I.Bee house + influencer-driven), only rendered when real ones exist ── */}
+        {vibbeeOffers.length + influencerOffers.length > 0 ? (
+          <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-2 [scrollbar-width:none] sm:-mx-6 sm:px-6">
+            {vibbeeOffers.map((offer) => (
+              <div key={`vibbee-${offer.id}`} className="w-[85vw] max-w-72 flex-none rounded-[14px] border border-white/10 bg-black/30 px-4 py-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="min-w-0 truncate text-[0.9rem] font-semibold text-white">V.I.Bee Offer</span>
+                  {offer.offer_type ? (
+                    <span className="flex-none rounded-full bg-red-600 px-2.5 py-0.5 text-[0.65rem] font-bold text-white">
+                      {offer.offer_type}
+                    </span>
+                  ) : null}
+                </div>
+                {offer.offer_title ? (
+                  <p className="mt-1.5 text-[0.88rem] font-semibold text-red-400">{offer.offer_title}</p>
+                ) : null}
+                {offer.offer_description ? (
+                  <p className="mt-1 text-[0.78rem] leading-5 text-white/60">{offer.offer_description}</p>
+                ) : null}
+              </div>
+            ))}
+            {influencerOffers.map((offer) => {
+              const card = (
+                <div className="w-[85vw] max-w-72 flex-none rounded-[14px] border border-white/10 bg-black/30 px-4 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="min-w-0 truncate text-[0.9rem] font-semibold text-white">
+                      {offer.influencer_handle ? `Offer from @${offer.influencer_handle}` : "Influencer Offer"}
+                    </span>
+                    {offer.offer_type ? (
+                      <span className="flex-none rounded-full bg-red-600 px-2.5 py-0.5 text-[0.65rem] font-bold text-white">
+                        {offer.offer_type}
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="mt-1.5 text-[0.88rem] font-semibold text-red-400">{offer.offer_title}</p>
+                  {offer.offer_description ? (
+                    <p className="mt-1 text-[0.78rem] leading-5 text-white/60">{offer.offer_description}</p>
+                  ) : null}
+                </div>
+              );
+              return offer.influencer_handle ? (
+                <a key={`influencer-${offer.id}`} href={`/i/${offer.influencer_handle}`} className="block flex-none">
+                  {card}
+                </a>
+              ) : (
+                <div key={`influencer-${offer.id}`} className="flex-none">{card}</div>
+              );
+            })}
           </div>
         ) : null}
 
@@ -736,7 +806,11 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
             <h3 className="mb-3 text-[1rem] font-semibold text-white">More like this</h3>
             <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-2 [scrollbar-width:none] sm:-mx-6 sm:px-6">
               {relatedEvents.map((evt) => (
-                <MiniEventCard key={evt.id as number} evt={evt as { title?: string; cover_image_url?: string; category?: string }} />
+                <MiniEventCard
+                  key={evt.id as number}
+                  evt={evt as { title?: string; cover_image_url?: string; category?: string }}
+                  onOpen={onEventOpen ? () => onEventOpen(evt) : undefined}
+                />
               ))}
             </div>
           </div>
@@ -748,7 +822,11 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
             <h3 className="mb-3 text-[1rem] font-semibold text-white">Also in this venue</h3>
             <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-2 [scrollbar-width:none] sm:-mx-6 sm:px-6">
               {venueEvents.map((evt) => (
-                <MiniEventCard key={evt.id as number} evt={evt as { title?: string; cover_image_url?: string; category?: string }} />
+                <MiniEventCard
+                  key={evt.id as number}
+                  evt={evt as { title?: string; cover_image_url?: string; category?: string }}
+                  onOpen={onEventOpen ? () => onEventOpen(evt) : undefined}
+                />
               ))}
             </div>
           </div>

@@ -2651,6 +2651,54 @@ export async function fetchEventDetail(eventId: number): Promise<EventDetailResp
 }
 
 /* ------------------------------------------------------------------ */
+/*  Event offers (V.I.Bee + influencer)                                */
+/* ------------------------------------------------------------------ */
+
+export type InfluencerEventOffer = {
+  id: number;
+  influencer_id: number;
+  event_id: number;
+  venue_id?: number;
+  offer_title: string;
+  offer_description?: string;
+  offer_type?: string;
+  discount_value?: string;
+  discount_type?: string | null;
+  unique_code?: string;
+  unique_url_slug?: string;
+  promo_code?: string;
+  status?: string;
+  expires_at?: string;
+  influencer_name?: string;
+  influencer_handle?: string;
+  influencer_profile_image_url?: string;
+  [key: string]: unknown;
+};
+
+/** V.I.Bee house offers — table is currently empty in this workspace, exact
+ * field shape unconfirmed against live data; treated permissively. */
+export type VibbeeEventOffer = {
+  id: number;
+  event_id: number;
+  offer_title?: string;
+  offer_description?: string;
+  offer_type?: string;
+  [key: string]: unknown;
+};
+
+export type EventOffersResult = {
+  success: boolean;
+  event_id: number;
+  vibbee_offers: VibbeeEventOffer[];
+  influencer_offers: InfluencerEventOffer[];
+  total_offers: number;
+};
+
+export async function fetchEventOffers(eventId: number) {
+  return apiJson<EventOffersResult>(`/api/genie/event-offers?event_id=${eventId}`);
+}
+
+/* ------------------------------------------------------------------ */
 /*  Event RSVP (Going / Interested)                                    */
 /* ------------------------------------------------------------------ */
 

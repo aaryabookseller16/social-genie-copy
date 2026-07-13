@@ -24,7 +24,7 @@ export default function FeaturedEventVideos({
 }: FeaturedEventVideosProps) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
 
-  if (!videos || videos.length === 0) return null;
+  if (!Array.isArray(videos) || videos.length === 0) return null;
 
   return (
     <div className={className}>

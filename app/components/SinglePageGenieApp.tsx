@@ -5538,6 +5538,11 @@ navigateTo("event-detail");
             initialData={selectedEvent}
             onBack={handleTopBack}
             logInteraction={logEventInteraction}
+            onEventOpen={(evt) => {
+              setSelectedEventSlug((evt.public_slug as string) ?? null);
+              setSelectedEventId(evt.id as number);
+              setSelectedEvent(evt);
+            }}
             onAuthRequired={() => {
               pendingReturnRef.current = {
                 screen: "event-detail",
