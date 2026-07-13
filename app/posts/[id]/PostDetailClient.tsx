@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import ImageGallery from "@/app/components/ImageGallery";
-import { galleryFor, toImageList } from "@/app/lib/image";
+import { mediaGalleryFor } from "@/app/lib/image";
 import { readAuthToken, readConsumerAccount } from "@/app/lib/localState";
 import { usePostLike } from "@/app/lib/usePostLike";
 import {
@@ -148,8 +148,7 @@ export function PostDetailClient({
     [commentText, commentBusy, post.id, goToLogin]
   );
 
-  const images = galleryFor(post.image_url, post.image_urls);
-  const videos = toImageList(post.video_urls);
+  const media = mediaGalleryFor(post.image_url, post.image_urls, post.video_urls);
 
   return (
     <main className="min-h-screen bg-white pb-32 dark:bg-transparent">
@@ -214,25 +213,13 @@ export function PostDetailClient({
           </p>
         ) : null}
 
-        {/* ── IMAGES ──────────────────────────────────────────────────── */}
+        {/* ── MEDIA (photos + videos, unified carousel) ──────────────────── */}
         <ImageGallery
-          images={images}
-          alt={post.post_text ?? "Post image"}
+          items={media}
+          alt={post.post_text ?? "Post media"}
           className="overflow-hidden rounded-[18px]"
           heightClass="h-72"
         />
-
-        {/* ── VIDEOS ──────────────────────────────────────────────────── */}
-        {videos.map((url) => (
-          // eslint-disable-next-line jsx-a11y/media-has-caption
-          <video
-            key={url}
-            src={url}
-            controls
-            playsInline
-            className="w-full rounded-[18px] bg-black"
-          />
-        ))}
 
         {/* ── LIKE / SHARE ────────────────────────────────────────────── */}
         <div className="flex items-center gap-4 border-y border-gray-100 py-3 dark:border-white/10">
