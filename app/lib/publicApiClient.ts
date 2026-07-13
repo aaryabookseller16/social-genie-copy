@@ -1881,6 +1881,91 @@ export async function createProducerPost(payload: {
   });
 }
 
+/* ------------------------------------------------------------------ */
+/*  Public Post Detail (/posts/{id})                                   */
+/* ------------------------------------------------------------------ */
+
+export type PublicPostAuthor = {
+  id?: number;
+  display_name?: string;
+  profile_photo_url?: string;
+  is_verified?: boolean;
+};
+
+export type PublicPost = {
+  id: number;
+  author_id?: number;
+  author_type?: string;
+  post_text: string;
+  // Xano `json` columns — a string URL when set, but `{}` (not `""`/`[]`)
+  // when empty. Always read these through galleryFor()/toImageList()
+  // (app/lib/image.ts), never assume the type directly.
+  image_url?: unknown;
+  image_urls?: unknown;
+  video_urls?: unknown;
+  like_count?: number;
+  comment_count?: number;
+  created_at?: number;
+};
+
+export type PublicPostDetailResponse = {
+  success: boolean;
+  post: PublicPost;
+  author: PublicPostAuthor | null;
+};
+
+export type PostComment = {
+  id: number;
+  user_id: number;
+  content_type?: string;
+  content_id?: number;
+  comment_text: string;
+  parent_comment_id?: number;
+  like_count?: number;
+  created_at?: number;
+};
+
+export async function fetchPostComments(postId: number, page = 1, perPage = 20) {
+  return apiJson<{
+    success: boolean;
+    total: number;
+    page: number;
+    per_page: number;
+    comments: PostComment[];
+  }>(`/api/post/${postId}/comments?page=${page}&per_page=${perPage}`, { auth: false });
+}
+
+export async function addPostComment(
+  postId: number,
+  commentText: string,
+  parentCommentId?: number
+) {
+  return apiJson<{ success: boolean; comment: PostComment }>(
+    `/api/post/${postId}/comments`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        comment_text: commentText,
+        parent_comment_id: parentCommentId,
+      }),
+    }
+  );
+}
+
+export async function toggleLikePost(postId: number) {
+  return apiJson<{ success: boolean; action: "liked" | "unliked"; post_id: number }>(
+    `/api/post/${postId}/like`,
+    { method: "POST" }
+  );
+}
+
+// Only call when readAuthToken() is truthy — this route 401s otherwise.
+export async function fetchMyPostLikeStatus(postId: number) {
+  return apiJson<{ success: boolean; post_id: number; liked: boolean }>(
+    `/api/post/${postId}/like-status`
+  );
+}
+
 export type ProducerNotifPrefs = {
   notify_new_follower?: boolean;
   notify_post_like?: boolean;

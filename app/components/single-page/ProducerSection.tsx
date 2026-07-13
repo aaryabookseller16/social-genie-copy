@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { type ConsumerAccount } from "@/app/lib/localState";
@@ -1179,6 +1180,14 @@ export function ProducerSection({
                     ) : null}
                     {typeof p.like_count === "number" && p.like_count > 0 ? (
                       <span className="text-xs text-white/30">{p.like_count} likes</span>
+                    ) : null}
+                    {p.id ? (
+                      <Link
+                        href={`/posts/${p.id}`}
+                        className="text-xs font-semibold text-red-400 hover:text-red-300"
+                      >
+                        View post
+                      </Link>
                     ) : null}
                   </div>
                 </div>
