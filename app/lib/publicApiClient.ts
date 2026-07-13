@@ -2362,6 +2362,7 @@ export type UpcomingEvent = {
 export type TrendingVenue = {
   id: number | string;
   venue_name: string;
+  venue_type?: string;
   image_primary_url?: string;
   image_fallback_url?: string;
   cover_image_url?: string;
@@ -2370,9 +2371,12 @@ export type TrendingVenue = {
   area_neighborhood?: string;
   neighborhood_text?: string;
   energy_level?: string;
+  social_energy_state?: string;
   going_count?: number;
+  sb_going_count?: number;
   is_on_fire?: boolean;
   address?: string;
+  trending_score?: number;
   [key: string]: unknown;
 };
 

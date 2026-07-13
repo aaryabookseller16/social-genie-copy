@@ -15,6 +15,7 @@ import {
   type SocialEnergyAlertItem,
   type SocialPostItem,
   type SuggestedProducerItem,
+  type TrendingVenue,
   type UpcomingEvent,
 } from "@/app/lib/publicApiClient";
 import { type FlowAnchor } from "@/app/components/single-page/ui";
@@ -98,19 +99,6 @@ const DUMMY_SOCIAL_POST: SocialPostItem = {
   comment_count: 136,
 };
 
-const DUMMY_ON_FIRE_VENUE: OnFireVenueItem = {
-  feed_type: "on_fire_venue",
-  id: -3,
-  venue_name: "The Rustic",
-  venue_address: "1836 Polk St, Houston, TX",
-  neighborhood: "Midtown",
-  category: "Bar & Grill",
-  description:
-    "People are already there. The outdoor section fills fast on nights like this - move if you want a spot.",
-  going_count: 182,
-  badge: "This Weekend",
-};
-
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                             */
 /* ------------------------------------------------------------------ */
@@ -169,6 +157,18 @@ function upcomingEventToFeedItem(evt: UpcomingEvent, index: number): EventFeedIt
     producer,
     reason: "Based on your social preferences",
     raw: evt,
+  };
+}
+
+function trendingVenueToFeedItem(v: TrendingVenue): OnFireVenueItem {
+  return {
+    feed_type: "on_fire_venue",
+    id: typeof v.id === "number" ? v.id : Number(v.id),
+    venue_name: v.venue_name,
+    venue_address: v.address,
+    neighborhood: v.neighborhood_text ?? v.area_neighborhood ?? v.neighborhood,
+    category: v.venue_type,
+    going_count: v.sb_going_count ?? v.going_count,
   };
 }
 
@@ -907,6 +907,7 @@ export function HomescreenSection({
   const [eventsPage, setEventsPage] = useState(1);
   const [hasMoreEvents, setHasMoreEvents] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [topTrendingVenue, setTopTrendingVenue] = useState<TrendingVenue | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const cityId = 1;
@@ -933,6 +934,7 @@ export function HomescreenSection({
           const events = result.upcoming_events ?? [];
           setAllEvents(events);
           if (events.length < 5) setHasMoreEvents(false);
+          setTopTrendingVenue(result.trending_venues?.[0] ?? null);
         }
       })
       .catch((err: unknown) => {
@@ -987,7 +989,9 @@ export function HomescreenSection({
   feed.push(DUMMY_ENERGY_ALERT);
   feed.push({ feed_type: "offers", id: "offers", offers: DUMMY_OFFERS });
   feed.push(DUMMY_SOCIAL_POST);
-  feed.push(DUMMY_ON_FIRE_VENUE);
+  if (topTrendingVenue) {
+    feed.push(trendingVenueToFeedItem(topTrendingVenue));
+  }
   if (isLoggedIn && suggestedProducers.length > 0) {
     feed.push({ feed_type: "suggested_producers", id: "suggested_producers", producers: suggestedProducers });
   }
