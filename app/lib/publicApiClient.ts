@@ -1923,6 +1923,10 @@ export type PostComment = {
   parent_comment_id?: number;
   like_count?: number;
   created_at?: number;
+  // Populated once ep_get_post_comments_dev joins genie_user — absent on
+  // older backend responses, so callers must still fall back gracefully.
+  author_name?: string;
+  author_avatar_url?: string;
 };
 
 export async function fetchPostComments(postId: number, page = 1, perPage = 20) {

@@ -68,9 +68,9 @@ export default async function PostDetailPage({
 
   if (!data) {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center bg-white px-6 text-center">
-        <h1 className="text-2xl font-bold text-gray-900">Post not found</h1>
-        <p className="mt-2 text-gray-500">This post may have been removed.</p>
+      <main className="flex min-h-screen flex-col items-center justify-center bg-white px-6 text-center dark:bg-transparent">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Post not found</h1>
+        <p className="mt-2 text-gray-500 dark:text-white/60">This post may have been removed.</p>
         <Link
           href="/"
           className="mt-6 rounded-full bg-red-600 px-6 py-3 text-sm font-semibold text-white"

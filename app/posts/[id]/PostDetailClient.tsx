@@ -4,8 +4,8 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import ImageGallery from "@/app/components/ImageGallery";
-import { galleryFor } from "@/app/lib/image";
-import { readAuthToken } from "@/app/lib/localState";
+import { galleryFor, toImageList } from "@/app/lib/image";
+import { readAuthToken, readConsumerAccount } from "@/app/lib/localState";
 import { usePostLike } from "@/app/lib/usePostLike";
 import {
   fetchPostComments,
@@ -126,7 +126,17 @@ export function PostDetailClient({
       setCommentBusy(true);
       try {
         const res = await addPostComment(post.id, trimmed);
-        setComments((prev) => [...prev, res.comment]);
+        // ep_create_comment_dev doesn't return author_name/author_avatar_url
+        // (only the GET comments-list endpoint enriches those) — fill them
+        // in from the logged-in user's own cached session so the comment
+        // doesn't render as "Guest" / "?" until the next full refetch.
+        const account = readConsumerAccount();
+        const newComment: PostComment = {
+          ...res.comment,
+          author_name: account?.displayName || res.comment.author_name,
+          author_avatar_url: account?.avatarUrl || res.comment.author_avatar_url,
+        };
+        setComments((prev) => [...prev, newComment]);
         setCommentCount((c) => c + 1);
         setCommentText("");
       } catch {
@@ -139,14 +149,15 @@ export function PostDetailClient({
   );
 
   const images = galleryFor(post.image_url, post.image_urls);
+  const videos = toImageList(post.video_urls);
 
   return (
-    <main className="min-h-screen bg-white pb-32">
+    <main className="min-h-screen bg-white pb-32 dark:bg-transparent">
       {/* ── TOP BAR ─────────────────────────────────────────────────── */}
-      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-100 bg-white/95 px-4 py-3 backdrop-blur-sm">
+      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-100 bg-white/95 px-4 py-3 backdrop-blur-sm dark:border-white/10 dark:bg-black/40">
         <Link
           href="/"
-          className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-gray-700"
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-white"
           aria-label="Back to Social Bevy"
         >
           <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -156,7 +167,7 @@ export function PostDetailClient({
         <button
           type="button"
           onClick={handleShare}
-          className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-gray-700"
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-white"
           aria-label="Share this post"
         >
           <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -177,26 +188,28 @@ export function PostDetailClient({
               className="h-11 w-11 flex-none rounded-full object-cover"
             />
           ) : (
-            <div className="flex h-11 w-11 flex-none items-center justify-center rounded-full bg-red-100 text-sm font-semibold text-red-600">
+            <div className="flex h-11 w-11 flex-none items-center justify-center rounded-full bg-red-100 text-sm font-semibold text-red-600 dark:bg-red-900/30 dark:text-red-300">
               {initials(author?.display_name)}
             </div>
           )}
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
-              <p className="truncate font-semibold text-gray-900">
+              <p className="truncate font-semibold text-gray-900 dark:text-white">
                 {author?.display_name ?? "Social Bevy"}
               </p>
               {author?.is_verified ? (
-                <span className="text-red-500" title="Verified">✓</span>
+                <span className="text-red-500 dark:text-red-400" title="Verified">✓</span>
               ) : null}
             </div>
-            <p className="text-[0.8rem] text-gray-400">{formatRelativeTime(post.created_at)}</p>
+            <p className="text-[0.8rem] text-gray-400 dark:text-white/40">
+              {formatRelativeTime(post.created_at)}
+            </p>
           </div>
         </div>
 
         {/* ── POST TEXT ───────────────────────────────────────────────── */}
         {post.post_text ? (
-          <p className="whitespace-pre-wrap text-[0.95rem] leading-6 text-gray-800">
+          <p className="whitespace-pre-wrap text-[0.95rem] leading-6 text-gray-800 dark:text-white/90">
             {post.post_text}
           </p>
         ) : null}
@@ -209,8 +222,20 @@ export function PostDetailClient({
           heightClass="h-72"
         />
 
+        {/* ── VIDEOS ──────────────────────────────────────────────────── */}
+        {videos.map((url) => (
+          // eslint-disable-next-line jsx-a11y/media-has-caption
+          <video
+            key={url}
+            src={url}
+            controls
+            playsInline
+            className="w-full rounded-[18px] bg-black"
+          />
+        ))}
+
         {/* ── LIKE / SHARE ────────────────────────────────────────────── */}
-        <div className="flex items-center gap-4 border-y border-gray-100 py-3">
+        <div className="flex items-center gap-4 border-y border-gray-100 py-3 dark:border-white/10">
           <button
             type="button"
             onClick={toggleLike}
@@ -218,7 +243,7 @@ export function PostDetailClient({
             className={`flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold transition disabled:pointer-events-none disabled:opacity-60 ${
               liked
                 ? "border-red-600 bg-red-600 text-white"
-                : "border-gray-200 bg-white text-gray-700 hover:border-red-300"
+                : "border-gray-200 bg-white text-gray-700 hover:border-red-300 dark:border-white/15 dark:bg-white/5 dark:text-white dark:hover:border-red-500/40"
             }`}
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill={liked ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -229,7 +254,7 @@ export function PostDetailClient({
           <button
             type="button"
             onClick={handleShare}
-            className="flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition hover:border-red-300"
+            className="flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition hover:border-red-300 dark:border-white/15 dark:bg-white/5 dark:text-white dark:hover:border-red-500/40"
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
@@ -241,26 +266,48 @@ export function PostDetailClient({
 
         {/* ── COMMENTS ────────────────────────────────────────────────── */}
         <div className="space-y-4">
-          <h2 className="text-[0.95rem] font-semibold text-gray-900">
-            {commentCount > 0 ? `${commentCount} comments` : "Comments"}
+          <h2 className="text-[0.95rem] font-semibold text-gray-900 dark:text-white">
+            {commentCount > 0
+              ? `${commentCount} comment${commentCount === 1 ? "" : "s"}`
+              : "Comments"}
           </h2>
 
           {commentsLoading ? (
-            <p className="text-sm text-gray-400">Loading comments…</p>
+            <p className="text-sm text-gray-400 dark:text-white/40">Loading comments…</p>
           ) : comments.length === 0 ? (
-            <p className="text-sm text-gray-400">No comments yet. Be the first to comment.</p>
+            <p className="text-sm text-gray-400 dark:text-white/40">
+              No comments yet. Be the first to comment.
+            </p>
           ) : (
             <ul className="space-y-3">
               {comments.map((c) => (
                 <li key={c.id} className="flex gap-2.5">
-                  <div className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-500">
-                    {c.user_id}
-                  </div>
-                  <div className="min-w-0 flex-1 rounded-[14px] bg-gray-50 px-3 py-2">
-                    <p className="text-[0.85rem] leading-5 text-gray-800">{c.comment_text}</p>
-                    <p className="mt-0.5 text-[0.7rem] text-gray-400">
-                      {formatRelativeTime(c.created_at)}
-                    </p>
+                  {c.author_avatar_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={c.author_avatar_url}
+                      alt={c.author_name ?? ""}
+                      className="h-8 w-8 flex-none rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-500 dark:bg-white/10 dark:text-white/60">
+                      {initials(c.author_name)}
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[0.78rem] font-semibold text-gray-900 dark:text-white">
+                        {c.author_name || "Guest"}
+                      </span>
+                      <span className="text-[0.7rem] text-gray-400 dark:text-white/40">
+                        {formatRelativeTime(c.created_at)}
+                      </span>
+                    </div>
+                    <div className="mt-1 rounded-[14px] bg-gray-50 px-3 py-2 dark:bg-white/5">
+                      <p className="text-[0.85rem] leading-5 text-gray-800 dark:text-white/85">
+                        {c.comment_text}
+                      </p>
+                    </div>
                   </div>
                 </li>
               ))}
@@ -273,7 +320,7 @@ export function PostDetailClient({
               value={commentText}
               onChange={(e) => setCommentText(e.target.value)}
               placeholder="Add a comment..."
-              className="min-w-0 flex-1 rounded-full border border-gray-200 px-4 py-2.5 text-sm text-gray-800 outline-none focus:border-red-400"
+              className="min-w-0 flex-1 rounded-full border border-gray-200 px-4 py-2.5 text-sm text-gray-800 outline-none focus:border-red-400 dark:border-white/15 dark:bg-white/5 dark:text-white dark:placeholder:text-white/30"
             />
             <button
               type="submit"
