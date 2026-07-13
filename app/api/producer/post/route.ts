@@ -28,13 +28,28 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/producer/post
- * Body: { post_text, image_url?, image_urls? }
+ * Body: { post_text, image_url?, image_urls?, video_urls? }
  * Proxies to: genie/ep_create_post_dev
  * Requires Bearer JWT.
  *
  * `image_urls` is an ordered array of hosted Cloudinary URLs (index 0 is the
- * primary), produced client-side by /api/upload/image. Xano caps it at 5.
+ * primary), produced client-side by /api/upload/image. `video_urls` is a separate
+ * array of {url, thumbnail_url} pairs, produced client-side by uploadVideo() in
+ * app/lib/videoUpload.ts (direct-to-Cloudinary signed upload). Xano caps
+ * image_urls + video_urls combined at 5.
  */
+function parseVideoUrls(value: unknown): { url: string; thumbnail_url: string }[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const videos = value.filter(
+    (v): v is { url: string; thumbnail_url: string } =>
+      !!v &&
+      typeof v === "object" &&
+      typeof (v as Record<string, unknown>).url === "string" &&
+      typeof (v as Record<string, unknown>).thumbnail_url === "string"
+  );
+  return videos.length > 0 ? videos : [];
+}
+
 export async function POST(request: NextRequest) {
   try {
     const authToken = extractBearerToken(request);
@@ -51,6 +66,8 @@ export async function POST(request: NextRequest) {
         )
       : undefined;
 
+    const videoUrls = parseVideoUrls(body.video_urls);
+
     const result = await xanoFetch("genie/ep_create_post_dev", {
       method: "POST",
       authToken,
@@ -58,6 +75,7 @@ export async function POST(request: NextRequest) {
         post_text: postText,
         image_url: String(body.image_url ?? "").trim() || undefined,
         image_urls: imageUrls,
+        video_urls: videoUrls && videoUrls.length > 0 ? videoUrls : undefined,
       },
     });
 
@@ -97,6 +115,13 @@ export async function PATCH(request: NextRequest) {
       );
       if (urls.length > 0) payload.image_urls = urls;
       else payload.clear_images = true;
+    }
+
+    // Same explicit-clear-flag semantics as image_urls, in a separate list.
+    if (Array.isArray(body.video_urls)) {
+      const videos = parseVideoUrls(body.video_urls) ?? [];
+      if (videos.length > 0) payload.video_urls = videos;
+      else payload.clear_video = true;
     }
 
     const result = await xanoFetch("genie/ep_update_post_dev", {

@@ -79,6 +79,8 @@ interface SocialEvent {
   event_end_time?: string;
   event_category?: string;
   cover_image_url?: string;
+  image_urls?: string[];
+  video_urls?: { url: string; thumbnail_url: string }[];
   public_slug: string;
   status: string;
   rsvp_count?: number;
