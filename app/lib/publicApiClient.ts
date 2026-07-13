@@ -1943,6 +1943,24 @@ export async function fetchProducerPublicProfile(producerId: number) {
   );
 }
 
+export type FollowedProducerItem = {
+  id: number;
+  display_name?: string;
+  profile_photo_url?: string;
+  is_verified?: boolean;
+  [key: string]: unknown;
+};
+
+export type FollowedProducersResult = {
+  success: boolean;
+  followed_producers: FollowedProducerItem[];
+  count: number;
+};
+
+export async function fetchFollowedProducers() {
+  return apiJson<FollowedProducersResult>("/api/producer/followed");
+}
+
 export type UserBasicProfile = {
   success: boolean;
   user_id: number;

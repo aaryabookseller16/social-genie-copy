@@ -5,9 +5,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { type ConsumerAccount } from "@/app/lib/localState";
 import {
+  fetchFollowedProducers,
   fetchHomescreen,
   followProducer,
   type EventFeedItem,
+  type FollowedProducerItem,
   type OnFireVenueItem,
   type SocialEnergyAlertItem,
   type SocialPostItem,
@@ -18,20 +20,11 @@ import { type FlowAnchor } from "@/app/components/single-page/ui";
 
 /* ------------------------------------------------------------------ */
 /*  Dummy data                                                         */
-/*  Only event cards use live API data. Everything else below is       */
-/*  hardcoded so the screen matches the Figma; swap for API fields     */
-/*  later (field names chosen to mirror a future backend response).    */
+/*  Event cards and the story bar (followed producers) use live API    */
+/*  data. Everything else below is still hardcoded so the screen       */
+/*  matches the Figma; swap for API fields later (field names chosen   */
+/*  to mirror a future backend response).                              */
 /* ------------------------------------------------------------------ */
-
-type StoryData = { id: number; name: string; avatar_url: string };
-
-const DUMMY_STORIES: StoryData[] = [
-  { id: 1, name: "Tracey", avatar_url: "https://randomuser.me/api/portraits/women/44.jpg" },
-  { id: 2, name: "Elisa", avatar_url: "https://randomuser.me/api/portraits/women/68.jpg" },
-  { id: 3, name: "Alphonso", avatar_url: "https://randomuser.me/api/portraits/men/32.jpg" },
-  { id: 4, name: "Travis", avatar_url: "https://randomuser.me/api/portraits/men/75.jpg" },
-  { id: 5, name: "Social Bevy", avatar_url: "/icons/top_bar_genie.png" },
-];
 
 type FeaturedVideo = { id: number; video_url: string; poster_url: string; title: string };
 
@@ -201,28 +194,34 @@ type HomeFeedItem =
 /*  Story bar                                                           */
 /* ------------------------------------------------------------------ */
 
-function StoryBar({ stories }: { stories: StoryData[] }) {
-  if (!stories.length) return null;
+function StoryBar({ producers }: { producers: FollowedProducerItem[] }) {
+  if (!producers.length) return null;
   return (
     <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      {stories.map((s) => (
-        <button key={s.id} type="button" className="flex w-16 flex-none flex-col items-center gap-1">
+      {producers.map((p) => (
+        <a key={p.id} href={`/p/${p.id}`} className="flex w-16 flex-none flex-col items-center gap-1">
           <span className="rounded-full bg-gradient-to-tr from-red-600 via-red-500 to-orange-400 p-[2px]">
             <span className="block rounded-full bg-black p-[2px]">
               <span className="relative block h-14 w-14 overflow-hidden rounded-full">
-                <Image
-                  src={s.avatar_url}
-                  alt={s.name}
-                  fill
-                  sizes="56px"
-                  className="object-cover"
-                  unoptimized
-                />
+                {p.profile_photo_url ? (
+                  <Image
+                    src={p.profile_photo_url}
+                    alt={p.display_name ?? "Producer"}
+                    fill
+                    sizes="56px"
+                    className="object-cover"
+                    unoptimized
+                  />
+                ) : (
+                  <ProducerAvatar name={p.display_name ?? "?"} size={56} />
+                )}
               </span>
             </span>
           </span>
-          <span className="w-full truncate text-center text-[0.62rem] text-white/70">{s.name}</span>
-        </button>
+          <span className="w-full truncate text-center text-[0.62rem] text-white/70">
+            {p.display_name ?? "Producer"}
+          </span>
+        </a>
       ))}
     </div>
   );
@@ -835,6 +834,24 @@ export function HomescreenSection({
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
+  const [followedProducers, setFollowedProducers] = useState<FollowedProducerItem[]>([]);
+
+  useEffect(() => {
+    if (!account?.id) {
+      setFollowedProducers([]);
+      return;
+    }
+    let cancelled = false;
+    fetchFollowedProducers()
+      .then((result) => {
+        if (!cancelled) setFollowedProducers(result.followed_producers ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setFollowedProducers([]);
+      });
+    return () => { cancelled = true; };
+  }, [account?.id]);
+
   const [allEvents, setAllEvents] = useState<UpcomingEvent[]>([]);
   const [eventsPage, setEventsPage] = useState(1);
   const [hasMoreEvents, setHasMoreEvents] = useState(true);
@@ -974,9 +991,11 @@ export function HomescreenSection({
       </div>
 
       {/* ── Story bar ──────────────────────────────────────────────── */}
-      <div className="px-1 pb-2">
-        <StoryBar stories={DUMMY_STORIES} />
-      </div>
+      {isLoggedIn && followedProducers.length > 0 && (
+        <div className="px-1 pb-2">
+          <StoryBar producers={followedProducers} />
+        </div>
+      )}
 
       {/* ── Featured (videos) ──────────────────────────────────────── */}
       <div className="px-1 pb-2">
