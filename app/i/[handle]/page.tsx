@@ -9,6 +9,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { xanoFetch } from "@/app/lib/server/xanoProxy";
+import { type InfluencerOffer } from "@/app/lib/publicApiClient";
 import { ScrollUnlock } from "./ScrollUnlock";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -25,20 +26,6 @@ interface InfluencerProfile {
   tier?: string;
   is_verified?: boolean;
   vibes_score?: number;
-}
-
-interface InfluencerOffer {
-  id: number;
-  offer_type: string;
-  offer_title: string;
-  offer_description?: string;
-  promo_code?: string;
-  discount_value?: number | string;
-  discount_type?: string;
-  max_redemptions?: number;
-  redemption_count?: number;
-  status: string;
-  expires_at?: number;
 }
 
 interface FeaturedVenue {
@@ -298,6 +285,12 @@ export default async function InfluencerLandingPage({
                     {offer.offer_description ? (
                       <p className="mt-1 text-[0.82rem] text-gray-500 dark:text-white/60">
                         {offer.offer_description}
+                      </p>
+                    ) : null}
+                    {offer.event_id && offer.event_title ? (
+                      <p className="mt-1 text-[0.78rem] font-medium text-gray-500 dark:text-white/50">
+                        For {offer.event_title}
+                        {offer.event_date ? ` · ${offer.event_date}` : ""}
                       </p>
                     ) : null}
                     {offer.promo_code?.trim() ? (

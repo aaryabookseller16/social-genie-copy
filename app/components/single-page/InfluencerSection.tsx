@@ -12,6 +12,7 @@ import {
   fetchInfluencerDashboard,
   fetchInfluencerOfferAnalytics,
   fetchMyInfluencerProfile,
+  searchPublicEvents,
   searchVendorBusinesses,
   type InfluencerDashboardData,
   type InfluencerOffer,
@@ -265,6 +266,7 @@ export function InfluencerSection({ account, onNavigate }: Props) {
   const [offerFilter, setOfferFilter] = useState<OfferFilter>("active");
 
   // Create-offer form state
+  const [offerTarget, setOfferTarget] = useState<"venue" | "event">("venue");
   const [venueQuery, setVenueQuery] = useState("");
   const [venueResults, setVenueResults] = useState<
     { id: number; name: string }[]
@@ -273,6 +275,16 @@ export function InfluencerSection({ account, onNavigate }: Props) {
   const [selectedVenue, setSelectedVenue] = useState<{
     id: number;
     name: string;
+  } | null>(null);
+  const [eventQuery, setEventQuery] = useState("");
+  const [eventResults, setEventResults] = useState<
+    { id: number; name: string; event_date?: string }[]
+  >([]);
+  const [isSearchingEvents, setIsSearchingEvents] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState<{
+    id: number;
+    name: string;
+    event_date?: string;
   } | null>(null);
   const [offerTitle, setOfferTitle] = useState("");
   const [offerDescription, setOfferDescription] = useState("");
@@ -355,9 +367,13 @@ export function InfluencerSection({ account, onNavigate }: Props) {
   // ── Create offer ──────────────────────────────────────────────────────────
 
   const openCreateOffer = useCallback(() => {
+    setOfferTarget("venue");
     setVenueQuery("");
     setVenueResults([]);
     setSelectedVenue(null);
+    setEventQuery("");
+    setEventResults([]);
+    setSelectedEvent(null);
     setOfferTitle("");
     setOfferDescription("");
     setOfferType("discount");
@@ -392,9 +408,40 @@ export function InfluencerSection({ account, onNavigate }: Props) {
     }
   }, [venueQuery]);
 
+  const searchEvents = useCallback(async () => {
+    const q = eventQuery.trim();
+    if (q.length < 2) {
+      setMessage("Type at least 2 characters to search events.");
+      return;
+    }
+    setIsSearchingEvents(true);
+    setMessage(null);
+    try {
+      const results = await searchPublicEvents(q);
+      setEventResults(
+        results
+          .filter((e) => e.id != null)
+          .map((e) => ({
+            id: Number(e.id),
+            name: e.title,
+            event_date: e.event_date,
+          }))
+      );
+    } catch {
+      setEventResults([]);
+      setMessage("Could not search events. Please try again.");
+    } finally {
+      setIsSearchingEvents(false);
+    }
+  }, [eventQuery]);
+
   const submitOffer = useCallback(async () => {
-    if (!selectedVenue) {
-      setMessage("Please pick a venue for this offer.");
+    if (offerTarget === "venue" ? !selectedVenue : !selectedEvent) {
+      setMessage(
+        offerTarget === "venue"
+          ? "Please pick a venue for this offer."
+          : "Please pick an event for this offer."
+      );
       return;
     }
     if (!offerTitle.trim()) {
@@ -414,7 +461,8 @@ export function InfluencerSection({ account, onNavigate }: Props) {
         discountValue.trim() !== "" && Number.isFinite(discountNum);
       const hasMax = maxRedemptions.trim() !== "" && Number.isFinite(maxNum);
       const created = await createInfluencerOffer({
-        venue_id: selectedVenue.id,
+        venue_id: offerTarget === "venue" ? selectedVenue!.id : undefined,
+        event_id: offerTarget === "event" ? selectedEvent!.id : undefined,
         offer_title: offerTitle.trim(),
         offer_type: offerType,
         offer_description: offerDescription.trim() || undefined,
@@ -427,7 +475,11 @@ export function InfluencerSection({ account, onNavigate }: Props) {
       // Insert a local copy immediately so it shows up without a refresh.
       const newOffer: InfluencerOffer = {
         id: created.offer_id ?? Date.now(),
-        venue_id: selectedVenue.id,
+        venue_id: offerTarget === "venue" ? selectedVenue!.id : undefined,
+        event_id: offerTarget === "event" ? selectedEvent!.id : undefined,
+        event_title: offerTarget === "event" ? selectedEvent!.name : undefined,
+        event_date:
+          offerTarget === "event" ? selectedEvent!.event_date : undefined,
         offer_title: created.offer_title ?? offerTitle.trim(),
         offer_type: created.offer_type ?? offerType,
         offer_description: offerDescription.trim() || undefined,
@@ -441,7 +493,11 @@ export function InfluencerSection({ account, onNavigate }: Props) {
       };
       setOffers((prev) => [newOffer, ...prev]);
       setOfferFilter("pending");
-      setMessage("Submitted — pending venue approval.");
+      setMessage(
+        offerTarget === "venue"
+          ? "Submitted — pending venue approval."
+          : "Submitted — pending event owner approval."
+      );
       setView("offers");
 
       // Reconcile with the server in the background (no spinner) so the row
@@ -462,7 +518,9 @@ export function InfluencerSection({ account, onNavigate }: Props) {
       setIsSavingOffer(false);
     }
   }, [
+    offerTarget,
     selectedVenue,
+    selectedEvent,
     offerTitle,
     offerType,
     offerDescription,
@@ -1093,75 +1151,166 @@ export function InfluencerSection({ account, onNavigate }: Props) {
           </h1>
         </div>
 
+        {/* Vendor vs Event toggle */}
+        <div className="flex rounded-full border border-gray-200 bg-transparent p-1 dark:border-white/10">
+          {(["venue", "event"] as const).map((target) => (
+            <button
+              key={target}
+              type="button"
+              onClick={() => setOfferTarget(target)}
+              className={`flex-1 rounded-full py-2 text-[0.8rem] font-semibold transition ${
+                offerTarget === target
+                  ? "bg-red-600 text-white"
+                  : "text-gray-500 dark:text-white/60"
+              }`}
+            >
+              {target === "venue" ? "Vendor Offer" : "Event Offer"}
+            </button>
+          ))}
+        </div>
+
         {/* Venue picker */}
-        <div className="rounded-[20px] border border-gray-200 bg-transparent p-4 dark:border-white/10">
-          <p className="mb-3 text-[13px] font-semibold uppercase tracking-wide text-red-600 dark:text-[#ff7b7b]">
-            Venue (required)
-          </p>
-          {selectedVenue ? (
-            <div className="flex items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 dark:border-white/10 dark:bg-white/5">
-              <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-800 dark:text-white/85">
-                {selectedVenue.name}
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedVenue(null);
-                  setVenueResults([]);
-                  setVenueQuery("");
-                }}
-                className="flex-none text-[0.75rem] font-medium text-red-600 underline dark:text-[#ff7b7b]"
-              >
-                Change
-              </button>
-            </div>
-          ) : (
-            <>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={venueQuery}
-                  onChange={(e) => setVenueQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      void searchVenues();
-                    }
-                  }}
-                  placeholder="Search venues by name"
-                  className={inputClass}
-                  style={{ fontSize: "16px" }}
-                  autoComplete="off"
-                />
+        {offerTarget === "venue" ? (
+          <div className="rounded-[20px] border border-gray-200 bg-transparent p-4 dark:border-white/10">
+            <p className="mb-3 text-[13px] font-semibold uppercase tracking-wide text-red-600 dark:text-[#ff7b7b]">
+              Venue (required)
+            </p>
+            {selectedVenue ? (
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 dark:border-white/10 dark:bg-white/5">
+                <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-800 dark:text-white/85">
+                  {selectedVenue.name}
+                </span>
                 <button
                   type="button"
-                  onClick={() => void searchVenues()}
-                  disabled={isSearchingVenues}
-                  className="flex-none rounded-2xl border border-red-500 bg-red-600 px-4 text-[0.82rem] font-semibold text-white disabled:opacity-60 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                  onClick={() => {
+                    setSelectedVenue(null);
+                    setVenueResults([]);
+                    setVenueQuery("");
+                  }}
+                  className="flex-none text-[0.75rem] font-medium text-red-600 underline dark:text-[#ff7b7b]"
                 >
-                  {isSearchingVenues ? "…" : "Search"}
+                  Change
                 </button>
               </div>
-              {venueResults.length > 0 ? (
-                <div className="mt-3 space-y-2">
-                  {venueResults.map((v) => (
-                    <button
-                      key={v.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedVenue(v);
-                        setVenueResults([]);
-                      }}
-                      className="w-full rounded-2xl border border-gray-200 bg-white/80 px-4 py-3 text-left text-sm text-gray-800 transition active:opacity-75 dark:border-white/10 dark:bg-black/20 dark:text-white/85"
-                    >
-                      {v.name}
-                    </button>
-                  ))}
+            ) : (
+              <>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={venueQuery}
+                    onChange={(e) => setVenueQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void searchVenues();
+                      }
+                    }}
+                    placeholder="Search venues by name"
+                    className={inputClass}
+                    style={{ fontSize: "16px" }}
+                    autoComplete="off"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void searchVenues()}
+                    disabled={isSearchingVenues}
+                    className="flex-none rounded-2xl border border-red-500 bg-red-600 px-4 text-[0.82rem] font-semibold text-white disabled:opacity-60 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                  >
+                    {isSearchingVenues ? "…" : "Search"}
+                  </button>
                 </div>
-              ) : null}
-            </>
-          )}
-        </div>
+                {venueResults.length > 0 ? (
+                  <div className="mt-3 space-y-2">
+                    {venueResults.map((v) => (
+                      <button
+                        key={v.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedVenue(v);
+                          setVenueResults([]);
+                        }}
+                        className="w-full rounded-2xl border border-gray-200 bg-white/80 px-4 py-3 text-left text-sm text-gray-800 transition active:opacity-75 dark:border-white/10 dark:bg-black/20 dark:text-white/85"
+                      >
+                        {v.name}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="rounded-[20px] border border-gray-200 bg-transparent p-4 dark:border-white/10">
+            <p className="mb-3 text-[13px] font-semibold uppercase tracking-wide text-red-600 dark:text-[#ff7b7b]">
+              Event (required)
+            </p>
+            {selectedEvent ? (
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 dark:border-white/10 dark:bg-white/5">
+                <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-800 dark:text-white/85">
+                  {selectedEvent.name}
+                  {selectedEvent.event_date ? ` · ${selectedEvent.event_date}` : ""}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedEvent(null);
+                    setEventResults([]);
+                    setEventQuery("");
+                  }}
+                  className="flex-none text-[0.75rem] font-medium text-red-600 underline dark:text-[#ff7b7b]"
+                >
+                  Change
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={eventQuery}
+                    onChange={(e) => setEventQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void searchEvents();
+                      }
+                    }}
+                    placeholder="Search events by name"
+                    className={inputClass}
+                    style={{ fontSize: "16px" }}
+                    autoComplete="off"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void searchEvents()}
+                    disabled={isSearchingEvents}
+                    className="flex-none rounded-2xl border border-red-500 bg-red-600 px-4 text-[0.82rem] font-semibold text-white disabled:opacity-60 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                  >
+                    {isSearchingEvents ? "…" : "Search"}
+                  </button>
+                </div>
+                {eventResults.length > 0 ? (
+                  <div className="mt-3 space-y-2">
+                    {eventResults.map((e) => (
+                      <button
+                        key={e.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedEvent(e);
+                          setEventResults([]);
+                        }}
+                        className="w-full rounded-2xl border border-gray-200 bg-white/80 px-4 py-3 text-left text-sm text-gray-800 transition active:opacity-75 dark:border-white/10 dark:bg-black/20 dark:text-white/85"
+                      >
+                        {e.name}
+                        {e.event_date ? ` · ${e.event_date}` : ""}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </>
+            )}
+          </div>
+        )}
 
         {/* Offer fields */}
         <div className="rounded-[20px] border border-gray-200 bg-transparent p-4 dark:border-white/10 space-y-4">
