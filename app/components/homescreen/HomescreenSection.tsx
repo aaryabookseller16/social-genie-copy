@@ -6,33 +6,28 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { type ConsumerAccount } from "@/app/lib/localState";
 import {
+  fetchFollowedProducers,
   fetchHomescreen,
+  fetchSuggestedProducers,
   followProducer,
   type EventFeedItem,
+  type FollowedProducerItem,
   type OnFireVenueItem,
   type SocialEnergyAlertItem,
   type SocialPostItem,
   type SuggestedProducerItem,
+  type TrendingVenue,
   type UpcomingEvent,
 } from "@/app/lib/publicApiClient";
 import { type FlowAnchor } from "@/app/components/single-page/ui";
 
 /* ------------------------------------------------------------------ */
 /*  Dummy data                                                         */
-/*  Only event cards use live API data. Everything else below is       */
-/*  hardcoded so the screen matches the Figma; swap for API fields     */
-/*  later (field names chosen to mirror a future backend response).    */
+/*  Event cards and the story bar (followed producers) use live API    */
+/*  data. Everything else below is still hardcoded so the screen       */
+/*  matches the Figma; swap for API fields later (field names chosen   */
+/*  to mirror a future backend response).                              */
 /* ------------------------------------------------------------------ */
-
-type StoryData = { id: number; name: string; avatar_url: string };
-
-const DUMMY_STORIES: StoryData[] = [
-  { id: 1, name: "Tracey", avatar_url: "https://randomuser.me/api/portraits/women/44.jpg" },
-  { id: 2, name: "Elisa", avatar_url: "https://randomuser.me/api/portraits/women/68.jpg" },
-  { id: 3, name: "Alphonso", avatar_url: "https://randomuser.me/api/portraits/men/32.jpg" },
-  { id: 4, name: "Travis", avatar_url: "https://randomuser.me/api/portraits/men/75.jpg" },
-  { id: 5, name: "Social Bevy", avatar_url: "/icons/top_bar_genie.png" },
-];
 
 type FeaturedVideo = { id: number; video_url: string; poster_url: string; title: string };
 
@@ -105,28 +100,6 @@ const DUMMY_SOCIAL_POST: SocialPostItem = {
   comment_count: 136,
 };
 
-const DUMMY_ON_FIRE_VENUE: OnFireVenueItem = {
-  feed_type: "on_fire_venue",
-  id: -3,
-  venue_name: "The Rustic",
-  venue_address: "1836 Polk St, Houston, TX",
-  neighborhood: "Midtown",
-  category: "Bar & Grill",
-  description:
-    "People are already there. The outdoor section fills fast on nights like this - move if you want a spot.",
-  going_count: 182,
-  badge: "This Weekend",
-};
-
-const DUMMY_SUGGESTED_PRODUCER: SuggestedProducerItem = {
-  feed_type: "suggested_producer",
-  id: -4,
-  name: "Kiss Studio",
-  event_count: 3,
-  producer_id: 9001,
-  handle: "kiss-studio",
-};
-
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                             */
 /* ------------------------------------------------------------------ */
@@ -188,42 +161,65 @@ function upcomingEventToFeedItem(evt: UpcomingEvent, index: number): EventFeedIt
   };
 }
 
-/* Local feed item that also carries the standalone Offers row. */
+function trendingVenueToFeedItem(v: TrendingVenue): OnFireVenueItem {
+  return {
+    feed_type: "on_fire_venue",
+    id: typeof v.id === "number" ? v.id : Number(v.id),
+    venue_name: v.venue_name,
+    venue_address: v.address,
+    neighborhood: v.neighborhood_text ?? v.area_neighborhood ?? v.neighborhood,
+    category: v.venue_type,
+    going_count: v.sb_going_count ?? v.going_count,
+  };
+}
+
+/* Local feed items that also carry a standalone row of multiple cards. */
 type OffersFeedItem = { feed_type: "offers"; id: string; offers: OfferData[] };
+type SuggestedProducersFeedItem = {
+  feed_type: "suggested_producers";
+  id: string;
+  producers: SuggestedProducerItem[];
+};
 type HomeFeedItem =
   | EventFeedItem
   | SocialEnergyAlertItem
   | SocialPostItem
   | OnFireVenueItem
-  | SuggestedProducerItem
-  | OffersFeedItem;
+  | OffersFeedItem
+  | SuggestedProducersFeedItem;
 
 /* ------------------------------------------------------------------ */
 /*  Story bar                                                           */
 /* ------------------------------------------------------------------ */
 
-function StoryBar({ stories }: { stories: StoryData[] }) {
-  if (!stories.length) return null;
+function StoryBar({ producers }: { producers: FollowedProducerItem[] }) {
+  if (!producers.length) return null;
   return (
     <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      {stories.map((s) => (
-        <button key={s.id} type="button" className="flex w-16 flex-none flex-col items-center gap-1">
+      {producers.map((p) => (
+        <a key={p.id} href={`/p/${p.id}`} className="flex w-16 flex-none flex-col items-center gap-1">
           <span className="rounded-full bg-gradient-to-tr from-red-600 via-red-500 to-orange-400 p-[2px]">
             <span className="block rounded-full bg-black p-[2px]">
               <span className="relative block h-14 w-14 overflow-hidden rounded-full">
-                <Image
-                  src={s.avatar_url}
-                  alt={s.name}
-                  fill
-                  sizes="56px"
-                  className="object-cover"
-                  unoptimized
-                />
+                {p.profile_photo_url ? (
+                  <Image
+                    src={p.profile_photo_url}
+                    alt={p.display_name ?? "Producer"}
+                    fill
+                    sizes="56px"
+                    className="object-cover"
+                    unoptimized
+                  />
+                ) : (
+                  <ProducerAvatar name={p.display_name ?? "?"} size={56} />
+                )}
               </span>
             </span>
           </span>
-          <span className="w-full truncate text-center text-[0.62rem] text-white/70">{s.name}</span>
-        </button>
+          <span className="w-full truncate text-center text-[0.62rem] text-white/70">
+            {p.display_name ?? "Producer"}
+          </span>
+        </a>
       ))}
     </div>
   );
@@ -758,6 +754,27 @@ function SuggestedProducerCard({
   );
 }
 
+function SuggestedProducersRow({
+  producers,
+  isLoggedIn,
+  onRequireAuth,
+}: {
+  producers: SuggestedProducerItem[];
+  isLoggedIn: boolean;
+  onRequireAuth: () => void;
+}) {
+  if (!producers.length) return null;
+  return (
+    <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {producers.map((p) => (
+        <div key={p.id} className="w-64 flex-none">
+          <SuggestedProducerCard item={p} isLoggedIn={isLoggedIn} onRequireAuth={onRequireAuth} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /*  Feed dispatcher                                                     */
 /* ------------------------------------------------------------------ */
@@ -791,8 +808,14 @@ function FeedCard({
       return <SocialPostCard item={item} />;
     case "on_fire_venue":
       return <OnFireVenueCard item={item} onViewVenue={() => onVenueOpen(item.id)} />;
-    case "suggested_producer":
-      return <SuggestedProducerCard item={item} isLoggedIn={isLoggedIn} onRequireAuth={onRequireAuth} />;
+    case "suggested_producers":
+      return (
+        <SuggestedProducersRow
+          producers={item.producers}
+          isLoggedIn={isLoggedIn}
+          onRequireAuth={onRequireAuth}
+        />
+      );
     case "offers":
       return <OffersRow offers={item.offers} />;
     default:
@@ -846,10 +869,56 @@ export function HomescreenSection({
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
+  const [followedProducers, setFollowedProducers] = useState<FollowedProducerItem[]>([]);
+
+  useEffect(() => {
+    if (!account?.id) {
+      setFollowedProducers([]);
+      return;
+    }
+    let cancelled = false;
+    fetchFollowedProducers()
+      .then((result) => {
+        if (!cancelled) setFollowedProducers(result.followed_producers ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setFollowedProducers([]);
+      });
+    return () => { cancelled = true; };
+  }, [account?.id]);
+
+  const [suggestedProducers, setSuggestedProducers] = useState<SuggestedProducerItem[]>([]);
+
+  useEffect(() => {
+    if (!account?.id) {
+      setSuggestedProducers([]);
+      return;
+    }
+    let cancelled = false;
+    fetchSuggestedProducers()
+      .then((result) => {
+        if (cancelled) return;
+        const mapped: SuggestedProducerItem[] = (result.suggested_follows ?? []).map((p) => ({
+          feed_type: "suggested_producer",
+          id: p.id,
+          name: (p.display_name as string) || "Producer",
+          image_url: p.profile_photo_url as string | undefined,
+          event_count: p.total_events_live as number | undefined,
+          producer_id: p.id,
+        }));
+        setSuggestedProducers(mapped);
+      })
+      .catch(() => {
+        if (!cancelled) setSuggestedProducers([]);
+      });
+    return () => { cancelled = true; };
+  }, [account?.id]);
+
   const [allEvents, setAllEvents] = useState<UpcomingEvent[]>([]);
   const [eventsPage, setEventsPage] = useState(1);
   const [hasMoreEvents, setHasMoreEvents] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [topTrendingVenue, setTopTrendingVenue] = useState<TrendingVenue | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const cityId = 1;
@@ -876,6 +945,7 @@ export function HomescreenSection({
           const events = result.upcoming_events ?? [];
           setAllEvents(events);
           if (events.length < 5) setHasMoreEvents(false);
+          setTopTrendingVenue(result.trending_venues?.[0] ?? null);
         }
       })
       .catch((err: unknown) => {
@@ -930,8 +1000,12 @@ export function HomescreenSection({
   feed.push(DUMMY_ENERGY_ALERT);
   feed.push({ feed_type: "offers", id: "offers", offers: DUMMY_OFFERS });
   feed.push(DUMMY_SOCIAL_POST);
-  feed.push(DUMMY_ON_FIRE_VENUE);
-  feed.push(DUMMY_SUGGESTED_PRODUCER);
+  if (topTrendingVenue) {
+    feed.push(trendingVenueToFeedItem(topTrendingVenue));
+  }
+  if (isLoggedIn && suggestedProducers.length > 0) {
+    feed.push({ feed_type: "suggested_producers", id: "suggested_producers", producers: suggestedProducers });
+  }
   feed.push(...eventItems.slice(1));
 
   return (
@@ -985,9 +1059,11 @@ export function HomescreenSection({
       </div>
 
       {/* ── Story bar ──────────────────────────────────────────────── */}
-      <div className="px-1 pb-2">
-        <StoryBar stories={DUMMY_STORIES} />
-      </div>
+      {isLoggedIn && followedProducers.length > 0 && (
+        <div className="px-1 pb-2">
+          <StoryBar producers={followedProducers} />
+        </div>
+      )}
 
       {/* ── Featured (videos) ──────────────────────────────────────── */}
       <div className="px-1 pb-2">

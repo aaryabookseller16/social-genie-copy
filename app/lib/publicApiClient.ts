@@ -2106,6 +2106,34 @@ export async function fetchProducerPublicProfile(producerId: number) {
   );
 }
 
+export type FollowedProducerItem = {
+  id: number;
+  display_name?: string;
+  profile_photo_url?: string;
+  is_verified?: boolean;
+  [key: string]: unknown;
+};
+
+export type FollowedProducersResult = {
+  success: boolean;
+  followed_producers: FollowedProducerItem[];
+  count: number;
+};
+
+export async function fetchFollowedProducers() {
+  return apiJson<FollowedProducersResult>("/api/producer/followed");
+}
+
+export type SuggestedProducerResult = {
+  success: boolean;
+  suggested_follows: FollowedProducerItem[];
+  count: number;
+};
+
+export async function fetchSuggestedProducers() {
+  return apiJson<SuggestedProducerResult>("/api/producer/suggested");
+}
+
 export type UserBasicProfile = {
   success: boolean;
   user_id: number;
@@ -2500,6 +2528,7 @@ export type UpcomingEvent = {
 export type TrendingVenue = {
   id: number | string;
   venue_name: string;
+  venue_type?: string;
   image_primary_url?: string;
   image_fallback_url?: string;
   cover_image_url?: string;
@@ -2508,9 +2537,12 @@ export type TrendingVenue = {
   area_neighborhood?: string;
   neighborhood_text?: string;
   energy_level?: string;
+  social_energy_state?: string;
   going_count?: number;
+  sb_going_count?: number;
   is_on_fire?: boolean;
   address?: string;
+  trending_score?: number;
   [key: string]: unknown;
 };
 
@@ -2705,6 +2737,54 @@ export async function fetchEventDetail(eventId: number): Promise<EventDetailResp
   return apiJson<EventDetailResponse>(
     `/api/genie/event-detail?event_id=${eventId}`
   );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Event offers (V.I.Bee + influencer)                                */
+/* ------------------------------------------------------------------ */
+
+export type InfluencerEventOffer = {
+  id: number;
+  influencer_id: number;
+  event_id: number;
+  venue_id?: number;
+  offer_title: string;
+  offer_description?: string;
+  offer_type?: string;
+  discount_value?: string;
+  discount_type?: string | null;
+  unique_code?: string;
+  unique_url_slug?: string;
+  promo_code?: string;
+  status?: string;
+  expires_at?: string;
+  influencer_name?: string;
+  influencer_handle?: string;
+  influencer_profile_image_url?: string;
+  [key: string]: unknown;
+};
+
+/** V.I.Bee house offers — table is currently empty in this workspace, exact
+ * field shape unconfirmed against live data; treated permissively. */
+export type VibbeeEventOffer = {
+  id: number;
+  event_id: number;
+  offer_title?: string;
+  offer_description?: string;
+  offer_type?: string;
+  [key: string]: unknown;
+};
+
+export type EventOffersResult = {
+  success: boolean;
+  event_id: number;
+  vibbee_offers: VibbeeEventOffer[];
+  influencer_offers: InfluencerEventOffer[];
+  total_offers: number;
+};
+
+export async function fetchEventOffers(eventId: number) {
+  return apiJson<EventOffersResult>(`/api/genie/event-offers?event_id=${eventId}`);
 }
 
 /* ------------------------------------------------------------------ */
