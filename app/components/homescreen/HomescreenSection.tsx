@@ -7,6 +7,7 @@ import { type ConsumerAccount } from "@/app/lib/localState";
 import {
   fetchFollowedProducers,
   fetchHomescreen,
+  fetchSuggestedProducers,
   followProducer,
   type EventFeedItem,
   type FollowedProducerItem,
@@ -110,15 +111,6 @@ const DUMMY_ON_FIRE_VENUE: OnFireVenueItem = {
   badge: "This Weekend",
 };
 
-const DUMMY_SUGGESTED_PRODUCER: SuggestedProducerItem = {
-  feed_type: "suggested_producer",
-  id: -4,
-  name: "Kiss Studio",
-  event_count: 3,
-  producer_id: 9001,
-  handle: "kiss-studio",
-};
-
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                             */
 /* ------------------------------------------------------------------ */
@@ -180,15 +172,20 @@ function upcomingEventToFeedItem(evt: UpcomingEvent, index: number): EventFeedIt
   };
 }
 
-/* Local feed item that also carries the standalone Offers row. */
+/* Local feed items that also carry a standalone row of multiple cards. */
 type OffersFeedItem = { feed_type: "offers"; id: string; offers: OfferData[] };
+type SuggestedProducersFeedItem = {
+  feed_type: "suggested_producers";
+  id: string;
+  producers: SuggestedProducerItem[];
+};
 type HomeFeedItem =
   | EventFeedItem
   | SocialEnergyAlertItem
   | SocialPostItem
   | OnFireVenueItem
-  | SuggestedProducerItem
-  | OffersFeedItem;
+  | OffersFeedItem
+  | SuggestedProducersFeedItem;
 
 /* ------------------------------------------------------------------ */
 /*  Story bar                                                           */
@@ -746,6 +743,27 @@ function SuggestedProducerCard({
   );
 }
 
+function SuggestedProducersRow({
+  producers,
+  isLoggedIn,
+  onRequireAuth,
+}: {
+  producers: SuggestedProducerItem[];
+  isLoggedIn: boolean;
+  onRequireAuth: () => void;
+}) {
+  if (!producers.length) return null;
+  return (
+    <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {producers.map((p) => (
+        <div key={p.id} className="w-64 flex-none">
+          <SuggestedProducerCard item={p} isLoggedIn={isLoggedIn} onRequireAuth={onRequireAuth} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /*  Feed dispatcher                                                     */
 /* ------------------------------------------------------------------ */
@@ -779,8 +797,14 @@ function FeedCard({
       return <SocialPostCard item={item} />;
     case "on_fire_venue":
       return <OnFireVenueCard item={item} onViewVenue={() => onVenueOpen(item.id)} />;
-    case "suggested_producer":
-      return <SuggestedProducerCard item={item} isLoggedIn={isLoggedIn} onRequireAuth={onRequireAuth} />;
+    case "suggested_producers":
+      return (
+        <SuggestedProducersRow
+          producers={item.producers}
+          isLoggedIn={isLoggedIn}
+          onRequireAuth={onRequireAuth}
+        />
+      );
     case "offers":
       return <OffersRow offers={item.offers} />;
     default:
@@ -848,6 +872,33 @@ export function HomescreenSection({
       })
       .catch(() => {
         if (!cancelled) setFollowedProducers([]);
+      });
+    return () => { cancelled = true; };
+  }, [account?.id]);
+
+  const [suggestedProducers, setSuggestedProducers] = useState<SuggestedProducerItem[]>([]);
+
+  useEffect(() => {
+    if (!account?.id) {
+      setSuggestedProducers([]);
+      return;
+    }
+    let cancelled = false;
+    fetchSuggestedProducers()
+      .then((result) => {
+        if (cancelled) return;
+        const mapped: SuggestedProducerItem[] = (result.suggested_follows ?? []).map((p) => ({
+          feed_type: "suggested_producer",
+          id: p.id,
+          name: (p.display_name as string) || "Producer",
+          image_url: p.profile_photo_url as string | undefined,
+          event_count: p.total_events_live as number | undefined,
+          producer_id: p.id,
+        }));
+        setSuggestedProducers(mapped);
+      })
+      .catch(() => {
+        if (!cancelled) setSuggestedProducers([]);
       });
     return () => { cancelled = true; };
   }, [account?.id]);
@@ -937,7 +988,9 @@ export function HomescreenSection({
   feed.push({ feed_type: "offers", id: "offers", offers: DUMMY_OFFERS });
   feed.push(DUMMY_SOCIAL_POST);
   feed.push(DUMMY_ON_FIRE_VENUE);
-  feed.push(DUMMY_SUGGESTED_PRODUCER);
+  if (isLoggedIn && suggestedProducers.length > 0) {
+    feed.push({ feed_type: "suggested_producers", id: "suggested_producers", producers: suggestedProducers });
+  }
   feed.push(...eventItems.slice(1));
 
   return (

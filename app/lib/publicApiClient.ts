@@ -1961,6 +1961,16 @@ export async function fetchFollowedProducers() {
   return apiJson<FollowedProducersResult>("/api/producer/followed");
 }
 
+export type SuggestedProducerResult = {
+  success: boolean;
+  suggested_follows: FollowedProducerItem[];
+  count: number;
+};
+
+export async function fetchSuggestedProducers() {
+  return apiJson<SuggestedProducerResult>("/api/producer/suggested");
+}
+
 export type UserBasicProfile = {
   success: boolean;
   user_id: number;
