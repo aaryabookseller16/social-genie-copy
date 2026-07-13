@@ -8,7 +8,7 @@ This repo contains the **Genie-first frontend**, built with Next.js + React 19, 
 
 ---
 
-## 🚀 What Genie Does (Phase 1)
+## 🚀 What Genie Does [Phase 1]
 
 ### ✔ Conversational-style input  
 Users type into Genie’s “How can I get you social?” prompt. Genie parses the vibe keywords and returns matching venues.
