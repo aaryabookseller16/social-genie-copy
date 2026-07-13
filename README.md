@@ -188,6 +188,6 @@ Upcoming major changes:
 ## 📬 Contact
 
 **Alphonso Roundtree**  
-Founder & CEO — Social Bevy  
+Founder & CEO - Social Bevy  
 
  
