@@ -595,21 +595,27 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
       {/* ── Remaining sections ── */}
       <div className="flex flex-col gap-5 px-4 pt-1 sm:px-6">
 
-        {/* ── V.I.Bee Offer ── */}
-        <div className="rounded-[14px] border border-white/10 bg-black/30 px-4 py-3">
-          <div className="flex items-center justify-between">
-            <span className="text-[0.9rem] font-semibold text-white">V.I.Bee Offer</span>
-            <span className="rounded-full bg-red-600 px-2.5 py-0.5 text-[0.65rem] font-bold text-white">
-              {(ev.offer_type as string) || "Happy Hour"}
-            </span>
+        {/* ── V.I.Bee Offer (only rendered when the event has a real offer) ── */}
+        {ev.offer_title ? (
+          <div className="rounded-[14px] border border-white/10 bg-black/30 px-4 py-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[0.9rem] font-semibold text-white">V.I.Bee Offer</span>
+              {ev.offer_type ? (
+                <span className="rounded-full bg-red-600 px-2.5 py-0.5 text-[0.65rem] font-bold text-white">
+                  {ev.offer_type as string}
+                </span>
+              ) : null}
+            </div>
+            <p className="mt-1.5 text-[0.88rem] font-semibold text-red-400">
+              {ev.offer_title as string}
+            </p>
+            {ev.offer_description ? (
+              <p className="mt-1 text-[0.78rem] leading-5 text-white/60">
+                {ev.offer_description as string}
+              </p>
+            ) : null}
           </div>
-          <p className="mt-1.5 text-[0.88rem] font-semibold text-red-400">
-            {(ev.offer_title as string) || "20% Off All Drinks"}
-          </p>
-          <p className="mt-1 text-[0.78rem] leading-5 text-white/60">
-            {(ev.offer_description as string) || "Enjoy 20% off your entire drink tab during happy hour"}
-          </p>
-        </div>
+        ) : null}
 
         {/* ── Event Details ── */}
         {description ? (
