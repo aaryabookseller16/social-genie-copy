@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   extractBearerToken,
+  toClientError,
   xanoFetch,
-  XanoError,
 } from "@/app/lib/server/xanoProxy";
 
 /**
@@ -35,16 +35,10 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(result);
   } catch (error) {
-    if (error instanceof XanoError) {
-      return NextResponse.json(
-        { error: error.message, body: error.body },
-        { status: error.status }
-      );
-    }
-    console.error("GET /api/vendor/influencer-offers failed:", error);
-    return NextResponse.json(
-      { error: "Could not load influencer offers." },
-      { status: 500 }
+    const { status, message } = toClientError(
+      error,
+      "Could not load influencer offers."
     );
+    return NextResponse.json({ error: message }, { status });
   }
 }

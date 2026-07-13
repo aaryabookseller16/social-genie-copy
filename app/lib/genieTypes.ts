@@ -75,6 +75,9 @@ export type GenieVenue = Omit<RawGenieVenue, "latitude" | "longitude"> & {
   longitude: number | null;
 };
 
+/** A hosted video plus its Cloudinary-derived thumbnail. Matches Xano's `video_urls` shape. */
+export type GenieVideoItem = { url: string; thumbnail_url: string };
+
 export type RawGenieEvent = {
   id: number;
   title: string;
@@ -83,6 +86,8 @@ export type RawGenieEvent = {
   start_time?: string;
   end_time?: string;
   cover_image_url?: string;
+  /** Separate from any photo gallery; combined count is capped at 5 by Xano. */
+  video_urls?: GenieVideoItem[];
   public_slug?: string;
   status?: string;
   ticket_url?: string;

@@ -9,6 +9,9 @@ import {
 } from "@/app/lib/publicApiClient";
 import { readAuthToken } from "@/app/lib/localState";
 import { useEventRsvp, type UserRsvpStatus } from "@/app/lib/useEventRsvp";
+import ImageGallery from "@/app/components/ImageGallery";
+import { mediaGalleryFor } from "@/app/lib/image";
+import FeaturedEventVideos from "@/app/components/FeaturedEventVideos";
 
 type Props = {
   eventId: number | null;
@@ -355,6 +358,10 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
 
   const evTitle    = (ev.title as string) || "Event";
   const coverImg   = (ev.cover_image_url as string) || "/sample-venue-1.jpeg";
+  // Photos lead, video(s) follow — one carousel. Falls back to a single implicit
+  // image when the event has no cover, gallery, or video at all.
+  const heroMediaRaw = mediaGalleryFor(ev.cover_image_url, ev.image_urls, ev.video_urls);
+  const heroMedia = heroMediaRaw.length > 0 ? heroMediaRaw : [{ type: "image" as const, url: coverImg }];
   const startT     = fmtTime(ev.start_time);
   const endT       = fmtTime(ev.end_time);
   const dateStr    = fmtDate(ev.event_date);
@@ -377,8 +384,8 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
 
       {/* ── Hero ── */}
       <div className="relative h-[55vw] min-h-[220px] max-h-[340px] w-full flex-none overflow-hidden">
-        <Image src={coverImg} alt={evTitle} fill className="object-cover" priority sizes="100vw" />
-        <div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-[#1a0202] via-[#1a0202]/55 to-transparent" />
+        <ImageGallery items={heroMedia} alt={evTitle} className="absolute inset-0" heightClass="h-full" showThumbnails={false} />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-[#1a0202] via-[#1a0202]/55 to-transparent" />
 
         {/* Back */}
         <button
@@ -635,6 +642,9 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
             ) : null}
           </div>
         ) : null}
+
+        {/* ── Featured Videos ── */}
+        <FeaturedEventVideos videos={ev.video_urls as { url: string; thumbnail_url: string }[] | undefined} eventTitle={evTitle} />
 
         {/* ── Event Location ── */}
         <div>

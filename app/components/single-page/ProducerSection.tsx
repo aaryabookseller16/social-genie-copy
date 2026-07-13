@@ -11,21 +11,26 @@ import {
   fetchMyProducerProfile,
   fetchProducerAudienceAnalytics,
   fetchProducerEventAnalytics,
+  fetchProducerInfluencerOffers,
   fetchProducerRsvpList,
   fetchProducerNotifPrefs,
   updateProducerNotifPrefs,
+  reviewProducerOffer,
   searchVendorBusinesses,
   setupProducerProfile,
+  type InfluencerOffer,
   type ProducerAudienceAnalytics,
   type ProducerEvent,
   type ProducerEventAnalytics,
   type ProducerPost,
   type ProducerProfile,
   type ProducerRsvpEntry,
+  type VideoItem,
 } from "@/app/lib/publicApiClient";
 import { type GenieVenue } from "@/app/lib/genieTypes";
-import { galleryFor } from "@/app/lib/image";
+import { galleryFor, mediaGalleryFor } from "@/app/lib/image";
 import ImageUploader from "@/app/components/ImageUploader";
+import VideoUploader, { type VideoSlotValue } from "@/app/components/VideoUploader";
 import ImageGallery from "@/app/components/ImageGallery";
 import { ActionButton } from "./ui";
 
@@ -70,7 +75,8 @@ type ProducerStep =
   | "audience"
   | "create-post"
   | "edit-profile"
-  | "settings";
+  | "settings"
+  | "offers";
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
@@ -357,6 +363,18 @@ export function ProducerSection({
   const [audienceAnalytics, setAudienceAnalytics] = useState<ProducerAudienceAnalytics | null>(null);
   const [audienceAnalyticsError, setAudienceAnalyticsError] = useState(false);
 
+  /* influencer offer review queue (event owner) */
+  const [producerOffers, setProducerOffers] = useState<InfluencerOffer[]>([]);
+  const [isLoadingProducerOffers, setIsLoadingProducerOffers] = useState(false);
+  const [producerOfferError, setProducerOfferError] = useState<string | null>(null);
+  const [producerOfferFilter, setProducerOfferFilter] = useState<
+    "active" | "pending" | "rejected" | "cancelled"
+  >("pending");
+  const [rejectingProducerOfferId, setRejectingProducerOfferId] = useState<number | null>(null);
+  const [producerRejectReason, setProducerRejectReason] = useState("");
+  const [reviewingProducerOfferId, setReviewingProducerOfferId] = useState<number | null>(null);
+  const [producerOfferMessage, setProducerOfferMessage] = useState<string | null>(null);
+
   /* onboarding form state */
   const [onboardingName, setOnboardingName] = useState("");
   const [onboardingBio, setOnboardingBio] = useState("");
@@ -394,6 +412,9 @@ export function ProducerSection({
   /** Ordered event gallery; index 0 is the cover. Capped at 5 by Xano. */
   const [evImageUrls, setEvImageUrls] = useState<string[]>([]);
   const [evUploading, setEvUploading] = useState(false);
+  /** Separate video list; combined count with evImageUrls is capped at 5 by Xano. */
+  const [evVideos, setEvVideos] = useState<VideoSlotValue[]>([]);
+  const [evVideoUploading, setEvVideoUploading] = useState(false);
   const [evRsvpLimit, setEvRsvpLimit] = useState("");
   const [evAgeReq, setEvAgeReq] = useState("");
   const [evBusy, setEvBusy] = useState(false);
@@ -406,6 +427,9 @@ export function ProducerSection({
   const [postImageUrls, setPostImageUrls] = useState<string[]>([]);
   const [postShowImageInput, setPostShowImageInput] = useState(false);
   const [postUploading, setPostUploading] = useState(false);
+  /** Separate video list; combined count with postImageUrls is capped at 5 by Xano. */
+  const [postVideos, setPostVideos] = useState<VideoSlotValue[]>([]);
+  const [postVideoUploading, setPostVideoUploading] = useState(false);
   const [postBusy, setPostBusy] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
   const [postSuccess, setPostSuccess] = useState(false);
@@ -600,6 +624,75 @@ export function ProducerSection({
     }
   }
 
+  /* ---- Influencer offer review queue (event owner) ---- */
+  const loadProducerOffers = useCallback(async () => {
+    setIsLoadingProducerOffers(true);
+    setProducerOfferError(null);
+    try {
+      const res = await fetchProducerInfluencerOffers();
+      setProducerOffers(res.offers ?? []);
+    } catch (err) {
+      setProducerOffers([]);
+      setProducerOfferError(
+        err instanceof Error ? err.message : "Could not load offers."
+      );
+    } finally {
+      setIsLoadingProducerOffers(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (step !== "offers") return;
+    void loadProducerOffers();
+  }, [step, loadProducerOffers]);
+
+  const handleReviewProducerOffer = useCallback(
+    async (
+      offerId: number,
+      decision: "approve" | "reject" | "cancel",
+      reason?: string
+    ) => {
+      setReviewingProducerOfferId(offerId);
+      setProducerOfferMessage(null);
+      try {
+        await reviewProducerOffer({
+          offer_id: offerId,
+          decision,
+          rejection_reason: reason,
+        });
+        const newStatus =
+          decision === "approve"
+            ? "active"
+            : decision === "cancel"
+              ? "cancelled"
+              : "rejected";
+        setProducerOffers((prev) =>
+          prev.map((o) =>
+            o.id === offerId
+              ? { ...o, status: newStatus, rejection_reason: reason }
+              : o
+          )
+        );
+        setRejectingProducerOfferId(null);
+        setProducerRejectReason("");
+        setProducerOfferMessage(
+          decision === "approve"
+            ? "Offer approved."
+            : decision === "cancel"
+              ? "Offer cancelled."
+              : "Offer rejected."
+        );
+      } catch (err) {
+        setProducerOfferMessage(
+          err instanceof Error ? err.message : "Could not review offer."
+        );
+      } finally {
+        setReviewingProducerOfferId(null);
+      }
+    },
+    []
+  );
+
   /* ---- Open create-event (fresh) ---- */
   function openCreateEvent() {
     editingEventId.current = null;
@@ -607,6 +700,7 @@ export function ProducerSection({
     setEvStartTime(""); setEvEndTime(""); setEvVenue(""); setEvCity("");
     setEvFree(false); setEvTicketPrice(""); setEvTicketUrl("");
     setEvImageUrls([]); setEvUploading(false);
+    setEvVideos([]); setEvVideoUploading(false);
     setEvRsvpLimit(""); setEvAgeReq(""); setEvError(null);
     setStep("create-event");
   }
@@ -615,6 +709,7 @@ export function ProducerSection({
   function openCreatePost() {
     setPostText(""); setPostImageUrls([]); setPostShowImageInput(false);
     setPostUploading(false);
+    setPostVideos([]); setPostVideoUploading(false);
     setPostError(null); setPostSuccess(false);
     setStep("create-post");
   }
@@ -687,10 +782,11 @@ export function ProducerSection({
     e.preventDefault();
     if (!evTitle.trim()) { setEvError("Event title is required."); return; }
     if (!evCategory) { setEvError("Please select a category."); return; }
-    if (evUploading) { setEvError("Please wait for your photos to finish uploading."); return; }
+    if (evUploading || evVideoUploading) { setEvError("Please wait for your photos and videos to finish uploading."); return; }
     setEvBusy(true);
     setEvError(null);
     try {
+      const videoUrls: VideoItem[] = evVideos.map((v) => ({ url: v.url, thumbnail_url: v.thumbnailUrl }));
       const created = await createProducerEvent({
         title: evTitle.trim(),
         category: evCategory,
@@ -707,6 +803,7 @@ export function ProducerSection({
         ticket_url: evTicketUrl.trim() || undefined,
         cover_image_url: evImageUrls[0] || undefined,
         image_urls: evImageUrls,
+        video_urls: videoUrls.length > 0 ? videoUrls : undefined,
         rsvp_limit: evRsvpLimit ? Number(evRsvpLimit) : undefined,
         age_requirement: evAgeReq.trim() || undefined,
         event_id: editingEventId.current ?? undefined,
@@ -731,14 +828,16 @@ export function ProducerSection({
   async function handlePostSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!postText.trim()) { setPostError("Post text is required."); return; }
-    if (postUploading) { setPostError("Please wait for your photos to finish uploading."); return; }
+    if (postUploading || postVideoUploading) { setPostError("Please wait for your photos and videos to finish uploading."); return; }
     setPostBusy(true);
     setPostError(null);
     try {
+      const postVideoUrls: VideoItem[] = postVideos.map((v) => ({ url: v.url, thumbnail_url: v.thumbnailUrl }));
       const raw = await createProducerPost({
         post_text: postText.trim(),
         image_url: postImageUrls[0] || undefined,
         image_urls: postImageUrls,
+        video_urls: postVideoUrls.length > 0 ? postVideoUrls : undefined,
       });
       // Xano returns { success: true, post: { id, post_text, ... } }
       const r = raw as unknown as Record<string, unknown>;
@@ -1071,6 +1170,25 @@ export function ProducerSection({
           ))}
         </div>
 
+        {/* Manage Offers nav */}
+        <button
+          type="button"
+          onClick={() => setStep("offers")}
+          className="flex w-full items-center justify-between rounded-2xl border border-red-900/30 bg-black/30 px-4 py-3.5 text-left transition hover:border-red-700/50 dark:border-red-900/40 dark:bg-black/40"
+        >
+          <span className="flex items-center gap-3">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-5 w-5 text-red-500">
+              <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
+              <rect x="9" y="3" width="6" height="4" rx="1" />
+              <path d="M9 12h6M9 16h4" />
+            </svg>
+            <span className="text-[0.88rem] font-medium text-white">Manage Offers</span>
+          </span>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 flex-shrink-0 text-white/30">
+            <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+          </svg>
+        </button>
+
         {/* Follower chart */}
         {followerHistory.length > 1 ? (
           <div className="overflow-hidden rounded-2xl border border-red-900/30 bg-black/30 px-3 pb-2 pt-3 dark:border-red-900/40 dark:bg-black/40">
@@ -1161,10 +1279,10 @@ export function ProducerSection({
                 >
                   <p className="text-sm leading-relaxed text-white/80 line-clamp-3">{p.post_text}</p>
                   {(() => {
-                    const gallery = galleryFor(p.image_url, p.image_urls);
-                    return gallery.length > 0 ? (
+                    const media = mediaGalleryFor(p.image_url, p.image_urls, p.video_urls);
+                    return media.length > 0 ? (
                       <ImageGallery
-                        images={gallery}
+                        items={media}
                         className="mt-3 overflow-hidden rounded-xl"
                         heightClass="h-40"
                         showThumbnails={false}
@@ -1242,6 +1360,270 @@ export function ProducerSection({
             </svg>
           </button>
         </div>
+      </section>
+    );
+  }
+
+  /* ---- Manage Offers (influencer offer review queue) ---- */
+  if (step === "offers") {
+    const statusOf = (o: InfluencerOffer) => (o.status ?? "pending").toLowerCase();
+    const counts = {
+      active: producerOffers.filter((o) => statusOf(o) === "active").length,
+      pending: producerOffers.filter((o) => statusOf(o) === "pending").length,
+      rejected: producerOffers.filter((o) => statusOf(o) === "rejected").length,
+      cancelled: producerOffers.filter((o) => statusOf(o) === "cancelled").length,
+    };
+    const tabs: Array<{
+      key: "active" | "pending" | "rejected" | "cancelled";
+      label: string;
+    }> = [
+      { key: "active", label: "Active" },
+      { key: "pending", label: "Pending" },
+      { key: "rejected", label: "Rejected" },
+      { key: "cancelled", label: "Cancelled" },
+    ];
+    const filtered = producerOffers.filter(
+      (o) => statusOf(o) === producerOfferFilter
+    );
+    return (
+      <section className="space-y-5 pb-28">
+        <SectionHeader title="Manage Offers" onBack={() => setStep("dashboard")} />
+
+        {/* Segmented tab bar */}
+        <div className="relative flex rounded-full border border-red-900/30 bg-black/30 p-1 dark:border-red-900/40 dark:bg-black/40">
+          <span
+            aria-hidden
+            className="absolute top-1 bottom-1 rounded-full bg-red-600 transition-transform duration-300 ease-out"
+            style={{
+              width: "calc((100% - 0.5rem) / 4)",
+              left: "0.25rem",
+              transform: `translateX(${tabs.findIndex((t) => t.key === producerOfferFilter) * 100}%)`,
+            }}
+          />
+          {tabs.map((tab) => {
+            const isActive = producerOfferFilter === tab.key;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setProducerOfferFilter(tab.key)}
+                className={`relative z-10 flex-1 rounded-full px-1 py-1.5 text-[0.72rem] font-semibold transition-colors duration-300 ${
+                  isActive ? "text-white" : "text-white/50"
+                }`}
+              >
+                {tab.label}
+                {counts[tab.key] > 0 ? ` (${counts[tab.key]})` : ""}
+              </button>
+            );
+          })}
+        </div>
+
+        {isLoadingProducerOffers ? (
+          <div className="flex min-h-[6rem] items-center justify-center">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-red-900/40 border-t-red-500" />
+          </div>
+        ) : producerOfferError ? (
+          <p className="rounded-2xl border border-red-500/30 bg-red-500/5 px-4 py-3 text-[0.8rem] text-red-300">
+            {producerOfferError}
+          </p>
+        ) : filtered.length === 0 ? (
+          <p className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-center text-[0.82rem] text-white/40">
+            {producerOfferFilter === "pending"
+              ? "No pending requests."
+              : producerOfferFilter === "active"
+                ? "No active offers."
+                : producerOfferFilter === "rejected"
+                  ? "No rejected offers."
+                  : "No cancelled offers."}
+          </p>
+        ) : (
+          filtered.map((offer) => {
+            const status = statusOf(offer);
+            const discount = offer.discount_value
+              ? offer.discount_type === "percent"
+                ? `${offer.discount_value}%`
+                : `$${offer.discount_value}`
+              : null;
+            const isRejecting = rejectingProducerOfferId === offer.id;
+            const isBusy = reviewingProducerOfferId === offer.id;
+            const cardTone =
+              status === "active"
+                ? "border-green-500/30 bg-green-500/5"
+                : status === "rejected"
+                  ? "border-red-500/30 bg-red-500/5"
+                  : status === "cancelled"
+                    ? "border-white/15 bg-white/5"
+                    : "border-amber-500/30 bg-amber-500/5";
+            return (
+              <div key={offer.id} className={`rounded-2xl border px-4 py-4 ${cardTone}`}>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[0.9rem] font-semibold text-white">{offer.offer_title}</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <span className="text-[0.72rem] capitalize text-white/50">
+                      {offer.offer_type?.replace(/_/g, " ")}
+                    </span>
+                    {discount ? (
+                      <span className="text-[0.72rem] font-semibold text-red-400">
+                        {discount} off
+                      </span>
+                    ) : null}
+                  </div>
+                  {offer.event_title ? (
+                    <p className="mt-1.5 text-[0.78rem] font-medium text-white/60">
+                      For {offer.event_title}
+                      {offer.event_date ? ` · ${offer.event_date}` : ""}
+                    </p>
+                  ) : null}
+                  {offer.offer_description ? (
+                    <p className="mt-1.5 text-[0.78rem] text-white/50">
+                      {offer.offer_description}
+                    </p>
+                  ) : null}
+                  {offer.promo_code ? (
+                    <p className="mt-1.5 text-[0.72rem] font-bold uppercase tracking-wider text-red-400">
+                      {offer.promo_code}
+                    </p>
+                  ) : null}
+                  {(status === "rejected" || status === "cancelled") && offer.rejection_reason ? (
+                    <p className="mt-1.5 text-[0.72rem] text-red-300">
+                      Reason: {offer.rejection_reason}
+                    </p>
+                  ) : null}
+                </div>
+
+                {status === "pending" &&
+                  (isRejecting ? (
+                    <div className="mt-3 space-y-2">
+                      <input
+                        type="text"
+                        value={producerRejectReason}
+                        onChange={(e) => setProducerRejectReason(e.target.value)}
+                        placeholder="Reason for rejection (optional)"
+                        className={inputClass}
+                        style={{ fontSize: "16px" }}
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() =>
+                            void handleReviewProducerOffer(
+                              offer.id,
+                              "reject",
+                              producerRejectReason.trim() || undefined
+                            )
+                          }
+                          className="flex-1 rounded-lg border border-red-500 bg-red-600 px-3 py-2 text-[0.78rem] font-semibold text-white disabled:opacity-60"
+                        >
+                          {isBusy ? "…" : "Confirm Reject"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => {
+                            setRejectingProducerOfferId(null);
+                            setProducerRejectReason("");
+                          }}
+                          className="flex-1 rounded-lg border border-white/20 px-3 py-2 text-[0.78rem] font-medium text-white/70"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => void handleReviewProducerOffer(offer.id, "approve")}
+                        className="flex-1 rounded-lg border border-green-500 bg-green-600 px-3 py-2 text-[0.78rem] font-semibold text-white disabled:opacity-60"
+                      >
+                        {isBusy ? "…" : "Approve"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => {
+                          setRejectingProducerOfferId(offer.id);
+                          setProducerRejectReason("");
+                        }}
+                        className="flex-1 rounded-lg border border-white/20 px-3 py-2 text-[0.78rem] font-medium text-white/70"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  ))}
+
+                {status === "active" &&
+                  (isRejecting ? (
+                    <div className="mt-3 space-y-2">
+                      <input
+                        type="text"
+                        value={producerRejectReason}
+                        onChange={(e) => setProducerRejectReason(e.target.value)}
+                        placeholder="Reason for cancelling (optional)"
+                        className={inputClass}
+                        style={{ fontSize: "16px" }}
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() =>
+                            void handleReviewProducerOffer(
+                              offer.id,
+                              "cancel",
+                              producerRejectReason.trim() || undefined
+                            )
+                          }
+                          className="flex-1 rounded-lg border border-red-500 bg-red-600 px-3 py-2 text-[0.78rem] font-semibold text-white disabled:opacity-60"
+                        >
+                          {isBusy ? "…" : "Confirm Cancel"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => {
+                            setRejectingProducerOfferId(null);
+                            setProducerRejectReason("");
+                          }}
+                          className="flex-1 rounded-lg border border-white/20 px-3 py-2 text-[0.78rem] font-medium text-white/70"
+                        >
+                          Keep Active
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-3">
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => {
+                          setRejectingProducerOfferId(offer.id);
+                          setProducerRejectReason("");
+                        }}
+                        className="w-full rounded-lg border border-white/20 px-3 py-2 text-[0.78rem] font-medium text-white/70"
+                      >
+                        Cancel Offer
+                      </button>
+                    </div>
+                  ))}
+              </div>
+            );
+          })
+        )}
+
+        {producerOfferMessage ? (
+          <p
+            className={`text-sm ${
+              /could ?n[o']?t|failed|error|required|not found|unable/i.test(producerOfferMessage)
+                ? "text-red-400"
+                : "text-green-400"
+            }`}
+          >
+            {producerOfferMessage}
+          </p>
+        ) : null}
       </section>
     );
   }
@@ -1461,15 +1843,25 @@ export function ProducerSection({
           <FormField label="Photos">
             <ImageUploader
               mode="multi"
-              max={5}
+              max={Math.max(0, 5 - evVideos.length)}
               folder="events"
               value={evImageUrls}
               onChange={setEvImageUrls}
               onUploadingChange={setEvUploading}
             />
             <p className="mt-1.5 text-[11px] text-gray-400 dark:text-white/40">
-              Up to 5 photos. The first one is used as the event cover.
+              Up to 5 photos and videos combined. The first one is used as the event cover.
             </p>
+          </FormField>
+
+          <FormField label="Videos">
+            <VideoUploader
+              value={evVideos}
+              onChange={setEvVideos}
+              folder="events"
+              max={Math.max(0, 5 - evImageUrls.length)}
+              onUploadingChange={setEvVideoUploading}
+            />
           </FormField>
 
           <div className="grid grid-cols-2 gap-3">
@@ -1511,10 +1903,10 @@ export function ProducerSection({
             <ActionButton
               type="submit"
               className="flex-1"
-              disabled={evBusy || evUploading}
+              disabled={evBusy || evUploading || evVideoUploading}
             >
-              {evUploading
-                ? "Uploading photos…"
+              {evUploading || evVideoUploading
+                ? "Uploading…"
                 : evBusy
                   ? "Saving…"
                   : isEdit
@@ -1535,16 +1927,16 @@ export function ProducerSection({
     const timeLine = [timeRange, formattedDate].filter(Boolean).join("  ·  ");
     const venueLine2 = [selectedEvent.venue_address, selectedEvent.city].filter(Boolean).join(", ");
     const longDesc = (selectedEvent.description ?? "").length > 180;
-    const eventGallery = galleryFor(selectedEvent.cover_image_url, selectedEvent.image_urls);
+    const eventMedia = mediaGalleryFor(selectedEvent.cover_image_url, selectedEvent.image_urls, selectedEvent.video_urls);
 
     return (
       <section className="pb-28">
 
         {/* ── Hero image ─────────────────────────────────────── */}
         <div className="relative -mx-4 h-60 overflow-hidden bg-gradient-to-b from-red-950 to-black">
-          {eventGallery.length > 0 ? (
+          {eventMedia.length > 0 ? (
             <ImageGallery
-              images={eventGallery}
+              items={eventMedia}
               alt={selectedEvent.title}
               heightClass="h-60"
               showThumbnails={false}
@@ -1878,11 +2270,22 @@ export function ProducerSection({
             {postShowImageInput || postImageUrls.length > 0 ? (
               <ImageUploader
                 mode="multi"
-                max={5}
+                max={Math.max(0, 5 - postVideos.length)}
                 folder="posts"
                 value={postImageUrls}
                 onChange={setPostImageUrls}
                 onUploadingChange={setPostUploading}
+              />
+            ) : null}
+
+            {/* Video picker (same toggle-or-already-has-content pattern as photos) */}
+            {postShowImageInput || postVideos.length > 0 ? (
+              <VideoUploader
+                value={postVideos}
+                onChange={setPostVideos}
+                folder="posts"
+                max={Math.max(0, 5 - postImageUrls.length)}
+                onUploadingChange={setPostVideoUploading}
               />
             ) : null}
 
@@ -1917,10 +2320,10 @@ export function ProducerSection({
             {/* Post It button */}
             <button
               type="submit"
-              disabled={postBusy || postUploading || !postText.trim()}
+              disabled={postBusy || postUploading || postVideoUploading || !postText.trim()}
               className="w-full rounded-2xl bg-gradient-to-r from-red-700 to-red-500 py-4 text-base font-semibold text-white shadow-lg transition hover:from-red-600 hover:to-red-400 disabled:opacity-50"
             >
-              {postUploading ? "Uploading photos…" : postBusy ? "Publishing…" : "Post It"}
+              {postUploading || postVideoUploading ? "Uploading…" : postBusy ? "Publishing…" : "Post It"}
             </button>
           </form>
         )}

@@ -31,6 +31,9 @@ import Link from "next/link";
 import { fetchEventDetail } from "@/app/lib/publicApiClient";
 import { readAuthToken } from "@/app/lib/localState";
 import { useEventRsvp, type UserRsvpStatus } from "@/app/lib/useEventRsvp";
+import ImageGallery from "@/app/components/ImageGallery";
+import { mediaGalleryFor } from "@/app/lib/image";
+import FeaturedEventVideos from "@/app/components/FeaturedEventVideos";
  
 // ─── Types (mirror server types) ─────────────────────────────────────────────
  
@@ -81,6 +84,9 @@ interface SocialEvent {
   event_end_time?: string;
   event_category?: string;
   cover_image_url?: string;
+  image_urls?: string[];
+  /** Separate from image_urls; combined count is capped at 5 by Xano. */
+  video_urls?: { url: string; thumbnail_url: string }[];
   public_slug: string;
   status: string;
   rsvp_count?: number;
@@ -247,27 +253,32 @@ export function EventDetailClient({
     window.open(mapsUrl, "_blank", "noopener,noreferrer");
   }, [event.id, venue]);
  
-  const heroImage =
+  const heroFallback =
     event.cover_image_url ||
     venue?.image_primary_url ||
     venue?.image_fallback_url ||
     "/sample-venue-1.jpeg";
- 
+
+  // Photos lead, video(s) follow — one carousel a visitor can swipe/tap through.
+  // Falls back to a single implicit image when the event has no cover, gallery,
+  // or video at all (mediaGalleryFor returns [] in that case).
+  const heroMediaRaw = mediaGalleryFor(event.cover_image_url, event.image_urls, event.video_urls);
+  const heroMedia = heroMediaRaw.length > 0 ? heroMediaRaw : [{ type: "image" as const, url: heroFallback }];
+
   return (
     <main className="min-h-screen bg-white">
- 
+
       {/* ── HERO IMAGE ─────────────────────────────────────────────────── */}
       <div className="relative h-[42vh] min-h-[260px] w-full overflow-hidden">
-        <Image
-          src={heroImage}
+        <ImageGallery
+          items={heroMedia}
           alt={event.title}
-          fill
-          className="object-cover"
-          priority
-          sizes="100vw"
+          className="absolute inset-0"
+          heightClass="h-full"
+          showThumbnails={false}
         />
-        {/* Gradient overlay */}
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.3)_0%,transparent_40%,rgba(0,0,0,0.75)_100%)]" />
+        {/* Gradient overlay — pointer-events-none so it doesn't swallow the carousel's arrow taps */}
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.3)_0%,transparent_40%,rgba(0,0,0,0.75)_100%)]" />
  
         {/* Top nav */}
         <div className="absolute inset-x-0 top-0 flex items-center justify-between px-4 pt-4">
@@ -297,7 +308,7 @@ export function EventDetailClient({
           </h1>
         </div>
       </div>
- 
+
       {/* ── CONTENT ────────────────────────────────────────────────────── */}
       <div className="mx-auto max-w-2xl space-y-6 px-5 pb-32 pt-5">
  
@@ -482,7 +493,14 @@ export function EventDetailClient({
             <p className="text-[0.9rem] leading-6 text-gray-600">{event.description}</p>
           </div>
         ) : null}
- 
+
+        {/* ── FEATURED VIDEOS ───────────────────────────────────────────── */}
+        <FeaturedEventVideos
+          videos={event.video_urls}
+          eventTitle={event.title}
+          headingClassName="text-gray-900"
+        />
+
         {/* ── EMBEDDED VENUE CARD ───────────────────────────────────────── */}
         {/*
           Surfaces the linked venue inline — no extra tap required.
