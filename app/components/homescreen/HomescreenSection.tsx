@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { type ConsumerAccount } from "@/app/lib/localState";
@@ -600,36 +601,46 @@ function OffersRow({ offers }: { offers: OfferData[] }) {
 function SocialPostCard({ item }: { item: SocialPostItem }) {
   return (
     <div className="overflow-hidden rounded-[18px] bg-black/40">
-      <div className="flex items-center justify-between px-3 pt-3">
-        <div className="flex items-center gap-2">
-          <ProducerAvatar name={item.author_name} size={32} />
-          <div>
-            <p className="text-[0.78rem] font-semibold text-white">Social Bevy</p>
-            <p className="text-[0.65rem] text-white/50">{item.author_name} · {item.time_ago}</p>
+      <Link href={`/posts/${item.id}`} className="block">
+        <div className="flex items-center justify-between px-3 pt-3">
+          <div className="flex items-center gap-2">
+            <ProducerAvatar name={item.author_name} size={32} />
+            <div>
+              <p className="text-[0.78rem] font-semibold text-white">Social Bevy</p>
+              <p className="text-[0.65rem] text-white/50">{item.author_name} · {item.time_ago}</p>
+            </div>
           </div>
+          <button
+            type="button"
+            aria-label="More"
+            className="px-1 text-white/50"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
+              <circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" />
+            </svg>
+          </button>
         </div>
-        <button type="button" aria-label="More" className="px-1 text-white/50">
-          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
-            <circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" />
-          </svg>
-        </button>
-      </div>
-      <p className="mt-2 px-3 text-[0.82rem] leading-5 text-white/80">{item.body}</p>
-      {item.image_url ? (
-        <div className="relative mt-2.5 h-44 w-full">
-          <Image src={item.image_url} alt="Post" fill sizes="(max-width: 448px) 100vw, 448px" className="object-cover" unoptimized />
-        </div>
-      ) : null}
+        <p className="mt-2 px-3 text-[0.82rem] leading-5 text-white/80">{item.body}</p>
+        {item.image_url ? (
+          <div className="relative mt-2.5 h-44 w-full">
+            <Image src={item.image_url} alt="Post" fill sizes="(max-width: 448px) 100vw, 448px" className="object-cover" unoptimized />
+          </div>
+        ) : null}
+      </Link>
       <div className="px-3 pb-3 pt-2.5">
         {item.comment_count ? (
-          <button type="button" className="text-[0.72rem] text-white/50">
+          <Link href={`/posts/${item.id}`} className="block text-[0.72rem] text-white/50">
             View all {item.comment_count} comments
-          </button>
+          </Link>
         ) : null}
-        <div className="mt-2 flex items-center justify-between border-t border-white/10 pt-2">
+        <Link
+          href={`/posts/${item.id}`}
+          className="mt-2 flex items-center justify-between border-t border-white/10 pt-2"
+        >
           <span className="text-[0.75rem] text-white/30">Add a comment...</span>
           <span className="text-[0.72rem] font-semibold text-red-400">Post</span>
-        </div>
+        </Link>
       </div>
     </div>
   );

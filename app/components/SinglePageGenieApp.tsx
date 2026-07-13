@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -579,6 +580,7 @@ const [trialSuccess, setTrialSuccess] = useState(false);
   const [sharedVenue, setSharedVenue] = useState<GenieVenue | null>(null);
   const [sharedVenueLoading, setSharedVenueLoading] = useState(false);
   const [selectedOfferId, setSelectedOfferId] = useState<number | null>(null);
+  const router = useRouter();
   const [account, setAccount] = useState<ConsumerAccount | null>(null);
   const [isAuthChecked, setIsAuthChecked] = useState(false);
   // Onboarding wizard: under magic-link there is no auth session until the link
@@ -2014,10 +2016,29 @@ setResponse(nextResponse);
           })
           .catch(() => {});
       }
+    } else if (screen === "login") {
+      // Public pages outside the SPA (event/venue/producer/post microsites)
+      // send logged-out visitors here as `/?screen=login&redirect=<path>`
+      // when they tap a gated action. `redirect` previously went nowhere —
+      // "login" isn't a FlowAnchor, so it silently no-opped below, and even
+      // when it did resolve nothing ever read `redirect` back. Stash the
+      // target (same-origin relative paths only, to avoid an open redirect)
+      // and open the login screen; the post-login effect below forwards them.
+      const redirectTarget = url.searchParams.get("redirect");
+      if (
+        redirectTarget &&
+        redirectTarget.startsWith("/") &&
+        !redirectTarget.startsWith("//") &&
+        !redirectTarget.includes("://")
+      ) {
+        window.sessionStorage.setItem("genie_post_login_redirect", redirectTarget);
+      }
+      navigateTo("account");
     } else if (allowed.includes(screen as FlowAnchor)) {
       navigateTo(screen as FlowAnchor);
     }
     url.searchParams.delete("screen");
+    url.searchParams.delete("redirect");
     url.searchParams.delete("thread_type");
     url.searchParams.delete("producer_id");
     url.searchParams.delete("thread_id");
@@ -2138,6 +2159,19 @@ setResponse(nextResponse);
     window.sessionStorage.removeItem("genie_post_login_target");
     navigateTo("vendor");
   }, [account, navigateTo]);
+
+  // Post-login redirect for public microsites (event/venue/producer/post
+  // detail pages): those pages send a logged-out visitor to
+  // `/?screen=login&redirect=<path>` (stashed into sessionStorage by the
+  // `screen === "login"` branch above) when a gated action is tapped. Once
+  // the session hydrates, forward them back to that exact page.
+  useEffect(() => {
+    if (!account || typeof window === "undefined") return;
+    const target = window.sessionStorage.getItem("genie_post_login_redirect");
+    if (!target) return;
+    window.sessionStorage.removeItem("genie_post_login_redirect");
+    router.push(target);
+  }, [account, router]);
 
   useEffect(() => {
     if (!response || response.response_mode !== "structured_results") {
