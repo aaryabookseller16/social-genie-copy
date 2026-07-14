@@ -15,7 +15,6 @@ export type FlowAnchor =
   | "detail"
   | "saved"
   | "offers"
-  | "offers-tab"
   | "events-tab"
   | "offer-detail"
   | "offer-activated"
@@ -247,7 +246,11 @@ export function BottomDock({
     activeId === "membership" ||
     activeId === "contact" ||
     activeId === "vendor";
-  const isOffersActive = activeId === "offers-tab";
+  const isOffersActive =
+    activeId === "offers" ||
+    activeId === "offer-detail" ||
+    activeId === "offer-activated" ||
+    activeId === "redemptions";
   const isEventsActive = activeId === "events-tab";
   const isHomeActive =
     !isProfileActive &&
