@@ -51,6 +51,8 @@ export type RawGenieVenue = {
   reservations_supported?: boolean | null;
   best_time_to_go?: string | null;
   is_open_now?: boolean | null;
+  /** Computed by fn_calculate_social_energy_dev from live venue_checkins; refreshed every 5 min. */
+  social_energy_state?: "Quiet" | "Getting Attention" | "Buzzing" | "On Fire" | null;
   is_official_vendor?: boolean | null;
   is_vendor_subscriber?: boolean | null;
   priority_tier?: string | null;

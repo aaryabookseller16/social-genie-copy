@@ -788,7 +788,7 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
                   <svg viewBox="0 0 24 24" className="h-3 w-3 flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                     <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
                   </svg>
-                  Concerts, parties
+                  {category || "Events"}
                 </p>
                 {producer.event_count ? (
                   <p className="text-[0.72rem] text-red-400">

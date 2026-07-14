@@ -18,6 +18,7 @@ import {
   createSubscriptionCheckout,
   createVendorBusiness,
   fetchMyVendorProfile,
+  fetchVendorAnalytics,
   fetchVendorDashboard,
   fetchVendorInfluencerCodes,
   fetchVendorNotifPrefs,
@@ -36,6 +37,8 @@ import {
   vendorOnboardingConfirm,
   type InfluencerOffer,
   type VendorInfluencerCode,
+  type VendorAnalyticsTotals,
+  type VendorAnalyticsDailyRecord,
 } from "@/app/lib/publicApiClient";
 import { readExternalUserId } from "@/app/lib/sessionToken";
 import {
@@ -659,6 +662,9 @@ export function VendorSection({
 
   // Analytics screen
   const [analyticsPeriod, setAnalyticsPeriod] = useState<"7_days" | "30_days" | "all_time">("30_days");
+  const [analyticsTotals, setAnalyticsTotals] = useState<VendorAnalyticsTotals | null>(null);
+  const [analyticsDaily, setAnalyticsDaily] = useState<VendorAnalyticsDailyRecord[]>([]);
+  const [isAnalyticsLoading, setIsAnalyticsLoading] = useState(false);
 
   // Offers screen
   const [offerMessage, setOfferMessage] = useState<string | null>(null);
@@ -857,6 +863,29 @@ export function VendorSection({
       .finally(() => { if (!cancelled) setInfluencerLoading(false); });
     return () => { cancelled = true; };
   }, [visible, step, vendorId, account]);
+
+  // Analytics loader
+  useEffect(() => {
+    if (!visible || step !== "analytics") return;
+    const vid = vendorId ?? account?.vendorId;
+    if (!vid) return;
+    let cancelled = false;
+    setIsAnalyticsLoading(true);
+    fetchVendorAnalytics(vid, analyticsPeriod)
+      .then((res) => {
+        if (cancelled) return;
+        setAnalyticsTotals(res?.totals ?? null);
+        setAnalyticsDaily(res?.daily_records ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAnalyticsTotals(null);
+          setAnalyticsDaily([]);
+        }
+      })
+      .finally(() => { if (!cancelled) setIsAnalyticsLoading(false); });
+    return () => { cancelled = true; };
+  }, [visible, step, vendorId, account, analyticsPeriod]);
 
   // Settings — pre-load notification preferences
   useEffect(() => {
@@ -2448,20 +2477,13 @@ export function VendorSection({
 
       {/* ======== STEP: ANALYTICS ======== */}
       {step === "analytics" && (() => {
-        const DUMMY_PERIODS: Record<string, { label: string; points: number[] }> = {
-          "7_days":  { label: "Last 7 Days",  points: [12, 19, 25, 30, 28, 45, 38] },
-          "30_days": { label: "Last 30 Days", points: [8,12,15,20,18,25,22,30,28,35,40,38,42,45,50,48,52,55,49,60,58,62,65,70,68,72,75,80,78,85] },
-          "all_time":{ label: "All Time",     points: [5,8,12,18,25,30,28,35,40,38,42,50,55,60,65,70,75,80,85,90,95,100,98,105,110,115,120,125,130,135] },
-        };
-        const saves   = DUMMY_PERIODS[analyticsPeriod].points.map((v) => Math.round(v * 0.3));
-        const checkins = DUMMY_PERIODS[analyticsPeriod].points.map((v) => Math.round(v * 0.12));
-        const peakHours = [
-          { hour: "12pm", count: 8 }, { hour: "3pm", count: 14 },
-          { hour: "5pm", count: 22 }, { hour: "7pm", count: 35 },
-          { hour: "9pm", count: 41 }, { hour: "11pm", count: 27 },
-        ];
-        const barMax = Math.max(...peakHours.map((h) => h.count));
-        const periodPoints = DUMMY_PERIODS[analyticsPeriod].points;
+        const periodLabel =
+          analyticsPeriod === "7_days" ? "Last 7 Days" : analyticsPeriod === "30_days" ? "Last 30 Days" : "All Time";
+        const appearancesPoints = analyticsDaily.map((r) => r.genie_appearances ?? 0);
+        const savesPoints = analyticsDaily.map((r) => r.saves ?? 0);
+        const profileViewsPoints = analyticsDaily.map((r) => r.profile_views ?? 0);
+        const hasData = analyticsDaily.length > 0;
+
         return (
           <div className="mt-2 space-y-6 pb-24">
             {/* Period selector */}
@@ -2482,42 +2504,56 @@ export function VendorSection({
               ))}
             </div>
 
-            {/* Line chart: Genie Appearances */}
-            <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 dark:bg-black/20">
-              <p className="mb-2 text-[0.82rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Genie Appearances</p>
-              <PerformanceChart points={periodPoints.map((v) => ({ value: v }))} headLabel={DUMMY_PERIODS[analyticsPeriod].label} />
-              <p className="mt-1 text-right text-[1.1rem] font-bold text-gray-900 dark:text-white">{periodPoints.reduce((a,b) => a+b,0).toLocaleString()} total</p>
-            </div>
+            {isAnalyticsLoading ? (
+              <p className="py-8 text-center text-[0.85rem] text-gray-400 dark:text-white/50">Loading analytics…</p>
+            ) : !hasData ? (
+              <p className="py-8 text-center text-[0.85rem] text-gray-400 dark:text-white/50">No analytics data yet for this period.</p>
+            ) : (
+              <>
+                {/* Line chart: Genie Appearances */}
+                <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 dark:bg-black/20">
+                  <p className="mb-2 text-[0.82rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Genie Appearances</p>
+                  <PerformanceChart points={appearancesPoints.map((v) => ({ value: v }))} headLabel={periodLabel} />
+                  <p className="mt-1 text-right text-[1.1rem] font-bold text-gray-900 dark:text-white">{(analyticsTotals?.genie_appearances ?? appearancesPoints.reduce((a,b) => a+b,0)).toLocaleString()} total</p>
+                </div>
 
-            {/* Line chart: Saves */}
-            <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 dark:bg-black/20">
-              <p className="mb-2 text-[0.82rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Saves</p>
-              <PerformanceChart points={saves.map((v) => ({ value: v }))} headLabel={DUMMY_PERIODS[analyticsPeriod].label} />
-              <p className="mt-1 text-right text-[1.1rem] font-bold text-gray-900 dark:text-white">{saves.reduce((a,b) => a+b,0).toLocaleString()} total</p>
-            </div>
+                {/* Line chart: Saves */}
+                <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 dark:bg-black/20">
+                  <p className="mb-2 text-[0.82rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Saves</p>
+                  <PerformanceChart points={savesPoints.map((v) => ({ value: v }))} headLabel={periodLabel} />
+                  <p className="mt-1 text-right text-[1.1rem] font-bold text-gray-900 dark:text-white">{(analyticsTotals?.saves ?? savesPoints.reduce((a,b) => a+b,0)).toLocaleString()} total</p>
+                </div>
 
-            {/* Line chart: Check-ins */}
-            <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 dark:bg-black/20">
-              <p className="mb-2 text-[0.82rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Check-ins</p>
-              <PerformanceChart points={checkins.map((v) => ({ value: v }))} headLabel={DUMMY_PERIODS[analyticsPeriod].label} />
-              <p className="mt-1 text-right text-[1.1rem] font-bold text-gray-900 dark:text-white">{checkins.reduce((a,b) => a+b,0).toLocaleString()} total</p>
-            </div>
+                {/* Line chart: Profile Views */}
+                <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 dark:bg-black/20">
+                  <p className="mb-2 text-[0.82rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Profile Views</p>
+                  <PerformanceChart points={profileViewsPoints.map((v) => ({ value: v }))} headLabel={periodLabel} />
+                  <p className="mt-1 text-right text-[1.1rem] font-bold text-gray-900 dark:text-white">{(analyticsTotals?.profile_views ?? profileViewsPoints.reduce((a,b) => a+b,0)).toLocaleString()} total</p>
+                </div>
 
-            {/* Bar chart: Peak Hours */}
-            <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 dark:bg-black/20">
-              <p className="mb-4 text-[0.82rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Peak Hours</p>
-              <div className="flex items-end gap-2" style={{ height: 100 }}>
-                {peakHours.map((h) => (
-                  <div key={h.hour} className="flex flex-1 flex-col items-center gap-1">
-                    <div
-                      className="w-full rounded-t-md bg-red-500/70 dark:bg-[#ff5a5a]/70"
-                      style={{ height: `${(h.count / barMax) * 80}px` }}
-                    />
-                    <span className="text-[0.65rem] text-gray-400 dark:text-white/50">{h.hour}</span>
+                {/* Engagement summary */}
+                {analyticsTotals ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-3 dark:bg-black/20">
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Call Clicks</p>
+                      <p className="mt-1 text-[1.1rem] font-bold text-gray-900 dark:text-white">{analyticsTotals.call_clicks.toLocaleString()}</p>
+                    </div>
+                    <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-3 dark:bg-black/20">
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Map Clicks</p>
+                      <p className="mt-1 text-[1.1rem] font-bold text-gray-900 dark:text-white">{analyticsTotals.map_clicks.toLocaleString()}</p>
+                    </div>
+                    <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-3 dark:bg-black/20">
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Reservation Clicks</p>
+                      <p className="mt-1 text-[1.1rem] font-bold text-gray-900 dark:text-white">{analyticsTotals.reservation_clicks.toLocaleString()}</p>
+                    </div>
+                    <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-3 dark:bg-black/20">
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Engagement Rate</p>
+                      <p className="mt-1 text-[1.1rem] font-bold text-gray-900 dark:text-white">{(analyticsTotals.engagement_rate * 100).toFixed(1)}%</p>
+                    </div>
                   </div>
-                ))}
-              </div>
-            </div>
+                ) : null}
+              </>
+            )}
           </div>
         );
       })()}
