@@ -848,9 +848,25 @@ export function HomescreenSection({
         })
           .then((result) => {
             const newEvents = result.upcoming_events ?? [];
-            setAllEvents((prev) => [...prev, ...newEvents]);
-            setEventsPage(eventsPage + 1);
             if (newEvents.length < 5) setHasMoreEvents(false);
+            setAllEvents((prev) => {
+              // The backend's page param doesn't always exclude already-served
+              // events (seen live: the same event reappeared on a later page,
+              // which crashes React with a duplicate list key) — dedupe here
+              // regardless of why. seenIds accumulates as we go so this also
+              // catches duplicates *within* a single page response, not just
+              // across pages. An all-duplicate page counts as the end.
+              const seenIds = new Set(prev.map((e) => e.id));
+              const deduped: typeof newEvents = [];
+              for (const e of newEvents) {
+                if (seenIds.has(e.id)) continue;
+                seenIds.add(e.id);
+                deduped.push(e);
+              }
+              if (deduped.length === 0) setHasMoreEvents(false);
+              return [...prev, ...deduped];
+            });
+            setEventsPage(eventsPage + 1);
           })
           .catch(() => setHasMoreEvents(false))
       : Promise.resolve();
@@ -859,9 +875,19 @@ export function HomescreenSection({
       ? fetchHomescreenPosts(postsPage + 1, POSTS_PER_LOAD)
           .then((result) => {
             const newPosts = result.posts ?? [];
-            setHomescreenPosts((prev) => [...prev, ...newPosts.map(toFeedItem)]);
-            setPostsPage(postsPage + 1);
             if (newPosts.length < POSTS_PER_LOAD) setHasMorePosts(false);
+            setHomescreenPosts((prev) => {
+              const seenIds = new Set(prev.map((p) => p.id));
+              const deduped: typeof newPosts = [];
+              for (const p of newPosts) {
+                if (seenIds.has(p.post.id)) continue;
+                seenIds.add(p.post.id);
+                deduped.push(p);
+              }
+              if (deduped.length === 0) setHasMorePosts(false);
+              return [...prev, ...deduped.map(toFeedItem)];
+            });
+            setPostsPage(postsPage + 1);
           })
           .catch(() => setHasMorePosts(false))
       : Promise.resolve();
