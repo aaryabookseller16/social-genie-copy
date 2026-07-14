@@ -16,7 +16,7 @@ export const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 
 export const MAX_VIDEO_DURATION_SECONDS = 60;
 
-export type UploadFolder = "events" | "posts";
+export type UploadFolder = "events" | "posts" | "offers";
 
 export class VideoUploadError extends Error {}
 

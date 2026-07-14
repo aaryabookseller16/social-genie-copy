@@ -25,7 +25,7 @@ export const MAX_INPUT_BYTES = 25 * 1024 * 1024;
  */
 export const MAX_EDGE = 1600;
 
-export type UploadFolder = "avatars" | "events" | "posts" | "venues";
+export type UploadFolder = "avatars" | "events" | "posts" | "venues" | "offers";
 
 export class ImageUploadError extends Error {}
 

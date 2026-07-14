@@ -13,6 +13,9 @@ import {
   type InfluencerOffer,
 } from "@/app/lib/publicApiClient";
 import { ScrollUnlock } from "../ScrollUnlock";
+import ImageGallery from "@/app/components/ImageGallery";
+import FeaturedEventVideos from "@/app/components/FeaturedEventVideos";
+import { galleryFor } from "@/app/lib/image";
 
 type OfferProp = InfluencerOffer;
 
@@ -70,6 +73,7 @@ export function RedeemClient({
   const confirmedDiscount = result
     ? formatDiscount(result.discount_value, result.discount_type)
     : null;
+  const offerImages = galleryFor(offer.image_urls?.[0], offer.image_urls);
 
   return (
     <main className="min-h-dvh bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
@@ -89,6 +93,12 @@ export function RedeemClient({
             </svg>
           </Link>
         </div>
+
+        {offerImages.length > 0 ? (
+          <div className="-mx-4 overflow-hidden">
+            <ImageGallery images={offerImages} alt={offer.offer_title} heightClass="h-56" />
+          </div>
+        ) : null}
 
         {result ? (
           /* ── CONFIRMATION ─────────────────────────────────────────── */
@@ -170,6 +180,12 @@ export function RedeemClient({
                 </div>
               ) : null}
             </div>
+
+            <FeaturedEventVideos
+              videos={offer.video_urls}
+              eventTitle={offer.offer_title}
+              headingClassName="text-gray-900 dark:text-white"
+            />
 
             {error ? (
               <p className="rounded-[16px] border border-red-200 bg-red-50 px-4 py-3 text-[0.85rem] font-medium text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
