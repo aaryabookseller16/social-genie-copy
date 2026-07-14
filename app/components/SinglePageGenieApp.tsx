@@ -2034,6 +2034,18 @@ setResponse(nextResponse);
         window.sessionStorage.setItem("genie_post_login_redirect", redirectTarget);
       }
       navigateTo("account");
+    } else if (screen === "event") {
+      // Standalone pages outside the SPA (producer profile, notifications, etc.)
+      // link here as `/?screen=event&event_id=<id>` since there's no public
+      // per-id event route. Seed minimal initialData — EventDetailSection
+      // fetches the full record itself via its own eventId effect.
+      const eventIdParam = url.searchParams.get("event_id");
+      const eventId = eventIdParam ? Number(eventIdParam) : NaN;
+      if (Number.isFinite(eventId) && eventId > 0) {
+        setSelectedEventId(eventId);
+        setSelectedEvent({ id: eventId });
+        navigateTo("event-detail");
+      }
     } else if (allowed.includes(screen as FlowAnchor)) {
       navigateTo(screen as FlowAnchor);
     }
@@ -2043,6 +2055,7 @@ setResponse(nextResponse);
     url.searchParams.delete("producer_id");
     url.searchParams.delete("thread_id");
     url.searchParams.delete("counterpart_name");
+    url.searchParams.delete("event_id");
     window.history.replaceState(
       {},
       "",

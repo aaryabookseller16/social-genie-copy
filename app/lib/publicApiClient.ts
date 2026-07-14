@@ -1781,6 +1781,8 @@ export type ProducerEvent = {
   rsvp_count?: number;
   going_count?: number;
   created_at?: number;
+  /** Powers the public event microsite at /events/{slug}. May be empty for older rows. */
+  public_slug?: string;
 };
 
 export type ProducerPost = {
@@ -2004,6 +2006,19 @@ export async function fetchMyPostLikeStatus(postId: number) {
   );
 }
 
+/**
+ * The homescreen's paginated Social Post feed (infinite scroll). apiJson
+ * auto-attaches the caller's auth token when present, so the route handler
+ * pages through the visitor's real posts when logged in, or serves a single
+ * curated fallback post on page 1 only when logged out.
+ */
+export async function fetchHomescreenPosts(page = 1, perPage = 1) {
+  const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+  return apiJson<{ posts: Array<{ post: PublicPost; author: PublicPostAuthor | null }> }>(
+    `/api/genie/homescreen-post?${params.toString()}`
+  );
+}
+
 export type ProducerNotifPrefs = {
   notify_new_follower?: boolean;
   notify_post_like?: boolean;
@@ -2103,6 +2118,18 @@ export type ProducerPublicPageData = {
 export async function fetchProducerPublicProfile(producerId: number) {
   return apiJson<ProducerPublicPageData>(
     `/api/producer/profile-public?producer_id=${producerId}`
+  );
+}
+
+/** This producer's posts, for the public profile page. Requires login (same gate the page already applies). */
+export async function fetchProducerPosts(producerId: number, page = 1, perPage = 20) {
+  const params = new URLSearchParams({
+    producer_id: String(producerId),
+    page: String(page),
+    per_page: String(perPage),
+  });
+  return apiJson<{ success: boolean; posts: ProducerPost[]; total: number }>(
+    `/api/producer/posts-public?${params.toString()}`
   );
 }
 
@@ -2597,24 +2624,6 @@ export type EventFeedItem = {
   raw: UpcomingEvent;
 };
 
-export type SocialEnergyAlertItem = {
-  feed_type: "social_energy_alert";
-  id: number;
-  message: string;
-};
-
-export type SocialPostItem = {
-  feed_type: "social_post";
-  id: number;
-  author_name: string;
-  author_image_url?: string;
-  time_ago: string;
-  body: string;
-  image_url?: string;
-  comment_count?: number;
-  notification_count?: number;
-};
-
 export type OnFireVenueItem = {
   feed_type: "on_fire_venue";
   id: number;
@@ -2639,8 +2648,6 @@ export type SuggestedProducerItem = {
 
 export type FeedItem =
   | EventFeedItem
-  | SocialEnergyAlertItem
-  | SocialPostItem
   | OnFireVenueItem
   | SuggestedProducerItem;
 

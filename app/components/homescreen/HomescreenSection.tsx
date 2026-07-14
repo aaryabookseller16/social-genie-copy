@@ -2,103 +2,27 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 
 import { type ConsumerAccount } from "@/app/lib/localState";
 import {
   fetchFollowedProducers,
   fetchHomescreen,
+  fetchHomescreenPosts,
   fetchSuggestedProducers,
   followProducer,
   type EventFeedItem,
   type FollowedProducerItem,
   type OnFireVenueItem,
-  type SocialEnergyAlertItem,
-  type SocialPostItem,
+  type PublicPost,
+  type PublicPostAuthor,
   type SuggestedProducerItem,
   type TrendingVenue,
   type UpcomingEvent,
 } from "@/app/lib/publicApiClient";
+import { mediaGalleryFor } from "@/app/lib/image";
+import ImageGallery from "@/app/components/ImageGallery";
 import { type FlowAnchor } from "@/app/components/single-page/ui";
-
-/* ------------------------------------------------------------------ */
-/*  Dummy data                                                         */
-/*  Event cards and the story bar (followed producers) use live API    */
-/*  data. Everything else below is still hardcoded so the screen       */
-/*  matches the Figma; swap for API fields later (field names chosen   */
-/*  to mirror a future backend response).                              */
-/* ------------------------------------------------------------------ */
-
-type FeaturedVideo = { id: number; video_url: string; poster_url: string; title: string };
-
-const DUMMY_FEATURED_VIDEOS: FeaturedVideo[] = [
-  {
-    id: 1,
-    video_url: "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
-    poster_url: "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=600&q=70",
-    title: "Live at NRG",
-  },
-  {
-    id: 2,
-    video_url: "https://storage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
-    poster_url: "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=600&q=70",
-    title: "Midtown Nights",
-  },
-  {
-    id: 3,
-    video_url: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
-    poster_url: "https://images.unsplash.com/photo-1501386761578-eac5c94b800a?w=600&q=70",
-    title: "Weekend Vibes",
-  },
-];
-
-type OfferData = {
-  id: number;
-  venue_name: string;
-  image_url: string;
-  offer_text: string;
-  badge: string;
-};
-
-const DUMMY_OFFERS: OfferData[] = [
-  {
-    id: 1,
-    venue_name: "Brennan's Houston",
-    image_url: "https://images.unsplash.com/photo-1514933651103-005eec06c04b?w=400&q=70",
-    offer_text: "20% off on all drinks",
-    badge: "Happy Hour",
-  },
-  {
-    id: 2,
-    venue_name: "Eden Lounge",
-    image_url: "https://images.unsplash.com/photo-1566417713940-fe7c737a9ef2?w=400&q=70",
-    offer_text: "20% off on every tab",
-    badge: "Craft Drinks",
-  },
-  {
-    id: 3,
-    venue_name: "Club Noir",
-    image_url: "https://images.unsplash.com/photo-1571204829887-3b8d69e4094d?w=400&q=70",
-    offer_text: "Waived Cover",
-    badge: "Late Night",
-  },
-];
-
-const DUMMY_ENERGY_ALERT: SocialEnergyAlertItem = {
-  feed_type: "social_energy_alert",
-  id: -1,
-  message: "Midtown just hit on fire - three venues spiking right now.",
-};
-
-const DUMMY_SOCIAL_POST: SocialPostItem = {
-  feed_type: "social_post",
-  id: -2,
-  author_name: "Alphonso Roundtree",
-  time_ago: "7h",
-  body: "The festival was dope, I can't wait to go back... great job Social Bevy!",
-  image_url: "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=600&q=70",
-  comment_count: 136,
-};
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                             */
@@ -115,6 +39,18 @@ function formatEventDate(raw?: string): string {
   } catch {
     return raw;
   }
+}
+
+function formatShortRelativeTime(timestamp?: number): string {
+  if (!timestamp) return "";
+  const diffSec = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (diffSec < 60) return "just now";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h`;
+  const diffDay = Math.floor(diffHr / 24);
+  return `${diffDay}d`;
 }
 
 function formatEventTime(raw?: string): string {
@@ -174,18 +110,21 @@ function trendingVenueToFeedItem(v: TrendingVenue): OnFireVenueItem {
 }
 
 /* Local feed items that also carry a standalone row of multiple cards. */
-type OffersFeedItem = { feed_type: "offers"; id: string; offers: OfferData[] };
 type SuggestedProducersFeedItem = {
   feed_type: "suggested_producers";
   id: string;
   producers: SuggestedProducerItem[];
 };
+type SocialPostFeedItem = {
+  feed_type: "social_post";
+  id: number;
+  post: PublicPost;
+  author: PublicPostAuthor | null;
+};
 type HomeFeedItem =
   | EventFeedItem
-  | SocialEnergyAlertItem
-  | SocialPostItem
+  | SocialPostFeedItem
   | OnFireVenueItem
-  | OffersFeedItem
   | SuggestedProducersFeedItem;
 
 /* ------------------------------------------------------------------ */
@@ -220,77 +159,6 @@ function StoryBar({ producers }: { producers: FollowedProducerItem[] }) {
             {p.display_name ?? "Producer"}
           </span>
         </a>
-      ))}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Featured videos                                                     */
-/* ------------------------------------------------------------------ */
-
-function FeaturedVideoCard({ video, wide }: { video: FeaturedVideo; wide: boolean }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [playing, setPlaying] = useState(false);
-
-  function toggle() {
-    const el = videoRef.current;
-    if (!el) return;
-    if (el.paused) {
-      void el.play();
-      setPlaying(true);
-    } else {
-      el.pause();
-      setPlaying(false);
-    }
-  }
-
-  return (
-    <div className={`relative ${wide ? "w-52" : "w-44"} h-64 flex-none overflow-hidden rounded-[16px] bg-zinc-900`}>
-      <video
-        ref={videoRef}
-        src={video.video_url}
-        poster={video.poster_url}
-        muted
-        loop
-        playsInline
-        preload="metadata"
-        className="h-full w-full object-cover"
-        onEnded={() => setPlaying(false)}
-      />
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-      <button
-        type="button"
-        onClick={toggle}
-        aria-label={playing ? "Pause" : "Play"}
-        className="absolute inset-0 flex items-end justify-start p-3"
-      >
-        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm">
-          {playing ? (
-            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
-              <rect x="6" y="5" width="4" height="14" rx="1" />
-              <rect x="14" y="5" width="4" height="14" rx="1" />
-            </svg>
-          ) : (
-            <svg viewBox="0 0 24 24" className="ml-0.5 h-4 w-4" fill="currentColor">
-              <path d="M8 5v14l11-7z" />
-            </svg>
-          )}
-        </span>
-      </button>
-      <span className="pointer-events-none absolute bottom-3 right-3 text-right text-[0.72rem] font-semibold text-white drop-shadow">
-        {video.title}
-      </span>
-    </div>
-  );
-}
-
-function FeaturedVideos({ videos }: { videos: FeaturedVideo[] }) {
-  if (!videos.length) return null;
-  return (
-    <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      {videos.map((v, i) => (
-        <FeaturedVideoCard key={v.id} video={v} wide={i === 0} />
       ))}
     </div>
   );
@@ -535,111 +403,82 @@ function EventFeedCard({
 }
 
 /* ------------------------------------------------------------------ */
-/*  Energy alert banner                                                */
+/*  Social post card                                                    */
+/*  Preview-only: real content (text/media/counts) always renders;      */
+/*  opening the full post (and any liking/commenting) happens on        */
+/*  /posts/[id], gated behind login like the rest of this screen.       */
 /* ------------------------------------------------------------------ */
 
-function EnergyAlertBanner({ item }: { item: SocialEnergyAlertItem }) {
-  const parts = item.message.split("on fire");
-  return (
-    <div className="flex items-center justify-between rounded-[14px] bg-gradient-to-r from-red-900/60 to-black/40 px-4 py-3">
-      <div className="flex items-center gap-2.5">
-        <span className="flex h-6 w-6 flex-none items-center justify-center rounded-full bg-red-600 text-[0.7rem]">🔥</span>
-        <p className="text-[0.82rem] leading-5 text-white/85">
-          {parts[0]}
-          {parts.length > 1 ? <span className="font-semibold text-red-400">on fire</span> : null}
-          {parts[1]}
-        </p>
-      </div>
-      <svg viewBox="0 0 24 24" className="ml-3 h-4 w-4 flex-none text-white/50" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-        <polyline points="9 18 15 12 9 6" />
-      </svg>
-    </div>
-  );
-}
+function SocialPostCard({
+  item,
+  isLoggedIn,
+  onRequireAuth,
+}: {
+  item: SocialPostFeedItem;
+  isLoggedIn: boolean;
+  onRequireAuth: () => void;
+}) {
+  const { post, author } = item;
+  const authorName = author?.display_name ?? "Social Bevy";
+  const media = mediaGalleryFor(post.image_url, post.image_urls, post.video_urls);
 
-/* ------------------------------------------------------------------ */
-/*  Offers row                                                          */
-/* ------------------------------------------------------------------ */
+  const handleOpen = (e: MouseEvent) => {
+    if (!isLoggedIn) {
+      e.preventDefault();
+      onRequireAuth();
+    }
+  };
 
-function OffersRow({ offers }: { offers: OfferData[] }) {
-  if (!offers.length) return null;
-  return (
-    <div>
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="font-[family:var(--font-display)] text-[1.4rem] text-white">Offers</h2>
-        <svg viewBox="0 0 24 24" className="h-4 w-4 text-white/50" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="9 18 15 12 9 6" />
-        </svg>
-      </div>
-      <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {offers.map((o) => (
-          <div key={o.id} className="w-40 flex-none overflow-hidden rounded-[16px] bg-black/40">
-            <div className="relative h-24 w-full bg-zinc-900">
-              <Image src={o.image_url} alt={o.venue_name} fill sizes="160px" className="object-cover" unoptimized />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-              <span className="absolute bottom-1.5 left-2 right-2 truncate text-[0.72rem] font-semibold text-white drop-shadow">
-                {o.venue_name}
-              </span>
-            </div>
-            <div className="px-2.5 py-2.5">
-              <p className="text-[0.68rem] text-white/60">{o.offer_text}</p>
-              <span className="mt-1.5 inline-block rounded-full bg-red-600 px-2 py-0.5 text-[0.58rem] font-bold text-white">
-                {o.badge}
-              </span>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Social post card                                                   */
-/* ------------------------------------------------------------------ */
-
-function SocialPostCard({ item }: { item: SocialPostItem }) {
   return (
     <div className="overflow-hidden rounded-[18px] bg-black/40">
-      <Link href={`/posts/${item.id}`} className="block">
-        <div className="flex items-center justify-between px-3 pt-3">
-          <div className="flex items-center gap-2">
-            <ProducerAvatar name={item.author_name} size={32} />
-            <div>
-              <p className="text-[0.78rem] font-semibold text-white">Social Bevy</p>
-              <p className="text-[0.65rem] text-white/50">{item.author_name} · {item.time_ago}</p>
+      <Link href={`/posts/${post.id}`} onClick={handleOpen} className="block">
+        <div className="flex items-center gap-2 px-3 pt-3">
+          {author?.profile_photo_url ? (
+            <div className="relative h-8 w-8 flex-none overflow-hidden rounded-full">
+              <Image
+                src={author.profile_photo_url}
+                alt={authorName}
+                fill
+                sizes="32px"
+                className="object-cover"
+                unoptimized
+              />
             </div>
+          ) : (
+            <ProducerAvatar name={authorName} size={32} />
+          )}
+          <div>
+            <p className="text-[0.78rem] font-semibold text-white">{authorName}</p>
+            <p className="text-[0.65rem] text-white/50">{formatShortRelativeTime(post.created_at)}</p>
           </div>
-          <button
-            type="button"
-            aria-label="More"
-            className="px-1 text-white/50"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
-              <circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" />
-            </svg>
-          </button>
         </div>
-        <p className="mt-2 px-3 text-[0.82rem] leading-5 text-white/80">{item.body}</p>
-        {item.image_url ? (
-          <div className="relative mt-2.5 h-44 w-full">
-            <Image src={item.image_url} alt="Post" fill sizes="(max-width: 448px) 100vw, 448px" className="object-cover" unoptimized />
+        {post.post_text ? (
+          <p className="mt-2 px-3 text-[0.82rem] leading-5 text-white/80">{post.post_text}</p>
+        ) : null}
+        {media.length > 0 ? (
+          <div className="mt-2.5">
+            <ImageGallery
+              items={media}
+              alt={post.post_text ?? "Post"}
+              heightClass="h-44"
+              showThumbnails={false}
+            />
           </div>
         ) : null}
       </Link>
       <div className="px-3 pb-3 pt-2.5">
-        {item.comment_count ? (
-          <Link href={`/posts/${item.id}`} className="block text-[0.72rem] text-white/50">
-            View all {item.comment_count} comments
-          </Link>
-        ) : null}
         <Link
-          href={`/posts/${item.id}`}
-          className="mt-2 flex items-center justify-between border-t border-white/10 pt-2"
+          href={`/posts/${post.id}`}
+          onClick={handleOpen}
+          className="flex items-center justify-between border-t border-white/10 pt-2"
         >
-          <span className="text-[0.75rem] text-white/30">Add a comment...</span>
-          <span className="text-[0.72rem] font-semibold text-red-400">Post</span>
+          <span className="text-[0.72rem] text-white/50">
+            {post.like_count ? `${post.like_count} like${post.like_count === 1 ? "" : "s"}` : "Like"}
+            {post.comment_count
+              ? ` · ${post.comment_count} comment${post.comment_count === 1 ? "" : "s"}`
+              : ""}
+          </span>
+          <span className="text-[0.72rem] font-semibold text-red-400">View post</span>
         </Link>
       </div>
     </div>
@@ -802,10 +641,8 @@ function FeedCard({
           onRequireAuth={onRequireAuth}
         />
       );
-    case "social_energy_alert":
-      return <EnergyAlertBanner item={item} />;
     case "social_post":
-      return <SocialPostCard item={item} />;
+      return <SocialPostCard item={item} isLoggedIn={isLoggedIn} onRequireAuth={onRequireAuth} />;
     case "on_fire_venue":
       return <OnFireVenueCard item={item} onViewVenue={() => onVenueOpen(item.id)} />;
     case "suggested_producers":
@@ -816,8 +653,6 @@ function FeedCard({
           onRequireAuth={onRequireAuth}
         />
       );
-    case "offers":
-      return <OffersRow offers={item.offers} />;
     default:
       return null;
   }
@@ -914,12 +749,50 @@ export function HomescreenSection({
     return () => { cancelled = true; };
   }, [account?.id]);
 
+  const POSTS_PER_LOAD = 2;
+
+  const [homescreenPosts, setHomescreenPosts] = useState<SocialPostFeedItem[]>([]);
+  const [postsPage, setPostsPage] = useState(1);
+  const [hasMorePosts, setHasMorePosts] = useState(true);
+
+  const toFeedItem = (pair: { post: PublicPost; author: PublicPostAuthor | null }): SocialPostFeedItem => ({
+    feed_type: "social_post",
+    id: pair.post.id,
+    post: pair.post,
+    author: pair.author,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    setPostsPage(1);
+    setHasMorePosts(true);
+    fetchHomescreenPosts(1, 1)
+      .then((result) => {
+        if (cancelled) return;
+        const posts = result.posts ?? [];
+        setHomescreenPosts(posts.map(toFeedItem));
+        if (posts.length < 1) setHasMorePosts(false);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setHomescreenPosts([]);
+          setHasMorePosts(false);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [account?.id]);
+
   const [allEvents, setAllEvents] = useState<UpcomingEvent[]>([]);
   const [eventsPage, setEventsPage] = useState(1);
   const [hasMoreEvents, setHasMoreEvents] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [topTrendingVenue, setTopTrendingVenue] = useState<TrendingVenue | null>(null);
-  const sentinelRef = useRef<HTMLDivElement>(null);
+  const sentinelObserverRef = useRef<IntersectionObserver | null>(null);
+  // Always-current refs read from inside the observer callback below, so the
+  // observer itself never needs to be torn down and recreated when these
+  // change (see sentinelCallbackRef for why that recreation was a problem).
+  const loadMoreRef = useRef<() => void>(() => {});
+  const hasMoreRef = useRef(false);
 
   const cityId = 1;
   const cityName = "Houston";
@@ -960,53 +833,100 @@ export function HomescreenSection({
     return () => { cancelled = true; };
   }, [account?.id, userCoords?.latitude, userCoords?.longitude]);
 
-  const loadMoreEvents = useCallback(() => {
-    if (loadingMore || !hasMoreEvents) return;
+  const loadMore = useCallback(() => {
+    if (loadingMore || (!hasMoreEvents && !hasMorePosts)) return;
     setLoadingMore(true);
-    const nextPage = eventsPage + 1;
-    fetchHomescreen({
-      cityId,
-      cityName,
-      userId: account?.id ?? undefined,
-      lat: userCoords?.latitude,
-      lng: userCoords?.longitude,
-      page: nextPage,
-    })
-      .then((result) => {
-        const newEvents = result.upcoming_events ?? [];
-        setAllEvents((prev) => [...prev, ...newEvents]);
-        setEventsPage(nextPage);
-        if (newEvents.length < 5) setHasMoreEvents(false);
-      })
-      .catch(() => { setHasMoreEvents(false); })
-      .finally(() => setLoadingMore(false));
-  }, [loadingMore, hasMoreEvents, eventsPage, account?.id, userCoords?.latitude, userCoords?.longitude]);
 
-  useEffect(() => {
-    const el = sentinelRef.current;
-    if (!el || !hasMoreEvents) return;
+    const eventsRequest = hasMoreEvents
+      ? fetchHomescreen({
+          cityId,
+          cityName,
+          userId: account?.id ?? undefined,
+          lat: userCoords?.latitude,
+          lng: userCoords?.longitude,
+          page: eventsPage + 1,
+        })
+          .then((result) => {
+            const newEvents = result.upcoming_events ?? [];
+            setAllEvents((prev) => [...prev, ...newEvents]);
+            setEventsPage(eventsPage + 1);
+            if (newEvents.length < 5) setHasMoreEvents(false);
+          })
+          .catch(() => setHasMoreEvents(false))
+      : Promise.resolve();
+
+    const postsRequest = hasMorePosts
+      ? fetchHomescreenPosts(postsPage + 1, POSTS_PER_LOAD)
+          .then((result) => {
+            const newPosts = result.posts ?? [];
+            setHomescreenPosts((prev) => [...prev, ...newPosts.map(toFeedItem)]);
+            setPostsPage(postsPage + 1);
+            if (newPosts.length < POSTS_PER_LOAD) setHasMorePosts(false);
+          })
+          .catch(() => setHasMorePosts(false))
+      : Promise.resolve();
+
+    Promise.all([eventsRequest, postsRequest]).finally(() => setLoadingMore(false));
+  }, [
+    loadingMore,
+    hasMoreEvents,
+    hasMorePosts,
+    eventsPage,
+    postsPage,
+    account?.id,
+    userCoords?.latitude,
+    userCoords?.longitude,
+  ]);
+
+  // Keep these refs current every render so the observer callback below
+  // always sees fresh values without the observer itself needing to change.
+  loadMoreRef.current = loadMore;
+  hasMoreRef.current = hasMoreEvents || hasMorePosts;
+
+  // Callback ref instead of useRef + useEffect: the sentinel <div> only
+  // exists once the loading skeleton is replaced by real content, and a
+  // useEffect keyed on [loadMore, hasMoreEvents, hasMorePosts] never re-runs
+  // for that mount (none of those change when `loading` flips), so the
+  // observer was never attached. A callback ref fires the moment the node
+  // itself mounts, regardless of what conditional rendering caused it to.
+  //
+  // Deps are intentionally empty: the observer is created exactly once per
+  // sentinel mount and reads hasMoreRef/loadMoreRef for current state.
+  // Recreating the observer on every hasMore*/loadMore change (as this used
+  // to) causes IntersectionObserver.observe() to immediately re-fire its
+  // "currently intersecting?" check — if the sentinel is still on-screen
+  // right after a load (common before new content pushes it down), that
+  // triggers another load instantly, over and over, which looks like the
+  // feed never stops loading and the "you've reached the bottom" message
+  // never gets a chance to render.
+  const sentinelCallbackRef = useCallback((node: HTMLDivElement | null) => {
+    sentinelObserverRef.current?.disconnect();
+    sentinelObserverRef.current = null;
+    if (!node) return;
     const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) loadMoreEvents(); },
+      ([entry]) => {
+        if (entry.isIntersecting && hasMoreRef.current) loadMoreRef.current();
+      },
       { threshold: 0.1 }
     );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [loadMoreEvents, hasMoreEvents]);
+    observer.observe(node);
+    sentinelObserverRef.current = observer;
+  }, []);
 
-  // Build the interleaved feed: real events mixed with the dummy Figma cards.
+  // Build the feed: the first event + first post lead, then on-fire venue /
+  // suggested producers, then every subsequently loaded event and post
+  // appended in load order as the visitor scrolls.
   const eventItems = allEvents.map((evt, i) => upcomingEventToFeedItem(evt, i));
   const feed: HomeFeedItem[] = [];
   if (eventItems[0]) feed.push(eventItems[0]);
-  feed.push(DUMMY_ENERGY_ALERT);
-  feed.push({ feed_type: "offers", id: "offers", offers: DUMMY_OFFERS });
-  feed.push(DUMMY_SOCIAL_POST);
+  if (homescreenPosts[0]) feed.push(homescreenPosts[0]);
   if (topTrendingVenue) {
     feed.push(trendingVenueToFeedItem(topTrendingVenue));
   }
   if (isLoggedIn && suggestedProducers.length > 0) {
     feed.push({ feed_type: "suggested_producers", id: "suggested_producers", producers: suggestedProducers });
   }
-  feed.push(...eventItems.slice(1));
+  feed.push(...eventItems.slice(1), ...homescreenPosts.slice(1));
 
   return (
     <section className="flex flex-1 flex-col overflow-y-auto pb-28">
@@ -1065,12 +985,6 @@ export function HomescreenSection({
         </div>
       )}
 
-      {/* ── Featured (videos) ──────────────────────────────────────── */}
-      <div className="px-1 pb-2">
-        <h2 className="mb-3 font-[family:var(--font-display)] text-[1.4rem] text-white">Featured</h2>
-        <FeaturedVideos videos={DUMMY_FEATURED_VIDEOS} />
-      </div>
-
       {loading ? (
         /* ── Skeleton ─────────────────────────────────────────────── */
         <div className="space-y-4 px-1">
@@ -1106,15 +1020,15 @@ export function HomescreenSection({
               />
             ))}
           </div>
-          <div ref={sentinelRef} className="h-4" />
+          <div ref={sentinelCallbackRef} className="h-4" />
           {loadingMore && (
             <div className="flex justify-center py-4">
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-white" />
             </div>
           )}
-          {!hasMoreEvents && (
+          {!loadingMore && !hasMoreEvents && !hasMorePosts && (
             <p className="py-6 text-center text-[0.78rem] text-white/35">
-              You&apos;ve seen all upcoming events
+              You&apos;ve reached the bottom — that&apos;s everything for now
             </p>
           )}
         </div>
