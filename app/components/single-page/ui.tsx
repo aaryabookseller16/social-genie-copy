@@ -382,9 +382,23 @@ export function getVenueHeadline(venue: GenieVenue) {
   return parts.length > 0 ? parts.join(" - ") : "Houston";
 }
 
+// Maps the live social_energy_state (from venue_checkins, refreshed every 5
+// min server-side) onto the badge copy/tone shown in venue lists.
+const SOCIAL_ENERGY_STATUS: Record<string, { text: string; tone: "busy" | "good" | "picks" }> = {
+  "On Fire": { text: "Packed right now", tone: "busy" },
+  "Buzzing": { text: "Busy right now", tone: "busy" },
+  "Getting Attention": { text: "Good time to go", tone: "good" },
+  "Quiet": { text: "Picks up after 9pm", tone: "picks" },
+};
+
 export function getVenueStatus(venue: GenieVenue, index: number) {
   if (venue.is_open_now) {
     return "Open now";
+  }
+
+  const energyStatus = venue.social_energy_state ? SOCIAL_ENERGY_STATUS[venue.social_energy_state] : undefined;
+  if (energyStatus) {
+    return energyStatus.text;
   }
 
   if (venue.best_time_to_go) {
@@ -396,10 +410,16 @@ export function getVenueStatus(venue: GenieVenue, index: number) {
 }
 
 export function getVenueStatusTone(venue: GenieVenue, index: number) {
-  const fallbackIndex = index % 3;
   if (venue.is_open_now) {
-    return fallbackIndex === 1 ? "good" : "open";
+    return "open" as const;
   }
+
+  const energyStatus = venue.social_energy_state ? SOCIAL_ENERGY_STATUS[venue.social_energy_state] : undefined;
+  if (energyStatus) {
+    return energyStatus.tone;
+  }
+
+  const fallbackIndex = index % 3;
   return ["busy", "good", "picks"][fallbackIndex] as "busy" | "good" | "picks";
 }
 
@@ -509,15 +529,10 @@ export function ResultCard({
   const statusColor =
     tone === "busy"
       ? "bg-red-500"
-      : tone === "good"
+      : tone === "good" || tone === "open"
         ? "bg-green-500"
         : "bg-amber-400";
-  const statusText =
-    tone === "busy"
-      ? "Busy right now"
-      : tone === "good"
-        ? "Good time to go"
-        : "Picks up after 9pm";
+  const statusText = getVenueStatus(venue, index);
 
   return (
     <button

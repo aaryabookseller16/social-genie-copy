@@ -1407,6 +1407,27 @@ export function persistSessionState(payload: {
 /*  Vendor Analytics & Profile Completeness                            */
 /* ------------------------------------------------------------------ */
 
+export type VendorAnalyticsTotals = {
+  genie_appearances: number;
+  profile_views: number;
+  call_clicks: number;
+  map_clicks: number;
+  reservation_clicks: number;
+  saves: number;
+  total_actions: number;
+  engagement_rate: number;
+};
+
+export type VendorAnalyticsDailyRecord = {
+  date: string;
+  genie_appearances?: number;
+  profile_views?: number;
+  call_clicks?: number;
+  map_clicks?: number;
+  reservation_clicks?: number;
+  saves?: number;
+};
+
 export async function fetchVendorAnalytics(
   vendorId: number,
   period: "7_days" | "30_days" | "all_time" = "30_days"
@@ -1417,8 +1438,8 @@ export async function fetchVendorAnalytics(
   });
   return apiJson<{
     period: string;
-    totals: Record<string, number>;
-    daily_records: Array<Record<string, unknown>>;
+    totals: VendorAnalyticsTotals;
+    daily_records: VendorAnalyticsDailyRecord[];
   }>(`/api/vendor/analytics?${params.toString()}`);
 }
 
