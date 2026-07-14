@@ -2843,6 +2843,61 @@ export async function rsvpToEvent(
 }
 
 /* ------------------------------------------------------------------ */
+/*  Events Page (Upcoming / Liked / Past)                              */
+/* ------------------------------------------------------------------ */
+
+export type ManagedEvent = UpcomingEvent & {
+  user_rsvp_status?: "going" | "interested" | "saved" | null;
+  user_has_rated?: boolean;
+  venue_latitude?: number | null;
+  venue_longitude?: number | null;
+};
+
+export type EventsFeedResult = {
+  success: boolean;
+  page?: number;
+  per_page?: number;
+  total?: number;
+  /** present on the signed-out v2 fallback feed instead of `total` */
+  count?: number;
+  events: ManagedEvent[];
+};
+
+export async function fetchEventsFeed(page = 1, perPage = 20) {
+  return apiJson<EventsFeedResult>(`/api/events/feed?page=${page}&per_page=${perPage}`);
+}
+
+export async function fetchSavedEvents(page = 1, perPage = 20) {
+  return apiJson<EventsFeedResult>(`/api/events/saved?page=${page}&per_page=${perPage}`);
+}
+
+export async function fetchPastEvents(page = 1, perPage = 20) {
+  return apiJson<EventsFeedResult>(`/api/events/past?page=${page}&per_page=${perPage}`);
+}
+
+export type SubmitEventSurveyInput = {
+  event_id: number;
+  did_attend: boolean;
+  vibe_rating?: number;
+  venue_rating?: number;
+};
+
+export type SubmitEventSurveyResult = {
+  success: boolean;
+  response_id?: number;
+  event_id: number;
+  did_attend: boolean;
+  message?: string;
+};
+
+export async function submitEventSurvey(input: SubmitEventSurveyInput) {
+  return apiJson<SubmitEventSurveyResult>("/api/genie/submit-event-survey", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/* ------------------------------------------------------------------ */
 /*  Venue Check-in                                                      */
 /* ------------------------------------------------------------------ */
 

@@ -4,6 +4,7 @@ import Image from "next/image";
 import { type ReactNode, type RefObject } from "react";
 
 import { type GenieVenue } from "@/app/lib/genieClient";
+import { getDistanceLabel } from "@/app/lib/geo";
 
 export type FlowAnchor =
   | "home"
@@ -367,35 +368,6 @@ export function BottomDock({
   );
 }
 
-// Haversine-based distance between two lat/lng points. Returns miles by
-// default; kilometers for non-US/UK locales (detected via navigator.language).
-function computeDistance(
-  userLat: number,
-  userLng: number,
-  venueLat: number,
-  venueLng: number,
-  useMetric: boolean
-): number {
-  const R = useMetric ? 6371 : 3958.8; // Earth radius
-  const toRad = (deg: number) => (deg * Math.PI) / 180;
-  const dLat = toRad(venueLat - userLat);
-  const dLng = toRad(venueLng - userLng);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(userLat)) *
-      Math.cos(toRad(venueLat)) *
-      Math.sin(dLng / 2) *
-      Math.sin(dLng / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
-function shouldUseMetric(): boolean {
-  if (typeof navigator === "undefined") return false;
-  const locale = navigator.language || "en-US";
-  return !["en-US", "en-GB", "my-MM"].includes(locale);
-}
-
 /**
  * Real-world distance label between the user and a venue.
  *
@@ -414,28 +386,7 @@ export function getVenueDistance(
 ): string | null {
   const venueLat = typeof venue.latitude === "number" ? venue.latitude : null;
   const venueLng = typeof venue.longitude === "number" ? venue.longitude : null;
-  if (
-    !userCoords ||
-    !Number.isFinite(userCoords.lat) ||
-    !Number.isFinite(userCoords.lng) ||
-    venueLat === null ||
-    venueLng === null
-  ) {
-    return null;
-  }
-
-  const useMetric = shouldUseMetric();
-  const distance = computeDistance(
-    userCoords.lat,
-    userCoords.lng,
-    venueLat,
-    venueLng,
-    useMetric
-  );
-  const unit = useMetric ? "km" : "mi";
-  if (distance < 0.1) return `Less than 0.1 ${unit}`;
-  if (distance < 10) return `${distance.toFixed(1)} ${unit}`;
-  return `${Math.round(distance)} ${unit}`;
+  return getDistanceLabel(userCoords, venueLat, venueLng);
 }
 
 export function getVenueHeadline(venue: GenieVenue) {
