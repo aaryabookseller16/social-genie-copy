@@ -15,6 +15,8 @@ export type FlowAnchor =
   | "detail"
   | "saved"
   | "offers"
+  | "offers-tab"
+  | "events-tab"
   | "offer-detail"
   | "offer-activated"
   | "redemptions"
@@ -199,16 +201,44 @@ export function GenieBubble({
   );
 }
 
+function OffersDockIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="9" cy="9.5" r="1.6" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="15" cy="14.5" r="1.6" stroke="currentColor" strokeWidth="1.6" />
+      <line x1="8" y1="16" x2="16" y2="8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function EventsDockIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <rect x="3.5" y="5" width="17" height="15" rx="2.2" stroke="currentColor" strokeWidth="1.8" />
+      <line x1="3.5" y1="9.5" x2="20.5" y2="9.5" stroke="currentColor" strokeWidth="1.8" />
+      <line x1="7.5" y1="3" x2="7.5" y2="6.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <line x1="16.5" y1="3" x2="16.5" y2="6.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <line x1="12" y1="12.5" x2="12" y2="17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <line x1="9.25" y1="14.75" x2="14.75" y2="14.75" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function BottomDock({
   activeId,
   onHome,
   onProfile,
   onCenter,
+  onOffers,
+  onEvents,
 }: {
   activeId?: FlowAnchor;
   onHome: () => void;
   onProfile: () => void;
   onCenter: () => void;
+  onOffers: () => void;
+  onEvents: () => void;
 }) {
   const isProfileActive =
     activeId === "account" ||
@@ -217,13 +247,17 @@ export function BottomDock({
     activeId === "membership" ||
     activeId === "contact" ||
     activeId === "vendor";
+  const isOffersActive = activeId === "offers-tab";
+  const isEventsActive = activeId === "events-tab";
   const isHomeActive =
     !isProfileActive &&
+    !isOffersActive &&
+    !isEventsActive &&
     (activeId === "homescreen" || activeId === "home" || !activeId);
 
   return (
     <div className="pointer-events-none fixed bottom-0 left-1/2 z-[80] w-[min(100vw,28rem)] -translate-x-1/2">
-      <div className="pointer-events-auto relative flex items-center justify-between bg-white/10 px-8 pb-[calc(env(safe-area-inset-bottom,0px)+8px)] pt-2 backdrop-blur-3xl dark:bg-black/30">
+      <div className="pointer-events-auto relative flex items-center justify-between bg-white/10 px-5 pb-[calc(env(safe-area-inset-bottom,0px)+8px)] pt-2 backdrop-blur-3xl dark:bg-black/30">
         {/* Red line pinned to the very top of the nav bar */}
         <Image
           src="/bottom-red-line.png"
@@ -262,6 +296,18 @@ export function BottomDock({
 
         <button
           type="button"
+          onClick={onOffers}
+          className={`relative z-10 flex h-12 w-12 touch-manipulation items-center justify-center text-red-600 dark:text-white ${
+            isOffersActive ? "opacity-100" : "opacity-40 dark:opacity-45"
+          }`}
+          aria-label="Open offers"
+          aria-current={isOffersActive ? "page" : undefined}
+        >
+          <OffersDockIcon className="h-7 w-7" />
+        </button>
+
+        <button
+          type="button"
           onClick={onCenter}
           className="relative z-10 -mt-3 flex h-[60px] w-[60px] touch-manipulation items-center justify-center"
           aria-label="Start voice search"
@@ -273,6 +319,18 @@ export function BottomDock({
             sizes="60px"
             className="pointer-events-none object-contain"
           />
+        </button>
+
+        <button
+          type="button"
+          onClick={onEvents}
+          className={`relative z-10 flex h-12 w-12 touch-manipulation items-center justify-center text-red-600 dark:text-white ${
+            isEventsActive ? "opacity-100" : "opacity-40 dark:opacity-45"
+          }`}
+          aria-label="Open events"
+          aria-current={isEventsActive ? "page" : undefined}
+        >
+          <EventsDockIcon className="h-7 w-7" />
         </button>
 
         <button

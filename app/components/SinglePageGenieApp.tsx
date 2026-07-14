@@ -2631,6 +2631,8 @@ case "vibbee-trial":
     activeScreen !== "contact" &&
     activeScreen !== "membership" &&
     activeScreen !== "offers" &&
+    activeScreen !== "offers-tab" &&
+    activeScreen !== "events-tab" &&
     activeScreen !== "offer-activated" &&
     activeScreen !== "offer-detail" &&
     activeScreen !== "redemptions" &&
@@ -2666,6 +2668,8 @@ activeScreen !== "vibbee-trial" &&
     activeScreen === "saved" ||
     activeScreen === "dashboard" ||
     activeScreen === "offers" ||
+    activeScreen === "offers-tab" ||
+    activeScreen === "events-tab" ||
     activeScreen === "offer-detail" ||
     activeScreen === "offer-activated" ||
     activeScreen === "redemptions" ||
@@ -3948,6 +3952,48 @@ navigateTo("event-detail");
                 You have not saved any spots yet. Save one from a Genie result and it will appear here.
               </div>
             )}
+          </section>
+        ) : null}
+
+        {/* ── EVENTS (placeholder — full flow coming later) ── */}
+        {activeScreen === "events-tab" ? (
+          <section className="flex flex-col items-center pb-32 pt-20 text-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-full border border-[#E7070380] bg-black/20 text-red-600 dark:text-white">
+              <svg viewBox="0 0 24 24" fill="none" className="h-8 w-8" aria-hidden="true">
+                <rect x="3.5" y="5" width="17" height="15" rx="2.2" stroke="currentColor" strokeWidth="1.8" />
+                <line x1="3.5" y1="9.5" x2="20.5" y2="9.5" stroke="currentColor" strokeWidth="1.8" />
+                <line x1="7.5" y1="3" x2="7.5" y2="6.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                <line x1="16.5" y1="3" x2="16.5" y2="6.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                <line x1="12" y1="12.5" x2="12" y2="17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                <line x1="9.25" y1="14.75" x2="14.75" y2="14.75" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
+            </div>
+            <h2 className="mt-4 font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
+              Events
+            </h2>
+            <p className="mt-2 max-w-xs text-sm text-gray-600 dark:text-white/65">
+              We&apos;re building a dedicated events tab. Check back soon for a full list of what&apos;s happening near you.
+            </p>
+          </section>
+        ) : null}
+
+        {/* ── OFFERS TAB (placeholder — full flow coming later) ── */}
+        {activeScreen === "offers-tab" ? (
+          <section className="flex flex-col items-center pb-32 pt-20 text-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-full border border-[#E7070380] bg-black/20 text-red-600 dark:text-white">
+              <svg viewBox="0 0 24 24" fill="none" className="h-8 w-8" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
+                <circle cx="9" cy="9.5" r="1.6" stroke="currentColor" strokeWidth="1.6" />
+                <circle cx="15" cy="14.5" r="1.6" stroke="currentColor" strokeWidth="1.6" />
+                <line x1="8" y1="16" x2="16" y2="8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+              </svg>
+            </div>
+            <h2 className="mt-4 font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
+              Offers
+            </h2>
+            <p className="mt-2 max-w-xs text-sm text-gray-600 dark:text-white/65">
+              We&apos;re building a dedicated offers tab. Check back soon for deals and perks near you.
+            </p>
           </section>
         ) : null}
 
@@ -5680,6 +5726,8 @@ navigateTo("event-detail");
     onHome={() => navigateTo("homescreen")}
     onCenter={() => navigateTo("home")}
     onProfile={() => (account ? navigateTo("dashboard") : navigateTo("account"))}
+    onOffers={() => navigateTo("offers-tab")}
+    onEvents={() => navigateTo("events-tab")}
   />
 ) : null}
 
