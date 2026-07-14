@@ -335,11 +335,13 @@ function EventsList({
   account,
   userCoords,
   onSelectEvent,
+  onSignIn,
 }: {
   tab: EventsTab;
   account: ConsumerAccount | null;
   userCoords?: { lat: number; lng: number } | null;
   onSelectEvent: (evt: ManagedEvent) => void;
+  onSignIn: () => void;
 }) {
   const [events, setEvents] = useState<ManagedEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -350,6 +352,7 @@ function EventsList({
   const [busyIds, setBusyIds] = useState<Set<number>>(new Set());
   const [ratingEvent, setRatingEvent] = useState<ManagedEvent | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
 
   const loadMoreRef = useRef<() => void>(() => {});
   const hasMoreRef = useRef(false);
@@ -407,6 +410,7 @@ function EventsList({
     setEvents([]);
     setPage(1);
     setHasMore(true);
+    setLoadMoreError(null);
 
     fetchPage(1)
       .then((result) => {
@@ -428,11 +432,21 @@ function EventsList({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sortBatch intentionally excluded: it's only applied to the freshly-fetched batch here, not re-run against already-rendered events when userCoords changes mid-scroll.
   }, [tab, account, fetchPage, reloadToken]);
 
+  const loadMoreCancelledRef = useRef(false);
+  useEffect(() => {
+    loadMoreCancelledRef.current = false;
+    return () => {
+      loadMoreCancelledRef.current = true;
+    };
+  }, [tab]);
+
   const loadMore = useCallback(() => {
     if (loadingMore || !hasMore) return;
     setLoadingMore(true);
+    setLoadMoreError(null);
     fetchPage(page + 1)
       .then((result) => {
+        if (loadMoreCancelledRef.current) return;
         const newEvents = result.events ?? [];
         if (newEvents.length < PER_PAGE) setHasMore(false);
         setEvents((prev) => {
@@ -443,8 +457,16 @@ function EventsList({
         });
         setPage((p) => p + 1);
       })
-      .catch(() => setHasMore(false))
-      .finally(() => setLoadingMore(false));
+      .catch((err: unknown) => {
+        if (loadMoreCancelledRef.current) return;
+        // Distinct from "no more events": a failed request shouldn't look
+        // identical to reaching the end of the list. hasMore stays true so
+        // the user can retry instead of being told there's nothing left.
+        setLoadMoreError(err instanceof Error ? err.message : "Could not load more events.");
+      })
+      .finally(() => {
+        if (!loadMoreCancelledRef.current) setLoadingMore(false);
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- same reasoning as above; sortBatch is only applied to the new page's batch.
   }, [loadingMore, hasMore, fetchPage, page]);
 
@@ -493,6 +515,15 @@ function EventsList({
       <EmptyState
         title={tab === "liked" ? "Sign in to see events you've liked" : "Sign in to see your past events"}
         subtitle="Create a free account to like events and keep track of what you've been to."
+        action={
+          <button
+            type="button"
+            onClick={onSignIn}
+            className="mt-1 rounded-full bg-red-600 px-6 py-2.5 text-sm font-semibold text-white"
+          >
+            Sign In
+          </button>
+        }
       />
     );
   }
@@ -548,7 +579,18 @@ function EventsList({
         </div>
       ) : null}
 
-      {hasMore ? (
+      {loadMoreError ? (
+        <div className="mt-3 flex flex-col items-center gap-2 rounded-[16px] border border-red-200 bg-red-50 px-4 py-3 text-center dark:border-[#6a1d1d] dark:bg-black/20">
+          <p className="text-xs text-red-700 dark:text-[#ff9d7d]">Couldn&apos;t load more events. {loadMoreError}</p>
+          <button
+            type="button"
+            onClick={loadMore}
+            className="rounded-full bg-red-600 px-4 py-1.5 text-xs font-semibold text-white"
+          >
+            Retry
+          </button>
+        </div>
+      ) : hasMore ? (
         <div ref={sentinelRef} className="h-8" />
       ) : (
         <p className="pt-4 text-center text-xs text-gray-400 dark:text-white/40">No more events</p>
@@ -577,11 +619,13 @@ export default function EventsPage({
   userCoords,
   onBack,
   onSelectEvent,
+  onSignIn,
 }: {
   account: ConsumerAccount | null;
   userCoords?: { lat: number; lng: number } | null;
   onBack: () => void;
   onSelectEvent: (evt: ManagedEvent) => void;
+  onSignIn: () => void;
 }) {
   const [tab, setTab] = useState<EventsTab>("upcoming");
 
@@ -622,7 +666,14 @@ export default function EventsPage({
         ))}
       </div>
 
-      <EventsList key={tab} tab={tab} account={account} userCoords={userCoords} onSelectEvent={onSelectEvent} />
+      <EventsList
+        key={tab}
+        tab={tab}
+        account={account}
+        userCoords={userCoords}
+        onSelectEvent={onSelectEvent}
+        onSignIn={onSignIn}
+      />
     </section>
   );
 }

@@ -3963,6 +3963,7 @@ navigateTo("event-detail");
             account={account}
             userCoords={userCoordsLL}
             onBack={() => goBack("homescreen")}
+            onSignIn={() => navigateTo("account")}
             onSelectEvent={(evt: ManagedEvent) => {
               setSelectedEventSlug(evt.public_slug ?? null);
               setSelectedEventId(evt.id);
