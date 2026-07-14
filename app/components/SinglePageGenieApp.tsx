@@ -24,6 +24,8 @@ import { MessagesScreen } from "@/app/components/single-page/MessagesScreen";
 import { ConversationScreen } from "@/app/components/single-page/ConversationScreen";
 import { HomescreenSection } from "@/app/components/homescreen/HomescreenSection";
 import { EventDetailSection } from "@/app/components/event-detail/EventDetailSection";
+import EventsPage from "@/app/components/events/EventsPage";
+import { type ManagedEvent } from "@/app/lib/publicApiClient";
 import {
   BottomDock,
   GenieBubble,
@@ -3955,26 +3957,19 @@ navigateTo("event-detail");
           </section>
         ) : null}
 
-        {/* ── EVENTS (placeholder — full flow coming later) ── */}
+        {/* ── EVENTS ── */}
         {activeScreen === "events-tab" ? (
-          <section className="flex flex-col items-center pb-32 pt-20 text-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full border border-[#E7070380] bg-black/20 text-red-600 dark:text-white">
-              <svg viewBox="0 0 24 24" fill="none" className="h-8 w-8" aria-hidden="true">
-                <rect x="3.5" y="5" width="17" height="15" rx="2.2" stroke="currentColor" strokeWidth="1.8" />
-                <line x1="3.5" y1="9.5" x2="20.5" y2="9.5" stroke="currentColor" strokeWidth="1.8" />
-                <line x1="7.5" y1="3" x2="7.5" y2="6.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                <line x1="16.5" y1="3" x2="16.5" y2="6.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                <line x1="12" y1="12.5" x2="12" y2="17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                <line x1="9.25" y1="14.75" x2="14.75" y2="14.75" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-              </svg>
-            </div>
-            <h2 className="mt-4 font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
-              Events
-            </h2>
-            <p className="mt-2 max-w-xs text-sm text-gray-600 dark:text-white/65">
-              We&apos;re building a dedicated events tab. Check back soon for a full list of what&apos;s happening near you.
-            </p>
-          </section>
+          <EventsPage
+            account={account}
+            userCoords={userCoordsLL}
+            onBack={() => goBack("homescreen")}
+            onSelectEvent={(evt: ManagedEvent) => {
+              setSelectedEventSlug(evt.public_slug ?? null);
+              setSelectedEventId(evt.id);
+              setSelectedEvent(evt as unknown as Record<string, unknown>);
+              navigateTo("event-detail");
+            }}
+          />
         ) : null}
 
         {/* ── OFFERS TAB (placeholder — full flow coming later) ── */}
