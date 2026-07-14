@@ -857,7 +857,7 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     // surfaced and users saw "already redeemed" forever. Always fetch on
     // screen entry; skip only when we recently finished loading AND the
     // caller didn't explicitly request a force refresh.
-    if (!account || account.membership !== "vibee") {
+    if (!account) {
       return;
     }
     void force;
@@ -2631,7 +2631,6 @@ case "vibbee-trial":
     activeScreen !== "contact" &&
     activeScreen !== "membership" &&
     activeScreen !== "offers" &&
-    activeScreen !== "offers-tab" &&
     activeScreen !== "events-tab" &&
     activeScreen !== "offer-activated" &&
     activeScreen !== "offer-detail" &&
@@ -2668,7 +2667,6 @@ activeScreen !== "vibbee-trial" &&
     activeScreen === "saved" ||
     activeScreen === "dashboard" ||
     activeScreen === "offers" ||
-    activeScreen === "offers-tab" ||
     activeScreen === "events-tab" ||
     activeScreen === "offer-detail" ||
     activeScreen === "offer-activated" ||
@@ -3977,26 +3975,6 @@ navigateTo("event-detail");
           </section>
         ) : null}
 
-        {/* ── OFFERS TAB (placeholder — full flow coming later) ── */}
-        {activeScreen === "offers-tab" ? (
-          <section className="flex flex-col items-center pb-32 pt-20 text-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full border border-[#E7070380] bg-black/20 text-red-600 dark:text-white">
-              <svg viewBox="0 0 24 24" fill="none" className="h-8 w-8" aria-hidden="true">
-                <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
-                <circle cx="9" cy="9.5" r="1.6" stroke="currentColor" strokeWidth="1.6" />
-                <circle cx="15" cy="14.5" r="1.6" stroke="currentColor" strokeWidth="1.6" />
-                <line x1="8" y1="16" x2="16" y2="8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-              </svg>
-            </div>
-            <h2 className="mt-4 font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
-              Offers
-            </h2>
-            <p className="mt-2 max-w-xs text-sm text-gray-600 dark:text-white/65">
-              We&apos;re building a dedicated offers tab. Check back soon for deals and perks near you.
-            </p>
-          </section>
-        ) : null}
-
         {/* ── V.I.BEE OFFERS ── */}
         {activeScreen === "offers" ? (() => {
           const offerTypeLabels: Record<string, string> = {
@@ -4079,10 +4057,10 @@ navigateTo("event-detail");
                         key={opt.id}
                         type="button"
                         onClick={() => setOffersFilter(opt.id)}
-                        className={`whitespace-nowrap rounded-full border px-4 py-1.5 text-[0.82rem] font-semibold transition ${
+                        className={`whitespace-nowrap rounded-full px-4 py-1.5 text-[0.82rem] font-semibold transition ${
                           active
-                            ? "border-red-500 bg-red-600 text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
-                            : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-white/15 dark:bg-black/24 dark:text-white/72 dark:hover:bg-white/8"
+                            ? "border border-red-500 bg-red-600 text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                            : "border border-transparent bg-transparent text-gray-500 hover:text-gray-700 dark:text-white/55 dark:hover:text-white/80"
                         }`}
                       >
                         {opt.label}
@@ -4150,11 +4128,11 @@ navigateTo("event-detail");
                           <p className="truncate text-[1rem] font-semibold text-gray-900 dark:text-white">
                             {venueName}
                           </p>
-                          <span className="mt-1 inline-flex rounded-full bg-[#e8900a] px-2.5 py-0.5 text-[0.66rem] font-bold uppercase tracking-wide text-white">
+                          <span className="mt-1 inline-flex rounded-full bg-red-600 px-2.5 py-0.5 text-[0.66rem] font-bold uppercase tracking-wide text-white">
                             {label}
                           </span>
                           {offer.discount_value ? (
-                            <p className="mt-1 truncate text-[0.82rem] font-semibold text-red-500 dark:text-[#ff9d7d]">
+                            <p className="mt-1 truncate text-[0.82rem] font-semibold text-[#e8900a]">
                               {offer.discount_value}
                             </p>
                           ) : null}
@@ -5726,7 +5704,7 @@ navigateTo("event-detail");
     onHome={() => navigateTo("homescreen")}
     onCenter={() => navigateTo("home")}
     onProfile={() => (account ? navigateTo("dashboard") : navigateTo("account"))}
-    onOffers={() => navigateTo("offers-tab")}
+    onOffers={() => navigateTo("offers")}
     onEvents={() => navigateTo("events-tab")}
   />
 ) : null}
