@@ -6,6 +6,11 @@ import React, { type FormEvent, useCallback, useEffect, useRef, useState } from 
 import { ActionButton } from "@/app/components/single-page/ui";
 import { type FlowAnchor } from "@/app/components/single-page/ui";
 import { type ConsumerAccount } from "@/app/lib/localState";
+import ImageUploader from "@/app/components/ImageUploader";
+import VideoUploader, { type VideoSlotValue } from "@/app/components/VideoUploader";
+import ImageGallery from "@/app/components/ImageGallery";
+import FeaturedEventVideos from "@/app/components/FeaturedEventVideos";
+import { galleryFor } from "@/app/lib/image";
 import {
   createInfluencerOffer,
   createInfluencerProfile,
@@ -18,6 +23,7 @@ import {
   type InfluencerOffer,
   type InfluencerOfferAnalytics,
   type MyInfluencerProfile,
+  type VideoItem,
 } from "@/app/lib/publicApiClient";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -294,6 +300,10 @@ export function InfluencerSection({ account, onNavigate }: Props) {
   const [maxRedemptions, setMaxRedemptions] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
   const [isSavingOffer, setIsSavingOffer] = useState(false);
+  const [offerImageUrls, setOfferImageUrls] = useState<string[]>([]);
+  const [offerVideos, setOfferVideos] = useState<VideoSlotValue[]>([]);
+  const [offerImageUploading, setOfferImageUploading] = useState(false);
+  const [offerVideoUploading, setOfferVideoUploading] = useState(false);
 
   // Offer-detail analytics
   const [offerAnalytics, setOfferAnalytics] =
@@ -381,6 +391,8 @@ export function InfluencerSection({ account, onNavigate }: Props) {
     setPromoCode("");
     setMaxRedemptions("");
     setExpiresAt("");
+    setOfferImageUrls([]);
+    setOfferVideos([]);
     setMessage(null);
     setView("create-offer");
   }, []);
@@ -452,6 +464,10 @@ export function InfluencerSection({ account, onNavigate }: Props) {
       setMessage("Please choose an offer type.");
       return;
     }
+    if (offerImageUploading || offerVideoUploading) {
+      setMessage("Please wait for your photos and videos to finish uploading.");
+      return;
+    }
     setIsSavingOffer(true);
     setMessage(null);
     try {
@@ -460,6 +476,10 @@ export function InfluencerSection({ account, onNavigate }: Props) {
       const hasDiscount =
         discountValue.trim() !== "" && Number.isFinite(discountNum);
       const hasMax = maxRedemptions.trim() !== "" && Number.isFinite(maxNum);
+      const videoUrls: VideoItem[] = offerVideos.map((v) => ({
+        url: v.url,
+        thumbnail_url: v.thumbnailUrl,
+      }));
       const created = await createInfluencerOffer({
         venue_id: offerTarget === "venue" ? selectedVenue!.id : undefined,
         event_id: offerTarget === "event" ? selectedEvent!.id : undefined,
@@ -470,6 +490,8 @@ export function InfluencerSection({ account, onNavigate }: Props) {
         promo_code: promoCode.trim() || undefined,
         max_redemptions: hasMax ? maxNum : undefined,
         expires_at: expiresAt.trim() || undefined,
+        image_urls: offerImageUrls.length > 0 ? offerImageUrls : undefined,
+        video_urls: videoUrls.length > 0 ? videoUrls : undefined,
       });
 
       // Insert a local copy immediately so it shows up without a refresh.
@@ -490,6 +512,8 @@ export function InfluencerSection({ account, onNavigate }: Props) {
         redemption_count: 0,
         expires_at: expiresAt.trim() || undefined,
         status: created.status ?? "pending",
+        image_urls: offerImageUrls.length > 0 ? offerImageUrls : undefined,
+        video_urls: videoUrls.length > 0 ? videoUrls : undefined,
       };
       setOffers((prev) => [newOffer, ...prev]);
       setOfferFilter("pending");
@@ -528,6 +552,10 @@ export function InfluencerSection({ account, onNavigate }: Props) {
     promoCode,
     maxRedemptions,
     expiresAt,
+    offerImageUrls,
+    offerVideos,
+    offerImageUploading,
+    offerVideoUploading,
   ]);
 
   // ── Offer detail ──────────────────────────────────────────────────────────
@@ -1343,6 +1371,34 @@ export function InfluencerSection({ account, onNavigate }: Props) {
               </option>
             ))}
           </select>
+          <div>
+            <label className="mb-1.5 block text-[13px] font-medium text-gray-500 dark:text-white/55">
+              Photos (optional)
+            </label>
+            <ImageUploader
+              mode="multi"
+              max={Math.max(0, 5 - offerVideos.length)}
+              folder="offers"
+              value={offerImageUrls}
+              onChange={setOfferImageUrls}
+              onUploadingChange={setOfferImageUploading}
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-[13px] font-medium text-gray-500 dark:text-white/55">
+              Videos (optional)
+            </label>
+            <VideoUploader
+              value={offerVideos}
+              onChange={setOfferVideos}
+              folder="offers"
+              max={Math.max(0, 5 - offerImageUrls.length)}
+              onUploadingChange={setOfferVideoUploading}
+            />
+            <p className="mt-1.5 text-[11px] text-gray-400 dark:text-white/40">
+              Up to 5 photos and videos combined.
+            </p>
+          </div>
           <input
             type="number"
             inputMode="decimal"
@@ -1415,6 +1471,7 @@ export function InfluencerSection({ account, onNavigate }: Props) {
   if (view === "offer-detail" && selectedOffer) {
     const offer = selectedOffer;
     const discount = formatDiscount(offer.discount_value, offer.discount_type);
+    const offerImages = galleryFor(offer.image_urls?.[0], offer.image_urls);
 
     return (
       <section className="space-y-5 pb-28">
@@ -1441,6 +1498,12 @@ export function InfluencerSection({ account, onNavigate }: Props) {
             Offer Detail
           </h1>
         </div>
+
+        {offerImages.length > 0 ? (
+          <div className="-mx-4 overflow-hidden">
+            <ImageGallery images={offerImages} alt={offer.offer_title} heightClass="h-56" />
+          </div>
+        ) : null}
 
         <div className="rounded-[22px] border border-gray-100 bg-white/90 p-5 shadow-sm dark:border-white/10 dark:bg-black/25 dark:backdrop-blur-sm">
           <div className="mb-3 flex flex-wrap items-center gap-1.5">
@@ -1475,6 +1538,12 @@ export function InfluencerSection({ account, onNavigate }: Props) {
             </div>
           ) : null}
         </div>
+
+        <FeaturedEventVideos
+          videos={offer.video_urls}
+          eventTitle={offer.offer_title}
+          headingClassName="text-gray-900 dark:text-white"
+        />
 
         {/* Rejection reason */}
         {normalizeStatus(offer.status) === "rejected" && offer.rejection_reason ? (

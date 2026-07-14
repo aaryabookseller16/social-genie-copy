@@ -1638,6 +1638,8 @@ export interface InfluencerOffer {
   total_clicks?: number;
   rejection_reason?: string;
   reviewed_at?: string | number;
+  image_urls?: string[];
+  video_urls?: VideoItem[];
 }
 
 export interface InfluencerDashboardData {
@@ -1706,6 +1708,8 @@ export async function createInfluencerOffer(payload: {
   promo_code?: string;
   max_redemptions?: number;
   expires_at?: string;
+  image_urls?: string[];
+  video_urls?: VideoItem[];
 }) {
   return apiJson<CreatedInfluencerOffer>("/api/genie/create-influencer-offer", {
     method: "POST",

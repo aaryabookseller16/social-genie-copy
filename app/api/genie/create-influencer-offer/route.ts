@@ -12,11 +12,17 @@ const MAX_DESCRIPTION_LENGTH = 2000;
  * POST /api/genie/create-influencer-offer
  * Body: { offer_title (required), offer_type (required),
  *         venue_id / event_id (exactly one required),
- *         offer_description?, discount_value?, promo_code?, max_redemptions?, expires_at? }
+ *         offer_description?, discount_value?, promo_code?, max_redemptions?, expires_at?,
+ *         image_urls?, video_urls? }
  * Proxies to: genie/ep_create_influencer_offer_dev
  *
  * The offer is created with status "pending" until the venue owner (vendor)
  * or event owner (producer) approves it.
+ *
+ * `image_urls` is an array of hosted Cloudinary URLs (index 0 acts as the cover),
+ * produced client-side by /api/upload/image. `video_urls` is a separate array of
+ * {url, thumbnail_url} pairs, produced client-side by uploadVideo() in
+ * app/lib/videoUpload.ts. Xano caps image_urls + video_urls combined at 5.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -90,6 +96,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const imageUrls = Array.isArray(body.image_urls)
+      ? body.image_urls.filter(
+          (url): url is string => typeof url === "string" && url.trim().length > 0
+        )
+      : [];
+    const videoUrls = Array.isArray(body.video_urls)
+      ? body.video_urls.filter(
+          (v): v is { url: string; thumbnail_url: string } =>
+            !!v &&
+            typeof v === "object" &&
+            typeof (v as Record<string, unknown>).url === "string" &&
+            typeof (v as Record<string, unknown>).thumbnail_url === "string"
+        )
+      : [];
+    if (imageUrls.length + videoUrls.length > 5) {
+      return NextResponse.json(
+        { error: "An offer can have at most 5 images and videos combined." },
+        { status: 400 }
+      );
+    }
+
     const raw = await xanoFetch<{
       success?: boolean;
       error?: string;
@@ -116,6 +143,8 @@ export async function POST(request: NextRequest) {
           ? maxRedemptions
           : undefined,
         expires_at: String(body.expires_at ?? "").trim() || undefined,
+        image_urls: imageUrls.length > 0 ? imageUrls : undefined,
+        video_urls: videoUrls.length > 0 ? videoUrls : undefined,
       },
     });
 
