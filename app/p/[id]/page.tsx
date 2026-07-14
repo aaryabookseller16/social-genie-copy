@@ -6,11 +6,15 @@ import Image from "next/image";
 import { ScrollUnlock } from "./ScrollUnlock";
 import {
   fetchProducerPublicProfile,
+  fetchProducerPosts,
   followProducer,
   type ProducerPublicPageData,
   type ProducerEvent,
+  type ProducerPost,
 } from "@/app/lib/publicApiClient";
 import { readAuthToken } from "@/app/lib/localState";
+import { mediaGalleryFor } from "@/app/lib/image";
+import ImageGallery from "@/app/components/ImageGallery";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -22,6 +26,18 @@ function formatEventDate(raw?: string): string {
     month: "short",
     day: "numeric",
   });
+}
+
+function formatShortRelativeTime(timestamp?: number): string {
+  if (!timestamp) return "";
+  const diffSec = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (diffSec < 60) return "just now";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h`;
+  const diffDay = Math.floor(diffHr / 24);
+  return `${diffDay}d`;
 }
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
@@ -61,8 +77,15 @@ function EventCard({ ev, initials, displayName }: { ev: ProducerEvent; initials:
   // kept only as a fallback for events written before going_count existed.
   const goingCount = ev.going_count ?? ev.rsvp_count ?? 0;
 
+  // `/?screen=event&event_id=X` opens the SPA's full in-app event-detail
+  // screen (RSVP, going count, follow, related events) from this standalone
+  // page — works for every event since it only needs the numeric id, unlike
+  // the public slug microsite which only exists for events with a generated
+  // public_slug.
+  const href = `/?screen=event&event_id=${ev.id}`;
+
   return (
-    <div className="overflow-hidden rounded-[22px] border border-white/10 bg-black/30">
+    <a href={href} className="block overflow-hidden rounded-[22px] border border-white/10 bg-black/30">
       {/* Author row */}
       <div className="flex items-center justify-between px-4 pt-4">
         <div className="flex items-center gap-2">
@@ -76,13 +99,6 @@ function EventCard({ ev, initials, displayName }: { ev: ProducerEvent; initials:
             ) : null}
           </div>
         </div>
-        <button type="button" aria-label="More options" className="flex h-7 w-7 items-center justify-center text-red-400">
-          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
-            <circle cx="5" cy="12" r="1.5" />
-            <circle cx="12" cy="12" r="1.5" />
-            <circle cx="19" cy="12" r="1.5" />
-          </svg>
-        </button>
       </div>
 
       {/* Event title as post text */}
@@ -130,16 +146,50 @@ function EventCard({ ev, initials, displayName }: { ev: ProducerEvent; initials:
             <span className="text-[0.72rem] text-white/30">
               {ev.is_free ? "Free event" : ev.ticket_price_min ? `From $${ev.ticket_price_min}` : ""}
             </span>
-            <a
-              href={`/?screen=event&event_id=${ev.id}`}
-              className="text-[0.72rem] font-semibold text-red-400 hover:text-red-300"
-            >
-              RSVP
-            </a>
+            <span className="text-[0.72rem] font-semibold text-red-400">View event</span>
           </div>
         </div>
       </div>
-    </div>
+    </a>
+  );
+}
+
+function PostCard({ post, initials, displayName }: { post: ProducerPost; initials: string; displayName: string }) {
+  const media = mediaGalleryFor(post.image_url, post.image_urls, post.video_urls);
+
+  return (
+    <a
+      href={`/posts/${post.id}`}
+      className="block overflow-hidden rounded-[22px] border border-white/10 bg-black/30"
+    >
+      <div className="flex items-center gap-2 px-4 pt-4">
+        <div className="flex h-8 w-8 flex-none items-center justify-center rounded-full border border-red-500/40 bg-red-900 text-[0.55rem] font-bold text-white">
+          {initials}
+        </div>
+        <div>
+          <p className="text-[0.78rem] font-semibold text-white">{displayName}</p>
+          <p className="text-[0.65rem] text-white/40">{formatShortRelativeTime(post.created_at)}</p>
+        </div>
+      </div>
+
+      {post.post_text ? (
+        <p className="mt-2.5 px-4 text-[0.88rem] leading-5 text-white/85">{post.post_text}</p>
+      ) : null}
+
+      {media.length > 0 ? (
+        <div className="mt-3">
+          <ImageGallery items={media} alt={post.post_text ?? "Post"} heightClass="h-52" showThumbnails={false} />
+        </div>
+      ) : null}
+
+      <div className="mt-2.5 flex items-center justify-between border-t border-white/10 px-4 py-2.5">
+        <span className="text-[0.72rem] text-white/45">
+          {post.like_count ? `${post.like_count} like${post.like_count === 1 ? "" : "s"}` : "Like"}
+          {post.comment_count ? ` · ${post.comment_count} comment${post.comment_count === 1 ? "" : "s"}` : ""}
+        </span>
+        <span className="text-[0.72rem] font-semibold text-red-400">View post</span>
+      </div>
+    </a>
   );
 }
 
@@ -153,6 +203,7 @@ export default function ProducerProfilePage() {
   const [notFound, setNotFound] = useState(false);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
+  const [posts, setPosts] = useState<ProducerPost[]>([]);
 
   useEffect(() => {
     const token = readAuthToken();
@@ -178,6 +229,10 @@ export default function ProducerProfilePage() {
         }
       })
       .finally(() => setLoading(false));
+
+    fetchProducerPosts(Number(id))
+      .then((r) => setPosts(r.posts ?? []))
+      .catch(() => setPosts([]));
   }, [id, router]);
 
   async function handleFollow() {
@@ -346,6 +401,7 @@ export default function ProducerProfilePage() {
         </div>
 
         {/* ── Events feed ─────────────────────────────────────────────── */}
+        <h3 className="mb-3 text-[0.95rem] font-bold text-white">Events</h3>
         {upcoming_events.length > 0 ? (
           <div className="space-y-3">
             {upcoming_events.map((ev) => (
@@ -360,6 +416,20 @@ export default function ProducerProfilePage() {
         ) : (
           <div className="rounded-[22px] border border-white/10 bg-black/20 px-4 py-10 text-center">
             <p className="text-[0.85rem] text-white/35">No upcoming events</p>
+          </div>
+        )}
+
+        {/* ── Posts feed ───────────────────────────────────────────────── */}
+        <h3 className="mb-3 mt-6 text-[0.95rem] font-bold text-white">Posts</h3>
+        {posts.length > 0 ? (
+          <div className="space-y-3">
+            {posts.map((post) => (
+              <PostCard key={post.id} post={post} initials={initials} displayName={displayName} />
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-[22px] border border-white/10 bg-black/20 px-4 py-10 text-center">
+            <p className="text-[0.85rem] text-white/35">No posts yet</p>
           </div>
         )}
 

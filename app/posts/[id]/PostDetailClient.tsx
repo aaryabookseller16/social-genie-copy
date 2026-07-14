@@ -187,7 +187,7 @@ export function PostDetailClient({
               className="h-11 w-11 flex-none rounded-full object-cover"
             />
           ) : (
-            <div className="flex h-11 w-11 flex-none items-center justify-center rounded-full bg-red-100 text-sm font-semibold text-red-600 dark:bg-red-900/30 dark:text-red-300">
+            <div className="flex h-11 w-11 flex-none items-center justify-center rounded-full bg-red-100 text-sm font-semibold text-red-600 dark:bg-red-600 dark:text-white">
               {initials(author?.display_name)}
             </div>
           )}
@@ -230,7 +230,7 @@ export function PostDetailClient({
             className={`flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold transition disabled:pointer-events-none disabled:opacity-60 ${
               liked
                 ? "border-red-600 bg-red-600 text-white"
-                : "border-gray-200 bg-white text-gray-700 hover:border-red-300 dark:border-white/15 dark:bg-white/5 dark:text-white dark:hover:border-red-500/40"
+                : "border-gray-200 bg-white text-gray-700 hover:border-red-300 dark:border-white/20 dark:bg-black/40 dark:text-white dark:hover:border-red-500/40"
             }`}
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill={liked ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -241,7 +241,7 @@ export function PostDetailClient({
           <button
             type="button"
             onClick={handleShare}
-            className="flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition hover:border-red-300 dark:border-white/15 dark:bg-white/5 dark:text-white dark:hover:border-red-500/40"
+            className="flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition hover:border-red-300 dark:border-white/20 dark:bg-black/40 dark:text-white dark:hover:border-red-500/40"
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
@@ -277,7 +277,7 @@ export function PostDetailClient({
                       className="h-8 w-8 flex-none rounded-full object-cover"
                     />
                   ) : (
-                    <div className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-500 dark:bg-white/10 dark:text-white/60">
+                    <div className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-500 dark:bg-red-800 dark:text-white">
                       {initials(c.author_name)}
                     </div>
                   )}
@@ -290,7 +290,7 @@ export function PostDetailClient({
                         {formatRelativeTime(c.created_at)}
                       </span>
                     </div>
-                    <div className="mt-1 rounded-[14px] bg-gray-50 px-3 py-2 dark:bg-white/5">
+                    <div className="mt-1 rounded-[14px] bg-gray-50 px-3 py-2 dark:bg-black/40">
                       <p className="text-[0.85rem] leading-5 text-gray-800 dark:text-white/85">
                         {c.comment_text}
                       </p>
@@ -307,7 +307,7 @@ export function PostDetailClient({
               value={commentText}
               onChange={(e) => setCommentText(e.target.value)}
               placeholder="Add a comment..."
-              className="min-w-0 flex-1 rounded-full border border-gray-200 px-4 py-2.5 text-sm text-gray-800 outline-none focus:border-red-400 dark:border-white/15 dark:bg-white/5 dark:text-white dark:placeholder:text-white/30"
+              className="min-w-0 flex-1 rounded-full border border-gray-200 px-4 py-2.5 text-sm text-gray-800 outline-none focus:border-red-400 dark:border-white/20 dark:bg-black/40 dark:text-white dark:placeholder:text-white/30"
             />
             <button
               type="submit"
