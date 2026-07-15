@@ -10,8 +10,7 @@
 const XANO_ORIGIN =
   process.env.XANO_BASE_URL || "https://xwpg-kuah-brlj.n7d.xano.io";
 
-const GENIE_DEV_BASE =
-  process.env.XANO_GENIE_DEV_BASE || `${XANO_ORIGIN}/api:pgMKWi2e`;
+const GENIE_DEV_BASE = process.env.XANO_GENIE_DEV_BASE as string;
 
 const AUTH_BASE =
   process.env.XANO_AUTH_BASE || `${XANO_ORIGIN}/api:dRDS80y8`;
