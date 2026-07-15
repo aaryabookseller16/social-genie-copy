@@ -612,8 +612,22 @@ const [trialSuccess, setTrialSuccess] = useState(false);
   const [installPrompt, setInstallPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
   const [isStandalone, setIsStandalone] = useState(false);
-  const [locationPromptDismissed, setLocationPromptDismissed] = useState(true);
   const [locationGranted, setLocationGranted] = useState(false);
+  // "unknown" while the permission check is still resolving (or unsupported
+  // browser); once resolved, drives whether/which location-prompt banner to
+  // show. See the geolocation-permission effect below.
+  const [geoPermissionState, setGeoPermissionState] = useState<
+    "unknown" | "granted" | "denied" | "prompt"
+  >("unknown");
+  // Which flavor of the location-ask banner to show: guest copy (asked once,
+  // permanently dismissible), registered-user copy (re-asked each new
+  // browser session until granted), or "blocked" (we know for certain the
+  // browser will never show its native prompt again, so we stop offering a
+  // dead "Allow" button and just point them at browser settings, once).
+  // Null = hidden.
+  const [locationPromptVariant, setLocationPromptVariant] = useState<
+    "guest" | "registered" | "blocked" | null
+  >(null);
   const [userCoords, setUserCoords] = useState<{
     latitude: number;
     longitude: number;
@@ -1811,16 +1825,20 @@ setResponse(nextResponse);
   }, []);
 
   // ── Geolocation permission ──
-  // Show a friendly in-app banner before triggering the browser prompt so the
-  // user understands why we need their location ("near me" queries depend on
-  // it). Once dismissed or granted, we don't pester them again on this device.
+  // On mount, find out whether the browser already has a real answer
+  // ("granted"/"denied") via the Permissions API. Safari doesn't support
+  // that API, so there we can only tell "prompt" (never asked) apart from
+  // "granted" once we've actually fetched a position — a real prior denial
+  // looks the same as never-asked on Safari, which is an accepted gap.
+  // A separate effect (below, keyed on geoPermissionState + account) decides
+  // whether/which location-prompt banner to show from this result.
   useEffect(() => {
     if (typeof window === "undefined" || !("geolocation" in navigator)) {
+      setGeoPermissionState("denied");
       return;
     }
 
     const dismissedKey = "genie_location_prompt_dismissed_v1";
-    const dismissed = window.localStorage.getItem(dismissedKey) === "1";
 
     type PermissionStatusLike = {
       state: "granted" | "denied" | "prompt";
@@ -1835,26 +1853,30 @@ setResponse(nextResponse);
     const onGranted = (latitude: number, longitude: number) => {
       setLocationGranted(true);
       setUserCoords({ latitude, longitude });
-      setLocationPromptDismissed(true);
+      setGeoPermissionState("granted");
       window.localStorage.setItem(dismissedKey, "1");
     };
 
     const askNow = () => {
       navigator.geolocation.getCurrentPosition(
         (pos) => onGranted(pos.coords.latitude, pos.coords.longitude),
-        () => {
+        (err) => {
           // User denied or error - mark dismissed so we don't keep asking.
-          setLocationPromptDismissed(true);
+          // A real PERMISSION_DENIED means the browser won't show its native
+          // prompt again on this device/browser until the user changes site
+          // settings themselves — remember that so we stop offering a dead
+          // "Allow" button on every future visit (works the same on Safari,
+          // since this is our own request, not the Permissions API).
+          if (err.code === err.PERMISSION_DENIED) {
+            window.localStorage.setItem("genie_geo_hard_denied_v1", "1");
+          }
+          setGeoPermissionState("denied");
           window.localStorage.setItem(dismissedKey, "1");
         },
         { enableHighAccuracy: true, timeout: 8000, maximumAge: 60_000 }
       );
     };
 
-    // Do NOT auto-show the location banner. The ask is only surfaced after
-    // the user signals a near-me intent (taps a smart prompt chip or types
-    // "near me"). If permission was previously granted, silently fetch the
-    // coords so they're ready for the next query.
     if (permissionsApi?.query) {
       permissionsApi
         .query({ name: "geolocation" })
@@ -1864,14 +1886,22 @@ setResponse(nextResponse);
               (pos) => onGranted(pos.coords.latitude, pos.coords.longitude),
               () => {
                 setLocationGranted(true);
-                setLocationPromptDismissed(true);
+                setGeoPermissionState("granted");
               }
             );
+          } else {
+            if (status.state === "denied") {
+              window.localStorage.setItem("genie_geo_hard_denied_v1", "1");
+            }
+            setGeoPermissionState(status.state);
           }
         })
-        .catch(() => {});
+        .catch(() => setGeoPermissionState("prompt"));
+    } else {
+      // No Permissions API (Safari) — treat as "prompt" so the banner logic
+      // below still offers to ask; requesting will resolve the real state.
+      setGeoPermissionState("prompt");
     }
-    void dismissed;
 
     // Expose askNow on the ref so the banner can call it
     (window as Window & { __genieAskLocation?: () => void }).__genieAskLocation =
@@ -1882,6 +1912,49 @@ setResponse(nextResponse);
         .__genieAskLocation;
     };
   }, []);
+
+  // ── Location-prompt banner variant ──
+  // Decides whether to show the location-ask banner, and which copy, once
+  // both the permission check and the account load have settled.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (geoPermissionState === "unknown" || geoPermissionState === "granted") {
+      setLocationPromptVariant(null);
+      return;
+    }
+
+    const hardDenied =
+      window.localStorage.getItem("genie_geo_hard_denied_v1") === "1";
+    if (hardDenied) {
+      // We know for certain the browser will never show its native prompt
+      // again — showing "Allow" every session (guest or registered) would
+      // just be a dead button. Surface a one-time notice pointing at browser
+      // settings instead, then leave it alone for good.
+      const noticeDismissed =
+        window.localStorage.getItem(
+          "genie_geo_hard_denied_notice_dismissed_v1"
+        ) === "1";
+      setLocationPromptVariant(noticeDismissed ? null : "blocked");
+      return;
+    }
+
+    if (account) {
+      // Registered users: re-ask each new browser session until granted —
+      // dismissing only silences it for the current tab session.
+      const sessionDismissed =
+        window.sessionStorage.getItem(
+          "genie_location_prompt_session_dismissed_v1"
+        ) === "1";
+      setLocationPromptVariant(sessionDismissed ? null : "registered");
+    } else {
+      // Guests: ask once ever. If they've already dismissed/denied, don't
+      // nag again — they'll be asked for a city by name instead.
+      const dismissed =
+        window.localStorage.getItem("genie_location_prompt_dismissed_v1") ===
+        "1";
+      setLocationPromptVariant(dismissed ? null : "guest");
+    }
+  }, [geoPermissionState, account]);
 
   const requestLocationPermission = useCallback(() => {
     if (typeof window === "undefined" || !("geolocation" in navigator)) {
@@ -1897,52 +1970,96 @@ setResponse(nextResponse);
           longitude: pos.coords.longitude,
         });
         setLocationGranted(true);
-        setLocationPromptDismissed(true);
+        setGeoPermissionState("granted");
+        setLocationPromptVariant(null);
         window.localStorage.setItem("genie_location_prompt_dismissed_v1", "1");
       },
       (err) => {
-        // Permission denied or unavailable. If denied, the browser won't
-        // show another prompt — user has to re-enable in site settings.
+        // Permission denied or unavailable. A real PERMISSION_DENIED means
+        // the browser won't show its native prompt again — remember that
+        // permanently so we stop offering a dead "Allow" button on future
+        // visits, instead of just silencing this one session/device pair.
         if (err.code === err.PERMISSION_DENIED) {
+          window.localStorage.setItem("genie_geo_hard_denied_v1", "1");
           alert(
             "Location is blocked for this site. Enable it in your browser settings, then try again."
           );
         }
-        setLocationPromptDismissed(true);
-        window.localStorage.setItem("genie_location_prompt_dismissed_v1", "1");
+        setGeoPermissionState("denied");
+        // Guests are asked once ever (localStorage); registered users are
+        // only silenced for this tab session so they get re-asked later.
+        if (account) {
+          window.sessionStorage.setItem(
+            "genie_location_prompt_session_dismissed_v1",
+            "1"
+          );
+        } else {
+          window.localStorage.setItem("genie_location_prompt_dismissed_v1", "1");
+        }
+        setLocationPromptVariant(null);
       },
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 60_000 }
     );
-  }, []);
+  }, [account]);
 
   const dismissLocationPrompt = useCallback(() => {
-    setLocationPromptDismissed(true);
     if (typeof window !== "undefined") {
-      window.localStorage.setItem("genie_location_prompt_dismissed_v1", "1");
+      if (locationPromptVariant === "blocked") {
+        // One-time notice — once acknowledged, never show it again for
+        // either guest or registered users on this device/browser.
+        window.localStorage.setItem(
+          "genie_geo_hard_denied_notice_dismissed_v1",
+          "1"
+        );
+      } else if (account) {
+        window.sessionStorage.setItem(
+          "genie_location_prompt_session_dismissed_v1",
+          "1"
+        );
+      } else {
+        window.localStorage.setItem("genie_location_prompt_dismissed_v1", "1");
+      }
     }
-  }, []);
+    setLocationPromptVariant(null);
+  }, [account, locationPromptVariant]);
 
   // Surface the location ask when a query has a near-me intent (chip tap or
-  // the phrase "near me" in typed/voice input). No-op if already granted or
-  // permanently dismissed on this device.
+  // the phrase "near me" in typed/voice input). No-op if already granted.
+  // Guests who already dismissed permanently aren't re-asked (they'll be
+  // asked for a city by name instead); registered users are re-surfaced even
+  // if silenced for the session, since an explicit "near me" ask warrants it.
+  // If we already know the browser hard-denied, don't offer a dead "Allow"
+  // button here either — respect the one-time "blocked" notice dismissal.
   const maybeAskLocationForIntent = useCallback(
     (text: string, source: "chip" | "typed" | "voice") => {
       if (typeof window === "undefined" || !("geolocation" in navigator)) return;
       if (locationGranted) return;
-      const dismissed =
-        window.localStorage.getItem("genie_location_prompt_dismissed_v1") === "1";
-      if (dismissed) return;
       const isNearMeIntent =
         source === "chip" || /\bnear me\b/i.test(text ?? "");
       if (!isNearMeIntent) return;
-      setLocationPromptDismissed(false);
+      const hardDenied =
+        window.localStorage.getItem("genie_geo_hard_denied_v1") === "1";
+      if (hardDenied) {
+        const noticeDismissed =
+          window.localStorage.getItem(
+            "genie_geo_hard_denied_notice_dismissed_v1"
+          ) === "1";
+        if (noticeDismissed) return;
+        setLocationPromptVariant("blocked");
+        return;
+      }
+      if (account) {
+        setLocationPromptVariant("registered");
+      } else {
+        const dismissed =
+          window.localStorage.getItem("genie_location_prompt_dismissed_v1") ===
+          "1";
+        if (dismissed) return;
+        setLocationPromptVariant("guest");
+      }
     },
-    [locationGranted]
+    [locationGranted, account]
   );
-
-  // Silence unused variable warning — locationGranted is reserved for future
-  // UI states (e.g. showing a "using your location" indicator).
-  void locationGranted;
 
   // Deep-link: `?screen=offers|redemptions|dashboard|saved|vendor|profile|membership`
   useEffect(() => {
@@ -2723,7 +2840,7 @@ activeScreen === "vibbee-trial" ||
       />
 
       <div className={`relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col gap-3 ${activeScreen === "home" || activeScreen === "homescreen" || activeScreen === "listening" || activeScreen === "thinking" ? "min-h-0" : ""}`}>
-        {!locationPromptDismissed && activeScreen === "home" ? (
+        {locationPromptVariant && activeScreen === "home" ? (
           <div className="flex items-start gap-3 rounded-[18px] border border-[#E7070380] bg-transparent px-3 py-2.5 shadow-sm dark:border-white/15 dark:bg-black/30">
             <span className="mt-0.5 text-red-500 dark:text-[#ff9d7d]" aria-hidden="true">
               <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -2733,26 +2850,46 @@ activeScreen === "vibbee-trial" ||
             </span>
             <div className="min-w-0 flex-1">
               <p className="text-[0.82rem] font-semibold text-gray-900 dark:text-white">
-                Use your location?
+                {locationPromptVariant === "blocked"
+                  ? "Location is off for Genie"
+                  : locationPromptVariant === "registered"
+                  ? "Let Genie see what you see ✨"
+                  : "Use your location?"}
               </p>
               <p className="mt-0.5 text-[0.72rem] leading-4 text-gray-500 dark:text-white/65">
-                Genie can pick spots that are actually near you.
+                {locationPromptVariant === "blocked"
+                  ? "Location is blocked for this site in your browser settings, so I can't ask again — flip it back on there for spot-on nearby picks."
+                  : locationPromptVariant === "registered"
+                  ? "You're already in the club — turn on location and I'll actually know what's near you, not just guess."
+                  : "Genie can pick spots that are actually near you."}
               </p>
               <div className="mt-2 flex gap-2">
-                <button
-                  type="button"
-                  onClick={requestLocationPermission}
-                  className="rounded-full border border-red-500 bg-red-600 px-3 py-1 text-[0.72rem] font-semibold text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
-                >
-                  Allow
-                </button>
-                <button
-                  type="button"
-                  onClick={dismissLocationPrompt}
-                  className="rounded-full border border-gray-300 px-3 py-1 text-[0.72rem] font-semibold text-gray-700 dark:border-white/25 dark:text-white/85"
-                >
-                  Not now
-                </button>
+                {locationPromptVariant === "blocked" ? (
+                  <button
+                    type="button"
+                    onClick={dismissLocationPrompt}
+                    className="rounded-full border border-gray-300 px-3 py-1 text-[0.72rem] font-semibold text-gray-700 dark:border-white/25 dark:text-white/85"
+                  >
+                    Got it
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={requestLocationPermission}
+                      className="rounded-full border border-red-500 bg-red-600 px-3 py-1 text-[0.72rem] font-semibold text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                    >
+                      Allow
+                    </button>
+                    <button
+                      type="button"
+                      onClick={dismissLocationPrompt}
+                      className="rounded-full border border-gray-300 px-3 py-1 text-[0.72rem] font-semibold text-gray-700 dark:border-white/25 dark:text-white/85"
+                    >
+                      Not now
+                    </button>
+                  </>
+                )}
               </div>
             </div>
             <button
