@@ -2594,6 +2594,8 @@ export type TrendingVenue = {
   sb_going_count?: number;
   is_on_fire?: boolean;
   address?: string;
+  latitude?: number;
+  longitude?: number;
   trending_score?: number;
   [key: string]: unknown;
 };
@@ -2654,6 +2656,8 @@ export type OnFireVenueItem = {
   id: number;
   venue_name: string;
   venue_address?: string;
+  venue_latitude?: number;
+  venue_longitude?: number;
   neighborhood?: string;
   category?: string;
   description?: string;

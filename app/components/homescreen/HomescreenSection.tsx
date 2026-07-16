@@ -103,6 +103,8 @@ function trendingVenueToFeedItem(v: TrendingVenue): OnFireVenueItem {
     id: typeof v.id === "number" ? v.id : Number(v.id),
     venue_name: v.venue_name,
     venue_address: v.address,
+    venue_latitude: v.latitude,
+    venue_longitude: v.longitude,
     neighborhood: v.neighborhood_text ?? v.area_neighborhood ?? v.neighborhood,
     category: v.venue_type,
     going_count: v.sb_going_count ?? v.going_count,
@@ -491,8 +493,16 @@ function SocialPostCard({
 
 function OnFireVenueCard({ item, onViewVenue }: { item: OnFireVenueItem; onViewVenue: () => void }) {
   function handleGetRide() {
-    const query = item.venue_address || item.venue_name;
-    window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`, "_blank", "noopener,noreferrer");
+    const addr = item.venue_address || item.venue_name;
+    const hasCoords = item.venue_latitude != null && item.venue_longitude != null;
+    const coordParams = hasCoords
+      ? `&dropoff[latitude]=${item.venue_latitude}&dropoff[longitude]=${item.venue_longitude}`
+      : "";
+    window.open(
+      `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[nickname]=${encodeURIComponent(item.venue_name)}${coordParams}&dropoff[formatted_address]=${encodeURIComponent(addr)}`,
+      "_blank",
+      "noopener,noreferrer"
+    );
   }
   return (
     <div className="overflow-hidden rounded-[18px] bg-gradient-to-br from-red-950/70 to-black/50 px-4 py-4">
