@@ -9,7 +9,6 @@ export async function GET(request: NextRequest) {
     const worldcup_only = request.nextUrl.searchParams.get("worldcup_only") ?? "false";
 
     const url = `${XANO_BASE}/admin/city-intelligence?city=${encodeURIComponent(city)}&days_back=${days_back}&worldcup_only=${worldcup_only}`;
-    
     const res = await fetch(url, { cache: "no-store" });
    const data = await res.json();
     return NextResponse.json(data);

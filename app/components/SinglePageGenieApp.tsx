@@ -18,6 +18,7 @@ import { ProducerSection } from "@/app/components/single-page/ProducerSection";
 import { RoleIdentifierSection } from "@/app/components/single-page/RoleIdentifierSection";
 import { RoleSetupSection } from "@/app/components/single-page/RoleSetupSection";
 import { OnboardingCompleteSection } from "@/app/components/single-page/OnboardingCompleteSection";
+import { PlanChoiceSection } from "@/app/components/single-page/PlanChoiceSection";
 import { VerifyEmailGate } from "@/app/components/single-page/VerifyEmailGate";
 import { InfluencerSection } from "@/app/components/single-page/InfluencerSection";
 import { NotificationsScreen } from "@/app/components/single-page/NotificationsScreen";
@@ -131,6 +132,7 @@ import {
 import {
   readExternalUserId,
   readSessionId,
+  readSessionToken,
   writeExternalUserId,
 } from "@/app/lib/sessionToken";
 
@@ -485,6 +487,7 @@ export function SinglePageGenieApp({
   const offersRef = useRef<HTMLElement | null>(null);
   const preferencesRef = useRef<HTMLElement | null>(null);
   const accountRef = useRef<HTMLElement | null>(null);
+  const planChoiceRef = useRef<HTMLElement | null>(null);
   const vendorRef = useRef<HTMLElement | null>(null);
   const profileRef = useRef<HTMLElement | null>(null);
   const roleIdentifierRef = useRef<HTMLElement | null>(null);
@@ -512,7 +515,9 @@ export function SinglePageGenieApp({
   const [lastQuery, setLastQuery] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [magicLinkError, setMagicLinkError] = useState<string | null>(null);
   const [response, setResponse] = useState<GenieResponseEnvelope | null>(null);
+  const [queryMode, setQueryMode] = useState<"venue" | "event" | "both">("venue");
   const [savedVenueIds, setSavedVenueIds] = useState<string[]>([]);
   const [savedVenues, setSavedVenues] = useState<GenieVenue[]>([]);
   // ── Venue check-in state ────────────────────────────────────────────────
@@ -709,6 +714,99 @@ const [trialSuccess, setTrialSuccess] = useState(false);
 
     return null;
   }, [selectedVenueId, sharedVenue, venueMap]);
+
+  type ResultItem =
+    | { type: "venue"; venue: GenieVenue }
+    | { type: "event"; event: NonNullable<GenieResponseEnvelope["events"]>[number] };
+
+  const allVenues = useMemo<GenieVenue[]>(() => {
+    if (!response) {
+      return [];
+    }
+
+    return [...response.decisive, ...response.more_nearby];
+  }, [response]);
+
+  const decisionItems = useMemo<ResultItem[]>(() => {
+    if (!response) {
+      return [];
+    }
+
+    const events = response.events ?? [];
+    const venues = allVenues;
+
+    const mapVenueItems = (venueList: GenieVenue[]) =>
+      venueList.map((venue) => ({ type: "venue", venue } as const));
+
+    const mapEventItems = (
+      eventList: NonNullable<GenieResponseEnvelope["events"]>[number][]
+    ) => eventList.map((event) => ({ type: "event", event } as const));
+
+    if (queryMode === "venue") {
+      return mapVenueItems(venues.slice(0, 3));
+    }
+
+    if (queryMode === "event") {
+      return mapEventItems(events.slice(0, 3));
+    }
+
+    const useEventsFirst = events.length >= venues.length;
+    if (useEventsFirst) {
+      return [
+        ...mapEventItems(events.slice(0, 2)),
+        ...mapVenueItems(venues.slice(0, 1)),
+      ];
+    }
+
+    return [
+      ...mapVenueItems(venues.slice(0, 2)),
+      ...mapEventItems(events.slice(0, 1)),
+    ];
+  }, [allVenues, queryMode, response]);
+
+  const interleave = useCallback(
+    (
+      venues: GenieVenue[],
+      events: NonNullable<GenieResponseEnvelope["events"]>[number][]
+    ) => {
+      const result: ResultItem[] = [];
+      const max = Math.max(venues.length, events.length);
+      for (let i = 0; i < max; i += 1) {
+        if (venues[i]) {
+          result.push({ type: "venue", venue: venues[i] });
+        }
+        if (events[i]) {
+          result.push({ type: "event", event: events[i] });
+        }
+      }
+      return result;
+    },
+    []
+  );
+
+  const moreNearbyItems = useMemo<ResultItem[]>(() => {
+    if (!response) {
+      return [];
+    }
+
+    const events = response.events ?? [];
+    const venues = allVenues;
+
+    if (queryMode === "venue") {
+      return venues.slice(3, 15).map((venue) => ({ type: "venue", venue }));
+    }
+
+    if (queryMode === "event") {
+      return events.slice(3, 10).map((event) => ({ type: "event", event }));
+    }
+
+    const useEventsFirst = events.length >= venues.length;
+    if (useEventsFirst) {
+      return interleave(venues.slice(1), events.slice(2));
+    }
+
+    return interleave(venues.slice(2), events.slice(1));
+  }, [allVenues, queryMode, response]);
 
   const stopListeningSession = useCallback(() => {
     const recognition = recognitionRef.current;
@@ -950,7 +1048,8 @@ const [trialSuccess, setTrialSuccess] = useState(false);
 
   const handleQuery = async (
     query: string,
-    source: "typed" | "chip" | "voice"
+    source: "typed" | "chip" | "voice",
+    overrideCoords?: { latitude: number; longitude: number } | null
   ) => {
     const trimmed = query.trim();
     if (!trimmed) {
@@ -1003,6 +1102,7 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     // so we never block the query). Skip entirely when an explicit/session city
     // already determined where to search.
     const resolvedCoords = await (async () => {
+      if (overrideCoords) return overrideCoords;
       if (!shouldFetchCoords) return null;
       if (userCoords) return userCoords;
       if (typeof window === "undefined" || !("geolocation" in navigator)) {
@@ -1036,6 +1136,13 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     })();
 
     try {
+      console.log("NEAR ME DEBUG:", {
+        hasCoords: Boolean(resolvedCoords),
+        lat: resolvedCoords?.latitude,
+        lng: resolvedCoords?.longitude,
+        cityContext: cityForQuery,
+        isNearMe,
+      });
       const nextResponse = await callGenie(trimmed, {
         coords: resolvedCoords
           ? { lat: resolvedCoords.latitude, lng: resolvedCoords.longitude }
@@ -1044,12 +1151,18 @@ const [trialSuccess, setTrialSuccess] = useState(false);
         cityContext: cityForQuery ?? undefined,
         includeCoords: shouldUseCoords,
       });
-setResponse(nextResponse);
+      setResponse(nextResponse);
+      setQueryMode(
+        nextResponse.query_mode === "event" || nextResponse.query_mode === "both"
+          ? nextResponse.query_mode
+          : "venue"
+      );
       // Remember the resolved city so the next query without an explicit city
       // stays anchored to it.
       const resolvedSessionCity =
         explicitCity ??
-        (typeof nextResponse.city_context === "string" &&
+        (!isNearMe &&
+        typeof nextResponse.city_context === "string" &&
         nextResponse.city_context.trim().length > 0
           ? nextResponse.city_context
           : null);
@@ -1087,6 +1200,19 @@ setResponse(nextResponse);
       setIsThinking(false);
     }
   };
+
+  // Auto-fire query from ?q= URL param (used by World Cup page CTAs)
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const q = url.searchParams.get("q");
+    if (!q || !q.trim()) return;
+    url.searchParams.delete("q");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    const timer = setTimeout(() => {
+      void handleQuery(q.trim(), "chip");
+    }, 600);
+    return () => clearTimeout(timer);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const startListening = () => {
     trackVoiceOrbTapped();
@@ -1580,6 +1706,7 @@ setResponse(nextResponse);
             token: authToken,
             user,
             external_user_id,
+            flow,
           } = await loginWithMagicToken(magicToken);
 
           persistAuthSession(authToken, user);
@@ -1590,14 +1717,24 @@ setResponse(nextResponse);
           // Magic link clicked → the account is verified. Clear the pending
           // state and dismiss the wizard/gate so they never show again.
           writeOnboardingPending(null);
-          setIsOnboarding(false);
           setVerifyGateOpen(false);
 
           // Preserve the latest documented behavior: remove the token from the URL
           // immediately after a successful exchange.
           url.searchParams.delete("token");
           window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
-          setLoginSuccessSheetOpen(true);
+
+          // `flow` reflects the intent embedded when the link was issued
+          // (see app/api/auth/login/route.ts). A verified signup picks its
+          // tier next; returning logins go straight in.
+          if (flow === "signup") {
+            setOnboardingEmail(user.email ?? "");
+            setIsOnboarding(true);
+            navigateTo("choose-plan");
+          } else {
+            setIsOnboarding(false);
+            setLoginSuccessSheetOpen(true);
+          }
 
           if (
             previousExternalUserId &&
@@ -1653,11 +1790,13 @@ setResponse(nextResponse);
           }
         } catch (error) {
           console.error("Failed to exchange magic token", error);
-          setStatusMessage(
+          const failureMessage =
             error instanceof Error
               ? error.message
-              : "This sign-in link could not be verified."
-          );
+              : "This sign-in link could not be verified.";
+          setStatusMessage(failureMessage);
+          setMagicLinkError(failureMessage);
+          navigateTo("account");
           url.searchParams.delete("token");
           window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
         }
@@ -1667,7 +1806,8 @@ setResponse(nextResponse);
       await initGuestSession().catch(() => null);
       await initializeDeviceProfile();
     })();
-  }, [hydrateAuthenticatedSession, initializeDeviceProfile]);
+    // `navigateTo` is a stable useCallback([]) — listing it doesn't re-run this.
+  }, [hydrateAuthenticatedSession, initializeDeviceProfile, navigateTo]);
 
   useEffect(() => {
     if (
@@ -2189,6 +2329,9 @@ setResponse(nextResponse);
     const url = new URL(window.location.href);
     const checkoutState = url.searchParams.get("checkout");
     const sessionId = url.searchParams.get("session_id");
+    // Set by the plan chooser's success_url — this checkout happened mid-signup,
+    // so resume the wizard at preferences instead of landing on home.
+    const isOnboardingCheckout = url.searchParams.get("onboarding") === "1";
     if (!checkoutState && !sessionId) {
       return;
     }
@@ -2196,6 +2339,7 @@ setResponse(nextResponse);
     const clearCheckoutParams = () => {
       url.searchParams.delete("checkout");
       url.searchParams.delete("session_id");
+      url.searchParams.delete("onboarding");
       const nextUrl = `${url.pathname}${url.search}${url.hash}`;
       window.history.replaceState({}, "", nextUrl);
     };
@@ -2240,6 +2384,11 @@ setResponse(nextResponse);
         }
 
         await hydrateAuthenticatedSession();
+
+        if (!cancelled && isOnboardingCheckout) {
+          setIsOnboarding(true);
+          navigateTo("preferences");
+        }
       } catch (error) {
         if (cancelled) {
           return;
@@ -2259,7 +2408,7 @@ setResponse(nextResponse);
     return () => {
       cancelled = true;
     };
-  }, [hydrateAuthenticatedSession]);
+  }, [hydrateAuthenticatedSession, navigateTo]);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -2381,7 +2530,6 @@ setResponse(nextResponse);
 
   const currentResponseMode = response?.response_mode;
   const showResultSections = currentResponseMode === "structured_results";
-  console.log("RENDER:", { currentResponseMode, showResultSections, activeScreen });
   const nonStructuredResponse =
     response && response.response_mode !== "structured_results"
       ? response
@@ -3000,8 +3148,26 @@ activeScreen === "vibbee-trial" ||
 
               setPendingTranscript(false);
               setInputValue(prompt);
-              maybeAskLocationForIntent(prompt, "chip");
-              void handleQuery(prompt, "chip");
+              const isNearMeChip = /near me/i.test(prompt);
+              if (isNearMeChip && "geolocation" in navigator) {
+                navigator.geolocation.getCurrentPosition(
+                  (pos) => {
+                    const coords = {
+                      latitude: pos.coords.latitude,
+                      longitude: pos.coords.longitude,
+                    };
+                    setUserCoords(coords);
+                    setLocationGranted(true);
+                    void handleQuery(prompt, "chip", coords);
+                  },
+                  () => {
+                    void handleQuery(prompt, "chip");
+                  },
+                  { enableHighAccuracy: true, timeout: 8000, maximumAge: 60_000 }
+                );
+              } else {
+                void handleQuery(prompt, "chip");
+              }
             }}
             onOrbTap={startListening}
             onSubmit={() => {
@@ -3231,346 +3397,375 @@ activeScreen === "vibbee-trial" ||
         ) : null}
 
         {activeScreen === "decision" && showResultSections ? (
-  <section ref={decisionRef} className="space-y-2 pb-24">
-    <GenieBubble
-      copy={response?.reply?.trim() || "I found a few spots that match your vibe."}
-      compact
-    />
-    {response?.show_intake_prompt ? (
-      <div className="rounded-[22px] border border-red-200 bg-red-50/60 p-4 dark:border-white/12 dark:bg-black/20">
-        <p className="text-sm leading-6 text-gray-700 dark:text-white/82">
-          {intakePromptCopy}
-        </p>
-        <button
-          type="button"
-          onClick={() => navigateTo("preferences")}
-          className="mt-3 rounded-[16px] border border-red-500 bg-red-600 px-4 py-2 text-sm font-semibold text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
-        >
-          Tune preferences
-        </button>
-      </div>
-    ) : null}
-
-    {/* ── EVENT MODE — show event cards as primary results ── */}
-    {response?.query_mode === "event" && Array.isArray(response.events) && response.events.length > 0 ? (
-      <div className="flex flex-col gap-2">
-        {response.events.slice(0, 3).map((evt) => (
-          <EventResultCard
-            key={evt.id}
-            evt={evt}
-            onOpen={() => {
-  setSelectedEventSlug(evt.public_slug ?? null);
-  setSelectedEventId(evt.id);
-  setSelectedEvent(evt as Record<string, unknown>);
-  navigateTo("event-detail");
-  logEventInteraction("tap", evt.id, "decision");
-}}
-          />
-        ))}
-      </div>
-    ) : (
-      <>
-        {/* ── VENUE MODE — show venue cards as primary results ── */}
-        <div className="flex flex-col gap-2">
-          {response?.decisive.map((venue, index) => (
-            <ResultCard
-              key={venue.id}
-              venue={venue}
-              index={index}
-              userCoords={userCoordsLL}
-              onOpen={() => { selectVenue(venue, index, "decision"); logVenueInteraction("tap", Number(venue.id), "decision"); }}
-              onSave={() => handleSaveVenue(venue)}
+          <section ref={decisionRef} className="space-y-2 pb-24">
+            <GenieBubble
+              copy={response?.reply?.trim() || "I found a few spots that match your vibe."}
+              compact
             />
-          ))}
-        </div>
-
-        {/* ── Events below venue results (mixed mode) ── */}
-        {Array.isArray(response?.events) && response.events.length > 0 ? (
-          <div className="mt-2">
-            <p className="mb-2 text-[0.9rem] font-semibold text-gray-900 dark:text-white">
-              Events nearby
-            </p>
-            <div className="flex flex-col gap-2">
-              {response.events.slice(0, 3).map((evt) => (
+            {response?.show_intake_prompt ? (
+              <div className="rounded-[22px] border border-red-200 bg-red-50/60 p-4 dark:border-white/12 dark:bg-black/20">
+                <p className="text-sm leading-6 text-gray-700 dark:text-white/82">
+                  {intakePromptCopy}
+                </p>
                 <button
-                  key={evt.id}
                   type="button"
-                  onClick={() => {
-                    setSelectedEventSlug(evt.public_slug ?? null);
-setSelectedEventId(evt.id);
-setSelectedEvent(evt as Record<string, unknown>);
-navigateTo("event-detail");
-logEventInteraction("tap", evt.id, "more");
-                  }}
-                  className="flex items-center gap-3 rounded-[18px] border border-[#E7070380] bg-transparent p-3 text-left dark:border-[#E7070380] dark:bg-black/30"
+                  onClick={() => navigateTo("preferences")}
+                  className="mt-3 rounded-[16px] border border-red-500 bg-red-600 px-4 py-2 text-sm font-semibold text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
                 >
-                  <div className="relative h-16 w-16 flex-none overflow-hidden rounded-[12px]">
-                    <Image
-                      src={evt.cover_image_url || "/sample-venue-2.jpeg"}
-                      alt={evt.title}
-                      fill
-                      className="object-cover"
-                      sizes="64px"
-                    />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="line-clamp-1 text-[0.9rem] font-semibold text-gray-900 dark:text-white">
-                      {evt.title}
-                    </p>
-                    {evt.event_date ? (
-                      <p className="mt-0.5 text-[0.72rem] text-gray-500 dark:text-white/55">
-                        {new Date(evt.event_date).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                        })}
-                        {evt.start_time ? ` · ${evt.start_time.slice(0, 5)}` : ""}
-                      </p>
-                    ) : null}
-                    <div className="mt-1 flex items-center gap-2">
-                      {evt.is_free ? (
-                        <span className="rounded-full bg-green-500 px-2 py-0.5 text-[0.6rem] font-bold text-white">
-                          FREE
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                  <svg viewBox="0 0 24 24" className="h-4 w-4 flex-none text-gray-400 dark:text-white/30" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M9 18l6-6-6-6" />
-                  </svg>
+                  Tune preferences
                 </button>
-              ))}
+              </div>
+            ) : null}
+
+            <div className="flex flex-col gap-2">
+              {decisionItems.map((item, index) =>
+                item.type === "venue" ? (
+                  <ResultCard
+                    key={`venue-${item.venue.id}`}
+                    venue={item.venue}
+                    index={index}
+                    userCoords={userCoordsLL}
+                    onOpen={() => {
+                      selectVenue(item.venue, index, "decision");
+                      logVenueInteraction("tap", Number(item.venue.id), "decision");
+                    }}
+                    onSave={() => handleSaveVenue(item.venue)}
+                  />
+                ) : (
+                  <EventResultCard
+                    key={`event-${item.event.id}`}
+                    evt={item.event}
+                    onOpen={() => {
+                      setSelectedEventSlug(item.event.public_slug ?? null);
+                      setSelectedEventId(item.event.id);
+                      setSelectedEvent(item.event as Record<string, unknown>);
+                      navigateTo("event-detail");
+                      logEventInteraction("tap", item.event.id, "decision");
+                    }}
+                  />
+                )
+              )}
             </div>
-          </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setHasOpenedMoreNearby(true);
+                trackEvent(analyticsEvents.seeMoreNearbyTapped);
+                trackEvent(analyticsEvents.moreNearbyOpened, {
+                  count: response?.more_nearby.length ?? 0,
+                  queryText: response?.normalized_intent ?? lastQuery,
+                });
+                navigateTo("more");
+              }}
+              className="mt-2 flex w-full items-center justify-center gap-2 py-3 text-[1rem] font-medium text-gray-800 dark:text-white"
+            >
+              <span>See More Nearby</span>
+              <span aria-hidden="true">→</span>
+            </button>
+          </section>
         ) : null}
-      </>
-    )}
 
-    <button
-      type="button"
-      onClick={() => {
-        setHasOpenedMoreNearby(true);
-        trackEvent(analyticsEvents.seeMoreNearbyTapped);
-        trackEvent(analyticsEvents.moreNearbyOpened, {
-          count: response?.more_nearby.length ?? 0,
-          queryText: response?.normalized_intent ?? lastQuery,
-        });
-        navigateTo("more");
-      }}
-      className="mt-2 flex w-full items-center justify-center gap-2 py-3 text-[1rem] font-medium text-gray-800 dark:text-white"
-    >
-      <span>See More Nearby</span>
-      <span aria-hidden="true">→</span>
-    </button>
-  </section>
-) : null}
-
-        {activeScreen === "more" && showResultSections && response?.more_nearby.length ? (
+        {activeScreen === "more" && showResultSections && moreNearbyItems.length ? (
           <section ref={moreRef} className="space-y-4 pb-24">
             <GenieBubble
               copy={
                 response?.reply?.trim() ||
-                "Here are a couple more spots you might like."
+                (queryMode === "event"
+                  ? "Here are more events you might like."
+                  : "Here are some more spots you might like.")
               }
               compact
             />
-            <div className="grid grid-cols-2 gap-3">
-              {response.more_nearby.slice(0, 2).map((venue, index) => (
-                <button
-                  key={venue.id}
-                  type="button"
-                  onClick={() => { selectVenue(venue, index, "more"); logVenueInteraction("tap", Number(venue.id), "more"); }}
-                  className="overflow-hidden rounded-[18px] border border-[#E7070380] bg-transparent text-left shadow-[0_8px_24px_rgba(0,0,0,0.06)] dark:border-[#6a1d1d] dark:bg-black/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
-                >
-                  <div className="relative h-36 w-full">
-                    <Image
-                      src={venue.image || "/sample-venue-2.jpeg"}
-                      alt={venue.venue_name || "Venue"}
-                      fill
-                      className="object-cover"
-                      sizes="(max-width: 640px) 45vw, 200px"
-                    />
-                  </div>
-                  <div className="px-3 py-2.5">
-                    <p className="line-clamp-1 text-[1rem] font-semibold text-gray-900 dark:text-white">
-                      {venue.venue_name}
+
+            {queryMode === "venue" ? (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  {allVenues.slice(3, 5).map((venue, index) => (
+                    <button
+                      key={venue.id}
+                      type="button"
+                      onClick={() => {
+                        selectVenue(venue, index + 3, "more");
+                        logVenueInteraction("tap", Number(venue.id), "more");
+                      }}
+                      className="overflow-hidden rounded-[18px] border border-[#E7070380] bg-transparent text-left shadow-[0_8px_24px_rgba(0,0,0,0.06)] dark:border-[#6a1d1d] dark:bg-black/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
+                    >
+                      <div className="relative h-36 w-full">
+                        <Image
+                          src={venue.image || "/sample-venue-2.jpeg"}
+                          alt={venue.venue_name || "Venue"}
+                          fill
+                          className="object-cover"
+                          sizes="(max-width: 640px) 45vw, 200px"
+                        />
+                      </div>
+                      <div className="px-3 py-2.5">
+                        <p className="line-clamp-1 text-[1rem] font-semibold text-gray-900 dark:text-white">
+                          {venue.venue_name}
+                        </p>
+                        <p className="mt-0.5 text-[0.75rem] text-gray-500 dark:text-white/60">
+                          {getVenueHeadlineShort(venue)}
+                          {(() => {
+                            const d = getVenueDistance(venue, index + 3, userCoordsLL);
+                            return d ? ` - ${d}` : "";
+                          })()}
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {buildVenueTags(venue).slice(0, 2).map((tag) => (
+                            <span
+                              key={`${venue.id}-${tag}`}
+                              className="rounded-full border border-[#E70703] bg-transparent px-2.5 py-0.5 text-[0.65rem] font-medium text-[#E70703] dark:border-[#E70703] dark:bg-transparent dark:text-white"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                {allVenues.slice(5, 15).length > 0 ? (
+                  <>
+                    <p className="mt-5 text-[1.25rem] font-semibold text-gray-900 dark:text-white">
+                      More Nearby
                     </p>
-                    <p className="mt-0.5 text-[0.75rem] text-gray-500 dark:text-white/60">
-                      {getVenueHeadlineShort(venue)}
-                      {(() => {
-                        const d = getVenueDistance(venue, index + 3, userCoordsLL);
-                        return d ? ` - ${d}` : "";
-                      })()}
+                    <div className="-mx-4 overflow-x-auto">
+                      <div className="flex gap-3 px-4 pb-2">
+                        {allVenues.slice(5, 15).map((venue, index) => (
+                          <button
+                            key={venue.id}
+                            type="button"
+                            onClick={() => selectVenue(venue, index + 5, "more")}
+                            className="w-[9.5rem] flex-none overflow-hidden rounded-[18px] border border-[#E7070380] bg-transparent text-left shadow-[0_8px_20px_rgba(0,0,0,0.05)] dark:border-[#6a1d1d] dark:bg-black/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
+                          >
+                            <div className="relative h-24 w-full">
+                              <Image
+                                src={venue.image || "/sample-venue-2.jpeg"}
+                                alt={venue.venue_name || "Venue"}
+                                fill
+                                className="object-cover"
+                                sizes="152px"
+                              />
+                            </div>
+                            <div className="px-2.5 py-2">
+                              <p className="line-clamp-1 text-[0.88rem] font-semibold text-gray-900 dark:text-white">
+                                {venue.venue_name}
+                              </p>
+                              <p className="mt-0.5 truncate text-[0.66rem] text-gray-500 dark:text-white/60">
+                                {getVenueHeadlineShort(venue)}
+                                {(() => {
+                                  const d = getVenueDistance(venue, index + 5, userCoordsLL);
+                                  return d ? ` - ${d}` : "";
+                                })()}
+                              </p>
+                              <div className="mt-1.5 flex flex-wrap gap-1">
+                                {buildVenueTags(venue).slice(0, 2).map((tag) => (
+                                  <span
+                                    key={`${venue.id}-${tag}`}
+                                    className="rounded-full border border-[#E70703] bg-transparent px-2 py-0.5 text-[0.6rem] font-medium text-[#E70703] dark:border-[#E70703] dark:bg-transparent dark:text-white"
+                                  >
+                                    {tag}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                ) : null}
+              </>
+            ) : queryMode === "event" ? (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  {(response?.events ?? []).slice(3, 5).map((evt) => (
+                    <button
+                      key={evt.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedEventSlug(evt.public_slug ?? null);
+                        setSelectedEventId(evt.id);
+                        setSelectedEvent(evt as Record<string, unknown>);
+                        navigateTo("event-detail");
+                      }}
+                      className="overflow-hidden rounded-[18px] border border-[#E7070380] bg-transparent text-left shadow-[0_8px_24px_rgba(0,0,0,0.06)] dark:border-[#6a1d1d] dark:bg-black/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
+                    >
+                      <div className="relative h-36 w-full">
+                        <Image
+                          src={evt.cover_image_url || "/sample-venue-2.jpeg"}
+                          alt={evt.title}
+                          fill
+                          className="object-cover"
+                          sizes="(max-width: 640px) 45vw, 200px"
+                        />
+                      </div>
+                      <div className="px-3 py-2.5">
+                        <p className="line-clamp-1 text-[1rem] font-semibold text-gray-900 dark:text-white">
+                          {evt.title}
+                        </p>
+                        <p className="mt-0.5 text-[0.75rem] text-gray-500 dark:text-white/60">
+                          {evt.event_date ? new Date(evt.event_date).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""}
+                          {evt.start_time ? ` · ${evt.start_time.slice(0, 5)}` : ""}
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {evt.category ? (
+                            <span className="rounded-full border border-[#E70703] bg-transparent px-2.5 py-0.5 text-[0.65rem] font-medium text-[#E70703] dark:border-[#E70703] dark:bg-transparent dark:text-white">
+                              {evt.category}
+                            </span>
+                          ) : null}
+                          {evt.is_free ? (
+                            <span className="rounded-full border border-[#E70703] bg-transparent px-2.5 py-0.5 text-[0.65rem] font-medium text-[#E70703] dark:border-[#E70703] dark:bg-transparent dark:text-white">
+                              Free
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                {(response?.events ?? []).slice(5, 10).length > 0 ? (
+                  <>
+                    <p className="mt-5 text-[1.25rem] font-semibold text-gray-900 dark:text-white">
+                      More events you might like
                     </p>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {buildVenueTags(venue).slice(0, 2).map((tag) => (
-                        <span
-                          key={`${venue.id}-${tag}`}
-                          className="rounded-full border border-[#E70703] bg-transparent px-2.5 py-0.5 text-[0.65rem] font-medium text-[#E70703] dark:border-[#E70703] dark:bg-transparent dark:text-white"
+                    <div className="-mx-4 overflow-x-auto">
+                      <div className="flex gap-3 px-4 pb-2">
+                        {(response?.events ?? []).slice(5, 10).map((evt) => (
+                          <button
+                            key={evt.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedEventSlug(evt.public_slug ?? null);
+                              setSelectedEventId(evt.id);
+                              setSelectedEvent(evt as Record<string, unknown>);
+                              navigateTo("event-detail");
+                            }}
+                            className="w-[9.5rem] flex-none overflow-hidden rounded-[18px] border border-[#E7070380] bg-transparent text-left shadow-[0_8px_20px_rgba(0,0,0,0.05)] dark:border-[#6a1d1d] dark:bg-black/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
+                          >
+                            <div className="relative h-24 w-full">
+                              <Image
+                                src={evt.cover_image_url || "/sample-venue-2.jpeg"}
+                                alt={evt.title}
+                                fill
+                                className="object-cover"
+                                sizes="152px"
+                              />
+                            </div>
+                            <div className="px-2.5 py-2">
+                              <p className="line-clamp-1 text-[0.88rem] font-semibold text-gray-900 dark:text-white">
+                                {evt.title}
+                              </p>
+                              <p className="mt-0.5 truncate text-[0.66rem] text-gray-500 dark:text-white/60">
+                                {evt.event_date ? new Date(evt.event_date).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""}
+                              </p>
+                              <div className="mt-1.5 flex flex-wrap gap-1">
+                                {evt.category ? (
+                                  <span className="rounded-full border border-[#E70703] bg-transparent px-2 py-0.5 text-[0.6rem] font-medium text-[#E70703] dark:border-[#E70703] dark:bg-transparent dark:text-white">
+                                    {evt.category}
+                                  </span>
+                                ) : null}
+                              </div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <p className="mt-5 text-[1.25rem] font-semibold text-gray-900 dark:text-white">
+                  More Nearby
+                </p>
+                <div className="-mx-4 overflow-x-auto">
+                  <div className="flex gap-3 px-4 pb-2">
+                    {moreNearbyItems.map((item, index) =>
+                      item.type === "venue" ? (
+                        <button
+                          key={`venue-${item.venue.id}`}
+                          type="button"
+                          onClick={() => {
+                            selectVenue(item.venue, index, "more");
+                            logVenueInteraction("tap", Number(item.venue.id), "more");
+                          }}
+                          className="w-[9.5rem] flex-none overflow-hidden rounded-[18px] border border-[#E7070380] bg-transparent text-left shadow-[0_8px_20px_rgba(0,0,0,0.05)] dark:border-[#6a1d1d] dark:bg-black/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
                         >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-
-            {response.more_nearby.length > 2 ? (
-              <>
-                <p className="mt-5 text-[1.25rem] font-semibold text-gray-900 dark:text-white">
-                  More spots you might like
-                </p>
-                <div className="-mx-4 overflow-x-auto">
-                  <div className="flex gap-3 px-4 pb-2">
-                    {response.more_nearby.slice(2, 8).map((venue, index) => (
-                      <button
-                        key={venue.id}
-                        type="button"
-                        onClick={() => selectVenue(venue, index + 2, "more")}
-                        className="w-[9.5rem] flex-none overflow-hidden rounded-[18px] border border-[#E7070380] bg-transparent text-left shadow-[0_8px_20px_rgba(0,0,0,0.05)] dark:border-[#6a1d1d] dark:bg-black/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
-                      >
-                        <div className="relative h-24 w-full">
-                          <Image
-                            src={venue.image || "/sample-venue-2.jpeg"}
-                            alt={venue.venue_name || "Venue"}
-                            fill
-                            className="object-cover"
-                            sizes="152px"
-                          />
-                        </div>
-                        <div className="px-2.5 py-2">
-                          <p className="line-clamp-1 text-[0.88rem] font-semibold text-gray-900 dark:text-white">
-                            {venue.venue_name}
-                          </p>
-                          <p className="mt-0.5 truncate text-[0.66rem] text-gray-500 dark:text-white/60">
-                            {getVenueHeadlineShort(venue)}
-                            {(() => {
-                              const d = getVenueDistance(venue, index + 5, userCoordsLL);
-                              return d ? ` - ${d}` : "";
-                            })()}
-                          </p>
-                          <div className="mt-1.5 flex flex-wrap gap-1">
-                            {buildVenueTags(venue).slice(0, 2).map((tag) => (
-                              <span
-                                key={`${venue.id}-${tag}`}
-                                className="rounded-full border border-[#E70703] bg-transparent px-2 py-0.5 text-[0.6rem] font-medium text-[#E70703] dark:border-[#E70703] dark:bg-transparent dark:text-white"
-                              >
-                                {tag}
-                              </span>
-                            ))}
+                          <div className="relative h-24 w-full">
+                            <Image
+                              src={item.venue.image || "/sample-venue-2.jpeg"}
+                              alt={item.venue.venue_name || "Venue"}
+                              fill
+                              className="object-cover"
+                              sizes="152px"
+                            />
                           </div>
-                        </div>
-                      </button>
-                    ))}
+                          <div className="px-2.5 py-2">
+                            <p className="line-clamp-1 text-[0.88rem] font-semibold text-gray-900 dark:text-white">
+                              {item.venue.venue_name}
+                            </p>
+                            <p className="mt-0.5 truncate text-[0.66rem] text-gray-500 dark:text-white/60">
+                              {getVenueHeadlineShort(item.venue)}
+                            </p>
+                            <div className="mt-1.5 flex flex-wrap gap-1">
+                              {buildVenueTags(item.venue).slice(0, 2).map((tag) => (
+                                <span
+                                  key={`${item.venue.id}-${tag}`}
+                                  className="rounded-full border border-[#E70703] bg-transparent px-2 py-0.5 text-[0.6rem] font-medium text-[#E70703] dark:border-[#E70703] dark:bg-transparent dark:text-white"
+                                >
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </button>
+                      ) : (
+                        <button
+                          key={`event-${item.event.id}`}
+                          type="button"
+                          onClick={() => {
+                            setSelectedEventSlug(item.event.public_slug ?? null);
+                            setSelectedEventId(item.event.id);
+                            setSelectedEvent(item.event as Record<string, unknown>);
+                            navigateTo("event-detail");
+                          }}
+                          className="w-[9.5rem] flex-none overflow-hidden rounded-[18px] border border-[#E7070380] bg-transparent text-left shadow-[0_8px_20px_rgba(0,0,0,0.05)] dark:border-[#6a1d1d] dark:bg-black/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
+                        >
+                          <div className="relative h-24 w-full">
+                            <Image
+                              src={item.event.cover_image_url || "/sample-venue-2.jpeg"}
+                              alt={item.event.title}
+                              fill
+                              className="object-cover"
+                              sizes="152px"
+                            />
+                          </div>
+                          <div className="px-2.5 py-2">
+                            <p className="line-clamp-1 text-[0.88rem] font-semibold text-gray-900 dark:text-white">
+                              {item.event.title}
+                            </p>
+                            <p className="mt-0.5 truncate text-[0.66rem] text-gray-500 dark:text-white/60">
+                              {item.event.event_date ? new Date(item.event.event_date).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""}
+                            </p>
+                            <div className="mt-1.5 flex flex-wrap gap-1">
+                              {item.event.category ? (
+                                <span className="rounded-full border border-[#E70703] bg-transparent px-2 py-0.5 text-[0.6rem] font-medium text-[#E70703] dark:border-[#E70703] dark:bg-transparent dark:text-white">
+                                  {item.event.category}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                        </button>
+                      )
+                    )}
                   </div>
                 </div>
               </>
-            ) : null}
-          </section>
-        ) : null}
-        {activeScreen === "more" && showResultSections && response?.query_mode === "event" && Array.isArray(response.events) && response.events.length > 3 ? (
-          <section className="space-y-4 pb-24">
-            <GenieBubble
-              copy={response?.reply?.trim() || "Here are more events you might like."}
-              compact
-            />
-            <div className="grid grid-cols-2 gap-3">
-              {response.events.slice(3, 5).map((evt) => (
-                <button
-                  key={evt.id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedEventSlug(evt.public_slug ?? null);
-setSelectedEventId(evt.id);
-setSelectedEvent(evt as Record<string, unknown>);
-navigateTo("event-detail");
-                  }}
-                  className="overflow-hidden rounded-[18px] border border-[#E7070380] bg-transparent text-left shadow-[0_8px_24px_rgba(0,0,0,0.06)] dark:border-[#6a1d1d] dark:bg-black/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
-                >
-                  <div className="relative h-36 w-full">
-                    <Image
-                      src={evt.cover_image_url || "/sample-venue-2.jpeg"}
-                      alt={evt.title}
-                      fill
-                      className="object-cover"
-                      sizes="(max-width: 640px) 45vw, 200px"
-                    />
-                  </div>
-                  <div className="px-3 py-2.5">
-                    <p className="line-clamp-1 text-[1rem] font-semibold text-gray-900 dark:text-white">
-                      {evt.title}
-                    </p>
-                    <p className="mt-0.5 text-[0.75rem] text-gray-500 dark:text-white/60">
-                      {evt.event_date ? new Date(evt.event_date).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""}
-                      {evt.start_time ? ` · ${evt.start_time.slice(0, 5)}` : ""}
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {evt.category ? (
-                        <span className="rounded-full border border-[#E70703] bg-transparent px-2.5 py-0.5 text-[0.65rem] font-medium text-[#E70703] dark:border-[#E70703] dark:bg-transparent dark:text-white">
-                          {evt.category}
-                        </span>
-                      ) : null}
-                      {evt.is_free ? (
-                        <span className="rounded-full border border-[#E70703] bg-transparent px-2.5 py-0.5 text-[0.65rem] font-medium text-[#E70703] dark:border-[#E70703] dark:bg-transparent dark:text-white">
-                          Free
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-
-            {response.events.length > 5 ? (
-              <>
-                <p className="mt-5 text-[1.25rem] font-semibold text-gray-900 dark:text-white">
-                  More events you might like
-                </p>
-                <div className="-mx-4 overflow-x-auto">
-                  <div className="flex gap-3 px-4 pb-2">
-                    {response.events.slice(5, 13).map((evt) => (
-                      <button
-                        key={evt.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedEventSlug(evt.public_slug ?? null);
-setSelectedEventId(evt.id);
-setSelectedEvent(evt as Record<string, unknown>);
-navigateTo("event-detail");
-                        }}
-                        className="w-[9.5rem] flex-none overflow-hidden rounded-[18px] border border-[#E7070380] bg-transparent text-left shadow-[0_8px_20px_rgba(0,0,0,0.05)] dark:border-[#6a1d1d] dark:bg-black/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.3)]"
-                      >
-                        <div className="relative h-24 w-full">
-                          <Image
-                            src={evt.cover_image_url || "/sample-venue-2.jpeg"}
-                            alt={evt.title}
-                            fill
-                            className="object-cover"
-                            sizes="152px"
-                          />
-                        </div>
-                        <div className="px-2.5 py-2">
-                          <p className="line-clamp-1 text-[0.88rem] font-semibold text-gray-900 dark:text-white">
-                            {evt.title}
-                          </p>
-                          <p className="mt-0.5 truncate text-[0.66rem] text-gray-500 dark:text-white/60">
-                            {evt.event_date ? new Date(evt.event_date).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""}
-                          </p>
-                          <div className="mt-1.5 flex flex-wrap gap-1">
-                            {evt.category ? (
-                              <span className="rounded-full border border-[#E70703] bg-transparent px-2 py-0.5 text-[0.6rem] font-medium text-[#E70703] dark:border-[#E70703] dark:bg-transparent dark:text-white">
-                                {evt.category}
-                              </span>
-                            ) : null}
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </>
-            ) : null}
+            )}
           </section>
         ) : null}
 
@@ -5047,9 +5242,10 @@ navigateTo("event-detail");
           onOpenPreferences={() => navigateTo("preferences")}
           onAdvanceOnboarding={(email) => {
             setOnboardingEmail(email);
-            setIsOnboarding(true);
-            navigateTo("preferences");
+            setVerifyGateOpen(true);
           }}
+          authError={magicLinkError}
+          onAuthErrorShown={() => setMagicLinkError(null)}
           onAccountChange={(nextAccount) => {
             setAccount(nextAccount);
             void hydrateAuthenticatedSession();
@@ -5066,13 +5262,23 @@ navigateTo("event-detail");
           }}
         />
 
+        <PlanChoiceSection
+          sectionRef={planChoiceRef}
+          visible={activeScreen === "choose-plan"}
+          config={config}
+          email={onboardingEmail || account?.email || ""}
+          onChooseFree={() => navigateTo("preferences")}
+        />
+
         <RoleIdentifierSection
           sectionRef={roleIdentifierRef}
           visible={activeScreen === "role-identifier"}
           onContinue={(roles) => {
             setOnboardingRoles(roles);
-            const hasNonConsumerRole = roles.some((role) => role !== "consumer");
-            navigateTo(hasNonConsumerRole ? "role-setup" : "onboarding-complete");
+            // Role setup (vendor claim / producer / influencer details) is
+            // deferred for now — roles are still saved, but every path goes
+            // straight to the success screen.
+            navigateTo("onboarding-complete");
           }}
         />
 
@@ -5101,7 +5307,9 @@ navigateTo("event-detail");
           email={onboardingEmail}
           onOpenGenie={() => {
             setIsOnboarding(false);
-            navigateTo("home", false);
+            // goHome() → "homescreen" (the feed), not "home" (the chat/ask
+            // screen). Also clears the wizard out of the back stack.
+            goHome();
           }}
         />
 

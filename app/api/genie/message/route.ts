@@ -197,12 +197,13 @@ const moreNearbyVenues = allVenues.slice(3, 15);
     });
   } catch (error) {
     if (error instanceof XanoError) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: error.status }
-      );
-    }
-    console.error("POST /api/genie/message failed:", error);
+  console.error("Xano error:", error.status, JSON.stringify(error.body));
+  return NextResponse.json(
+    { error: error.message },
+    { status: error.status }
+  );
+}
+console.error("POST /api/genie/message failed:", error);
     return NextResponse.json(
       { error: "Unexpected server error" },
       { status: 500 }

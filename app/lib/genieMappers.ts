@@ -55,6 +55,10 @@ function inferResponseMode(
   rawResponse: RawHandleMessageResponse,
   totalVenueCount: number
 ): GenieResponseMode {
+  // Trust route.ts when it explicitly sets structured_results
+  if (rawResponse.response_mode === "structured_results") {
+    return "structured_results";
+  }
   const xanoMode =
     rawResponse.reply_mode ??
     rawResponse.mode ??
@@ -64,7 +68,7 @@ function inferResponseMode(
       case "has_results":
         return "structured_results";
       case "supported_no_results":
-        return "supported_no_results";
+        return totalVenueCount > 0 ? "structured_results" : "supported_no_results";
       case "city_missing":
         return "city_missing";
       case "city_unsupported":
@@ -77,8 +81,6 @@ function inferResponseMode(
   const debug = rawResponse.debug ?? {};
   const citySupported = debug.city_supported;
 
-  // If the backend flags the city as unsupported, always fall back to text —
-  // even if `use_xano` is true or stray venues come back from a geo match.
   if (citySupported === false) {
     return "city_unsupported";
   }
@@ -99,45 +101,30 @@ export function normalizeHandleMessageResponse(
   const response = rawResponse.result ?? rawResponse;
 
   // ── Query mode ──────────────────────────────────────────────────────────
-  // Backend returns query_mode: "event" | "venue"
   const queryMode =
     typeof response.query_mode === "string"
       ? response.query_mode
       : "venue";
 
   // ── Events ───────────────────────────────────────────────────────────────
-  // Only populated when query_mode === "event"
   const events = Array.isArray(response.events)
     ? response.events
     : [];
 
   // ── Venues ───────────────────────────────────────────────────────────────
-  // Backend can return venues under several key names depending on the path
-  const rawVenues =
+  const allRawVenues = (
     response.venues ??
     response.decisive ??
     response.top_venues ??
-    [];
+    []
+  ).map(mapVenue);
 
-  const rawMoreNearby =
-    response.more_nearby_venues ??
-    response.more_nearby ??
-    response.more_venues ??
-    [];
-
-  const decisive = rawVenues
-    .map(mapVenue)
-    .slice(0, 3);
-
-  const moreNearby = rawMoreNearby
-    .map(mapVenue)
-    .slice(0, 12);
+  const decisive = allRawVenues.slice(0, 3);
+  const moreNearby = allRawVenues.slice(3, 15);
 
   const totalVenueCount = decisive.length + moreNearby.length;
 
   // ── Response mode ────────────────────────────────────────────────────────
-  // If we got events back treat it as structured results so the
-  // frontend decision screen renders event cards
   let responseMode = inferResponseMode(response, totalVenueCount);
   if (queryMode === "event" && events.length > 0) {
     responseMode = "structured_results";

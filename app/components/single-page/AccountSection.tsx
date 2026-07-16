@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { type FormEvent, type RefObject, useEffect, useState } from "react";
 
 import { trackEvent } from "@/app/lib/analytics";
@@ -14,9 +13,11 @@ import {
   updateUserProfile,
 } from "@/app/lib/publicApiClient";
 import ImageUploader from "@/app/components/ImageUploader";
-import { ActionButton } from "./ui";
+import { ActionButton, PlanCards } from "./ui";
 
-export type AccountScreenMode = "free" | "vibee" | "login" | null;
+// "vibee" is gone as a signup mode — the tier is chosen after verification on
+// the plan chooser, so signup only ever creates a free account first.
+export type AccountScreenMode = "free" | "login" | null;
 
 type ConsumerFormState = {
   firstName: string;
@@ -43,45 +44,6 @@ function isEmailValid(value: string) {
 const PROFILE_INPUT_CLASS =
   "w-full rounded-2xl border border-gray-300 bg-transparent px-4 py-3.5 text-gray-900 placeholder:text-gray-500 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]";
 
-function normalizeBenefitLabel(value: string) {
-  return value.replace(" and ", " & ");
-}
-
-function toMonthlyPriceLabel(value: string) {
-  if (value.includes("/mo")) {
-    return value.replace("/mo", " / month");
-  }
-
-  if (value.includes("/month")) {
-    return value.replace("/month", " / month");
-  }
-
-  return value;
-}
-
-function BenefitList({ benefits }: { benefits: string[] }) {
-  return (
-    <ul className="mt-2.5 space-y-1 text-[13px] leading-relaxed text-gray-600 dark:text-white/75">
-      {benefits.map((benefit) => (
-        <li key={benefit} className="flex items-center gap-2.5">
-          <svg
-            viewBox="0 0 16 16"
-            className="h-3.5 w-3.5 flex-none text-red-500 dark:text-[#e8a45f]"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="m3.25 8.5 2.5 2.5 6-6" />
-          </svg>
-          <span>{normalizeBenefitLabel(benefit)}</span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 export function AccountSection({
   sectionRef,
   visible,
@@ -94,6 +56,8 @@ export function AccountSection({
   onAccountChange,
   onModeChange,
   onAdvanceOnboarding,
+  authError,
+  onAuthErrorShown,
 }: {
   sectionRef: RefObject<HTMLElement | null>;
   visible: boolean;
@@ -108,8 +72,12 @@ export function AccountSection({
   // Free signup sends a magic link but does not wait for it — advance the
   // onboarding wizard (Step 2) on the guest session instead of dead-ending.
   onAdvanceOnboarding?: (email: string) => void;
+  // Surfaced when a magic-link exchange fails (expired/already used/etc.) so
+  // the failure isn't silent — see SinglePageGenieApp's token-exchange catch.
+  authError?: string | null;
+  onAuthErrorShown?: () => void;
 }) {
-  const [mode, setMode] = useState<AccountScreenMode>(null);
+  const [mode, setMode] = useState<AccountScreenMode>("login");
   const [form, setForm] = useState<ConsumerFormState>(createEmptyConsumerForm());
   const [message, setMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -183,11 +151,19 @@ export function AccountSection({
 
   useEffect(() => {
     if (!visible) {
-      setMode(null);
+      setMode("login");
       setMessage(null);
       setForm(createEmptyConsumerForm());
     }
   }, [visible]);
+
+  useEffect(() => {
+    if (visible && authError) {
+      setMode("login");
+      setMessage(authError);
+      onAuthErrorShown?.();
+    }
+  }, [visible, authError, onAuthErrorShown]);
 
   void onAccountChange;
 
@@ -197,12 +173,6 @@ export function AccountSection({
 
   const openFreeSignup = () => {
     setMode("free");
-    setForm(createEmptyConsumerForm());
-    setMessage(null);
-  };
-
-  const openVibeeSignup = () => {
-    setMode("vibee");
     setForm(createEmptyConsumerForm());
     setMessage(null);
   };
@@ -225,7 +195,10 @@ export function AccountSection({
     setMessage(null);
 
     try {
-      const result = await signUpUser({ email: form.email.trim() });
+      const result = await signUpUser({
+        email: form.email.trim(),
+        intent: "login",
+      });
       setMessage(
         result.message ||
           "Check your email for a one-tap magic link to sign in."
@@ -239,31 +212,14 @@ export function AccountSection({
     }
   };
 
-  const submitSignup = async (
-    event: FormEvent<HTMLFormElement>,
-    membership: "free" | "vibee"
-  ) => {
+  // The tier is no longer chosen here — it's committed after verification on
+  // the plan chooser, so signup only ever creates the account + sends a link.
+  const submitSignup = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const eventMap =
-      membership === "free"
-        ? {
-            cta: analyticsEvents.freeAccountCtaTapped,
-            start: analyticsEvents.freeSignupStarted,
-            submit: analyticsEvents.freeSignupSubmitted,
-            success: analyticsEvents.freeSignupCompleted,
-            error: analyticsEvents.freeSignupValidationError,
-          }
-        : {
-            cta: analyticsEvents.vibeeCtaTapped,
-            start: analyticsEvents.vibeeSignupStarted,
-            submit: analyticsEvents.vibeeCheckoutStarted,
-            success: analyticsEvents.vibeeCheckoutCompleted,
-            error: analyticsEvents.signupValidationError,
-          };
 
-    trackEvent(eventMap.cta, { membership });
-    trackEvent(analyticsEvents.signupStarted, { membership });
-    trackEvent(eventMap.start, { membership });
+    trackEvent(analyticsEvents.freeAccountCtaTapped);
+    trackEvent(analyticsEvents.signupStarted);
+    trackEvent(analyticsEvents.freeSignupStarted);
 
     if (
       !form.firstName.trim() ||
@@ -272,7 +228,7 @@ export function AccountSection({
       !form.consent
     ) {
       setMessage("Complete the required fields and accept the terms.");
-      trackEvent(eventMap.error, { membership });
+      trackEvent(analyticsEvents.freeSignupValidationError);
       return;
     }
 
@@ -280,48 +236,37 @@ export function AccountSection({
     setMessage(null);
 
     try {
-  const result = await signUpUser({
-    first_name: form.firstName.trim(),
-    last_name: form.lastName.trim(),
-    email: form.email.trim(),
-  });
-  trackEvent(eventMap.submit, { membership, email: form.email });
-  trackEvent(eventMap.success, { membership, email: form.email });
-  trackEvent(analyticsEvents.signupCompleted, { membership });
+      const result = await signUpUser({
+        first_name: form.firstName.trim(),
+        last_name: form.lastName.trim(),
+        email: form.email.trim(),
+        intent: "signup",
+      });
+      trackEvent(analyticsEvents.freeSignupSubmitted, { email: form.email });
+      trackEvent(analyticsEvents.signupCompleted);
 
-  // For V.I.Bee signups — go straight to Stripe checkout
-  // after account is created. Magic link will be sent by
-  // Xano but user lands in Stripe immediately.
-  if (membership === "vibee") {
-    setMessage("Redirecting to secure checkout...");
-    const { checkout_url } = await createSubscriptionCheckout({
-  email: form.email.trim(),
-  external_user_id: form.email.trim(),
-  success_url: `${window.location.origin}?checkout=success`,
-  cancel_url: `${window.location.origin}?checkout=cancelled`,
-});
-    window.location.href = checkout_url;
-    return;
-  }
-
-  // Free signup — magic link is sent, but we don't wait for it. Advance the
-  // onboarding wizard (preferences → roles → completion) on the guest session.
-  if (onAdvanceOnboarding) {
-    onAdvanceOnboarding(form.email.trim());
-  } else {
-    setMessage(
-      result.message ||
-        "Check your email for a magic link to complete your account!"
-    );
-  }
-} catch (error) {
-  const nextMessage =
-    error instanceof Error ? error.message : "Could not create your account.";
-  setMessage(nextMessage);
-  trackEvent(eventMap.error, { membership, error: nextMessage });
-} finally {
-  setIsSubmitting(false);
-}
+      // Magic link sent — hold here until they verify. The plan chooser (and
+      // any Stripe checkout) comes after the link is clicked.
+      if (onAdvanceOnboarding) {
+        onAdvanceOnboarding(form.email.trim());
+      } else {
+        setMessage(
+          result.message ||
+            "Check your email for a magic link to complete your account!"
+        );
+      }
+    } catch (error) {
+      const nextMessage =
+        error instanceof Error
+          ? error.message
+          : "Could not create your account.";
+      setMessage(nextMessage);
+      trackEvent(analyticsEvents.freeSignupValidationError, {
+        error: nextMessage,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const upgradeToVibee = async () => {
@@ -414,9 +359,7 @@ export function AccountSection({
     );
   }
 
-  if (!account && (mode === "free" || mode === "vibee")) {
-    const membership = mode === "free" ? "free" : "vibee";
-
+  if (!account && mode === "free") {
     return (
       <section
         ref={sectionRef}
@@ -435,16 +378,14 @@ export function AccountSection({
 
         <div className="flex flex-1 flex-col">
           <h2 className="mt-2 text-center text-[1.75rem] font-semibold leading-tight text-gray-900 dark:text-white">
-            {mode === "free"
-              ? "Create your Free Account"
-              : "Create your V.I.Bee Membership"}
+            Create your Free Account
           </h2>
           <p className="mt-2 text-center text-[16px] text-gray-700 dark:text-white/60">
             Takes just 30 seconds
           </p>
 
           <form
-            onSubmit={(event) => void submitSignup(event, membership)}
+            onSubmit={(event) => void submitSignup(event)}
             className="mt-6 space-y-3"
           >
           <input
@@ -477,21 +418,6 @@ export function AccountSection({
             style={{ fontSize: "16px" }}
             className="w-full rounded-2xl border border-gray-300 bg-transparent px-4 py-3.5 text-gray-900 placeholder:text-gray-500 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
           />
-          <input
-            type="tel"
-            value={form.phone}
-            onChange={(e) =>
-              setForm((c) => ({ ...c, phone: e.target.value }))
-            }
-            placeholder="Phone (optional)"
-            style={{ fontSize: "16px" }}
-            className="w-full rounded-2xl border border-gray-300 bg-transparent px-4 py-3.5 text-gray-900 placeholder:text-gray-500 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
-          />
-
-          <p className="pt-1 text-[13px] text-gray-700 dark:text-white/55">
-            For updates and confirmations
-          </p>
-
           <label className="flex cursor-pointer items-center gap-2 pt-1 text-[14px] leading-relaxed text-gray-800 dark:text-white/60">
             <span className="relative flex h-5 w-5 flex-none items-center justify-center">
               <input
@@ -522,46 +448,9 @@ export function AccountSection({
             </span>
           </label>
 
-          {mode === "vibee" && (
-            <div className="pt-2">
-              <div className="h-px w-full bg-gray-400/60 dark:bg-white/15" />
-              <p className="pt-3 text-center text-[15px] font-semibold text-red-600 dark:text-white/75">
-                V.I. Bee Member - {config.vibeeMonthlyPrice}
-              </p>
-            </div>
-          )}
-
           <ActionButton type="submit" className="w-full" disabled={isSubmitting}>
-            {isSubmitting
-              ? "Please wait..."
-              : mode === "free"
-                ? "Ask Genie"
-                : "Continue to secure checkout"}
+            {isSubmitting ? "Please wait..." : "Create Account"}
           </ActionButton>
-
-          {mode === "vibee" && (
-            <>
-              <p className="text-center text-[13px] leading-relaxed text-red-600 dark:text-white/55">
-                Powered by{" "}
-                <span className="text-gray-800 dark:text-white/70">Stripe</span>{" "}
-                - Cancel anytime
-              </p>
-              <p className="text-center text-[12px] leading-relaxed text-gray-600 dark:text-white/45">
-                Renews monthly until cancelled.{" "}
-                <span className="underline">Terms</span>{" "}
-                <span className="underline">Privacy</span>
-              </p>
-            </>
-          )}
-
-          {mode === "free" && (
-            <p className="text-center text-[13px] text-gray-700 dark:text-white/45">
-              By signing up, you agree to our{" "}
-              <span className="text-red-600 underline dark:text-[#ff7b7b]">Terms</span>{" "}
-              and{" "}
-              <span className="text-red-600 underline dark:text-[#ff7b7b]">Privacy Policy.</span>
-            </p>
-          )}
 
           {message && (
             <div className="rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
@@ -595,26 +484,7 @@ export function AccountSection({
       {!account ? (
         <>
           <div className="relative mx-auto w-full max-w-[23rem]">
-            <div className="rounded-[22px] border border-red-400 bg-transparent px-3 py-2.5 dark:border-white/20 dark:bg-black/25 dark:backdrop-blur-sm">
-              <div className="flex items-center gap-3">
-                <div className="relative h-[82px] w-[82px] flex-none overflow-hidden rounded-full border-2 border-red-400 shadow-[0_0_16px_rgba(220,38,38,0.35)]">
-                  <Image
-                    src="/genie-profile-pic.png"
-                    alt="Genie"
-                    width={82}
-                    height={82}
-                    className="h-full w-full object-cover"
-                  />
-                </div>
-                <h2 className="text-[1.45rem] leading-tight text-gray-900 dark:text-white">
-                  Hi, I&apos;m Genie,
-                  <br />
-                  your social concierge.
-                </h2>
-              </div>
-            </div>
-
-            <p className="mt-6 text-center text-[15px] leading-relaxed text-gray-600 dark:text-white/75">
+            <p className="mb-6 text-center text-[15px] leading-relaxed text-gray-600 dark:text-white/75">
               Sign up. Let&apos;s get you connected
               <br />
               to your vibe!
@@ -629,72 +499,17 @@ export function AccountSection({
               </button>
             </p>
 
+            {/* Marketing only — the tier is committed after verification on the
+                plan chooser, so both cards open the same signup form. */}
+            <PlanCards
+              freeBenefits={config.freeBenefits}
+              vibeeBenefits={config.vibeeBenefits}
+              vibeeMonthlyPrice={config.vibeeMonthlyPrice}
+              onSelectFree={openFreeSignup}
+              onSelectVibee={openFreeSignup}
+            />
+
             <div className="mt-8 space-y-3.5">
-              <button
-                type="button"
-                onClick={openFreeSignup}
-                className="w-full rounded-[22px] border border-red-400 bg-transparent px-4 py-3.5 text-left transition hover:bg-white/30 dark:border-white/20 dark:bg-black/25 dark:backdrop-blur-sm dark:hover:bg-black/35"
-              >
-                <div className="flex items-start gap-3">
-                  <div className="mt-0.5 flex h-14 w-14 flex-none items-center justify-center rounded-xl border-2 border-red-500 dark:border-0 dark:bg-transparent dark:p-0">
-                    <Image
-                      src="/free (1) 1 (1).png"
-                      alt="Free plan"
-                      width={44}
-                      height={44}
-                      className="h-9 w-9 object-contain dark:hidden"
-                    />
-                    <Image
-                      src="/free (1) 1.png"
-                      alt="Free plan"
-                      width={44}
-                      height={44}
-                      className="hidden h-11 w-11 object-contain dark:block"
-                    />
-                  </div>
-                  <div>
-                    <p className="text-[16px] font-semibold text-red-600 dark:text-[#ff7b7b]">
-                      Get started for free
-                    </p>
-                    <BenefitList benefits={config.freeBenefits} />
-                  </div>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={openVibeeSignup}
-                className="w-full rounded-[22px] border border-red-400 bg-transparent px-4 py-3.5 text-left transition hover:bg-white/30 dark:border-white/20 dark:bg-black/25 dark:backdrop-blur-sm dark:hover:bg-black/35"
-              >
-                <div className="flex items-start gap-3">
-                  <div className="mt-0.5 flex h-14 w-14 flex-none items-center justify-center rounded-xl border-2 border-red-500 dark:border-0 dark:bg-transparent dark:p-0">
-                    <Image
-                      src="/bee-red 1 (1).png"
-                      alt="V.I. Bee"
-                      width={44}
-                      height={44}
-                      className="h-9 w-9 object-contain dark:hidden"
-                    />
-                    <Image
-                      src="/bee-red 1.png"
-                      alt="V.I. Bee"
-                      width={44}
-                      height={44}
-                      className="hidden h-11 w-11 object-contain dark:block"
-                    />
-                  </div>
-                  <div>
-                    <p className="text-[16px] font-semibold text-red-600 dark:text-[#ff7b7b]">
-                      Become a V.I. Bee
-                    </p>
-                    <p className="mt-0.5 text-[16px]">
-                      {toMonthlyPriceLabel(config.vibeeMonthlyPrice)}
-                    </p>
-                    <BenefitList benefits={config.vibeeBenefits} />
-                  </div>
-                </div>
-              </button>
-
               <p className="pt-1 text-center text-[17px] font-semibold text-gray-900 dark:text-[#ff7b7b]">
                 Are you a venue or event host?
               </p>

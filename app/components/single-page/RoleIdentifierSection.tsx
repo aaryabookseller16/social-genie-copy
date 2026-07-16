@@ -16,30 +16,25 @@ type RoleCard = {
   role: OnboardingRole;
   title: string;
   description: string;
-  alwaysOn?: boolean;
 };
 
+// "consumer" isn't listed — it's implicit for every account and gets merged in
+// on submit, so this screen only offers the roles that unlock extra tools.
 const ROLE_CARDS: RoleCard[] = [
   {
-    role: "consumer",
-    title: "Discover & Go Out",
-    description: "Find spots and events that match your vibe.",
-    alwaysOn: true,
-  },
-  {
     role: "vendor",
-    title: "Own / Manage a Venue",
-    description: "List your venue and reach the right crowd.",
+    title: "Venue",
+    description: "You have a space for social activities.",
   },
   {
     role: "producer",
-    title: "Promote Events",
-    description: "Get your events in front of locals.",
+    title: "Producer",
+    description: "Creators of social experiences",
   },
   {
     role: "influencer",
-    title: "Content Creator / Influencer",
-    description: "Share your nights out and grow your audience.",
+    title: "Influencer",
+    description: "Content creators moving people to places.",
   },
 ];
 
@@ -50,23 +45,18 @@ export function RoleIdentifierSection({
 }: {
   sectionRef: RefObject<HTMLElement | null>;
   visible: boolean;
-  // Receives the full selected role set (consumer always included). The parent
-  // decides whether to route to role-setup (non-consumer roles) or completion.
+  // Receives the full selected role set (consumer always included).
   onContinue: (roles: OnboardingRole[]) => void;
 }) {
-  const [selected, setSelected] = useState<OnboardingRole[]>(() => {
-    const stored = readSelectedRoles();
-    return stored.length > 0 ? stored : ["consumer"];
-  });
+  const [selected, setSelected] = useState<OnboardingRole[]>(() =>
+    readSelectedRoles().filter((role) => role !== "consumer")
+  );
 
   if (!visible) {
     return null;
   }
 
   const toggle = (card: RoleCard) => {
-    if (card.alwaysOn) {
-      return;
-    }
     setSelected((prev) =>
       prev.includes(card.role)
         ? prev.filter((role) => role !== card.role)
@@ -86,90 +76,81 @@ export function RoleIdentifierSection({
   return (
     <section
       ref={sectionRef}
-      className="relative flex min-h-[calc(100dvh-1.5rem)] flex-col overflow-hidden bg-transparent px-1 pb-6 pt-10"
+      className="relative min-h-[calc(100dvh-1.5rem)] overflow-hidden bg-transparent px-1 pb-6 pt-10"
     >
-      <div className="flex flex-1 flex-col">
-        <h2 className="mt-2 text-center text-[1.75rem] font-semibold leading-tight text-gray-900 dark:text-white">
-          How do you want to use Genie?
+      <div className="mx-auto w-full max-w-[23rem]">
+        <h2 className="mt-2 text-center text-[1.85rem] font-semibold leading-tight text-gray-900 dark:text-white">
+          Select Your Role
         </h2>
-        <p className="mx-auto mt-3 max-w-[30ch] text-center text-[15px] leading-relaxed text-gray-700 dark:text-white/70">
-          Pick everything that fits. You can add more later — these just unlock
-          extra tools.
+        <p className="mt-2 text-center text-[16px] text-gray-700 dark:text-white/60">
+          Takes just 30 seconds
         </p>
 
-        <div className="mt-8 space-y-3.5">
+        <div className="mt-8 space-y-5">
           {ROLE_CARDS.map((card) => {
-            const isSelected = card.alwaysOn || selected.includes(card.role);
+            const isSelected = selected.includes(card.role);
             return (
               <button
                 key={card.role}
                 type="button"
                 onClick={() => toggle(card)}
                 aria-pressed={isSelected}
-                disabled={card.alwaysOn}
-                className={`w-full rounded-[22px] border px-4 py-3.5 text-left transition ${
-                  isSelected
-                    ? "border-red-500 bg-red-50 dark:border-[#ff7b7b] dark:bg-black/35"
-                    : "border-gray-300 bg-transparent hover:bg-white/30 dark:border-white/20 dark:bg-black/25 dark:hover:bg-black/35"
-                } ${card.alwaysOn ? "cursor-default" : ""}`}
+                className="flex w-full items-start gap-4 text-left"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-[16px] font-semibold text-red-600 dark:text-[#ff7b7b]">
-                      {card.title}
-                    </p>
-                    <p className="mt-0.5 text-[13px] leading-relaxed text-gray-600 dark:text-white/70">
-                      {card.description}
-                    </p>
-                    {card.alwaysOn ? (
-                      <p className="mt-1 text-[11px] uppercase tracking-[0.16em] text-gray-400 dark:text-white/45">
-                        Always on
-                      </p>
-                    ) : null}
-                  </div>
-                  <span
-                    className={`mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-full border-2 transition ${
-                      isSelected
-                        ? "border-red-600 bg-red-600 text-white dark:border-[#ff7b7b] dark:bg-red-600"
-                        : "border-gray-300 dark:border-white/30"
-                    }`}
-                  >
-                    {isSelected ? (
-                      <svg
-                        viewBox="0 0 16 16"
-                        className="h-3.5 w-3.5"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2.4"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden="true"
-                      >
-                        <path d="m3.25 8.5 2.5 2.5 6-6" />
-                      </svg>
-                    ) : null}
+                <span
+                  className={`mt-0.5 flex h-7 w-7 flex-none items-center justify-center rounded-full border-2 transition ${
+                    isSelected
+                      ? "border-red-600 bg-red-600 text-white dark:border-[#ff7b7b] dark:bg-red-600"
+                      : "border-gray-300 dark:border-white/25"
+                  }`}
+                >
+                  {isSelected ? (
+                    <svg
+                      viewBox="0 0 16 16"
+                      className="h-4 w-4"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="m3.25 8.5 2.5 2.5 6-6" />
+                    </svg>
+                  ) : null}
+                </span>
+                <span className="flex-1">
+                  <span className="block text-[17px] font-medium text-gray-900 dark:text-white">
+                    {card.title}
                   </span>
-                </div>
+                  <span className="mt-1 block text-[15px] leading-relaxed text-gray-600 dark:text-white/60">
+                    {card.description}
+                  </span>
+                </span>
               </button>
             );
           })}
         </div>
-      </div>
 
-      <div className="mt-auto space-y-3 pt-8">
-        <ActionButton
-          className="w-full"
-          onClick={() => persistAndContinue(selected)}
-        >
-          Continue
-        </ActionButton>
-        <button
-          type="button"
-          onClick={() => persistAndContinue(["consumer"])}
-          className="w-full rounded-2xl bg-black/10 px-4 py-3 text-[15px] font-semibold text-red-600 transition hover:bg-black/15 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-        >
-          Skip — just exploring
-        </button>
+        <p className="mt-7 text-center text-[15px] text-gray-600 dark:text-white/55">
+          You can select multiple roles
+        </p>
+
+        <div className="mt-5 space-y-3">
+          <ActionButton
+            className="w-full"
+            onClick={() => persistAndContinue(selected)}
+          >
+            Next
+          </ActionButton>
+          <button
+            type="button"
+            onClick={() => persistAndContinue([])}
+            className="w-full rounded-2xl bg-black/10 px-4 py-3.5 text-[18px] font-semibold text-red-600 transition hover:bg-black/15 dark:bg-white/10 dark:text-white/70 dark:hover:bg-white/15"
+          >
+            Skip
+          </button>
+        </div>
       </div>
     </section>
   );

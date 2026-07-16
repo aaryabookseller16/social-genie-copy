@@ -267,6 +267,7 @@ export async function signUpUser(payload: {
   first_name?: string;
   last_name?: string;
   email: string;
+  intent?: "signup" | "login";
 }) {
   return apiJson<{ message: string; success?: boolean }>("/api/auth/signup", {
     method: "POST",
@@ -280,7 +281,7 @@ export async function loginWithMagicToken(magicToken: string) {
     token: string;
     user: PublicApiUser;
     external_user_id: string;
-    is_new_user: boolean;
+    flow: "signup" | "login";
   }>("/api/auth/login", {
     method: "POST",
     auth: false,
