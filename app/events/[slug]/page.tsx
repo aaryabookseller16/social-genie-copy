@@ -78,10 +78,16 @@ interface SocialEvent {
   event_start_time?: string;
   event_end_time?: string;
   event_category?: string;
+  venue_id?: number;
   cover_image_url?: string;
+  image_urls?: string[];
+  video_urls?: { url: string; thumbnail_url: string }[];
   public_slug: string;
   status: string;
   rsvp_count?: number;
+  going_count?: number;
+  interested_count?: number;
+  user_rsvp_status?: "going" | "interested" | "saved" | null;
   view_count?: number;
   is_free?: boolean;
   is_sold_out?: boolean;
@@ -120,7 +126,19 @@ async function loadEventBySlug(slug: string): Promise<EventDetailResponse | null
       "genie/ep_get_event_by_slug_dev",
       { params: { slug } }
     );
-    return response.success ? response : null;
+    if (!response.success) return null;
+
+    // Xano's influencer-offers query doesn't actually filter by venue (known
+    // backend bug), so it can return offers unrelated to this event. Filter
+    // client-side until the endpoint is fixed.
+    const eventVenueId = response.event?.venue_id;
+    const filteredInfluencerOffers = eventVenueId
+      ? response.influencer_offers.filter(
+          (offer) => (offer as { venue_id?: number })?.venue_id === eventVenueId
+        )
+      : [];
+
+    return { ...response, influencer_offers: filteredInfluencerOffers };
   } catch {
     return null;
   }

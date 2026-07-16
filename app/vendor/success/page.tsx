@@ -12,6 +12,9 @@ function VendorSuccessContent() {
     switch (plan) {
       case "founding_partner":
         return "Founding Partner";
+      // `plan` carries plan_type, not the tier — checkout sends "boost" for all
+      // four one-time durations. The tier-suffixed values are legacy.
+      case "boost":
       case "boost_1999":
       case "boost_3999":
       case "boost_5999":

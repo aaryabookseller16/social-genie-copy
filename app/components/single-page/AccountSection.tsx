@@ -10,7 +10,10 @@ import { type ConsumerAccount } from "@/app/lib/localState";
 import {
   createSubscriptionCheckout,
   signUpUser,
+  toConsumerAccount,
+  updateUserProfile,
 } from "@/app/lib/publicApiClient";
+import ImageUploader from "@/app/components/ImageUploader";
 import { ActionButton } from "./ui";
 
 export type AccountScreenMode = "free" | "vibee" | "login" | null;
@@ -36,6 +39,9 @@ function createEmptyConsumerForm(): ConsumerFormState {
 function isEmailValid(value: string) {
   return /\S+@\S+\.\S+/.test(value);
 }
+
+const PROFILE_INPUT_CLASS =
+  "w-full rounded-2xl border border-gray-300 bg-transparent px-4 py-3.5 text-gray-900 placeholder:text-gray-500 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]";
 
 function normalizeBenefitLabel(value: string) {
   return value.replace(" and ", " & ");
@@ -87,6 +93,7 @@ export function AccountSection({
   onOpenPreferences,
   onAccountChange,
   onModeChange,
+  onAdvanceOnboarding,
 }: {
   sectionRef: RefObject<HTMLElement | null>;
   visible: boolean;
@@ -98,11 +105,77 @@ export function AccountSection({
   onOpenPreferences: () => void;
   onAccountChange: (account: ConsumerAccount, message: string) => void;
   onModeChange?: (mode: AccountScreenMode) => void;
+  // Free signup sends a magic link but does not wait for it — advance the
+  // onboarding wizard (Step 2) on the guest session instead of dead-ending.
+  onAdvanceOnboarding?: (email: string) => void;
 }) {
   const [mode, setMode] = useState<AccountScreenMode>("login");
   const [form, setForm] = useState<ConsumerFormState>(createEmptyConsumerForm());
   const [message, setMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  /* profile edit form */
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [profFirstName, setProfFirstName] = useState("");
+  const [profLastName, setProfLastName] = useState("");
+  const [profPhone, setProfPhone] = useState("");
+  const [profDisplayName, setProfDisplayName] = useState("");
+  const [profAvatarUrls, setProfAvatarUrls] = useState<string[]>([]);
+  const [profUploading, setProfUploading] = useState(false);
+  const [profBusy, setProfBusy] = useState(false);
+  const [profError, setProfError] = useState<string | null>(null);
+
+  function openEditProfile() {
+    if (!account) return;
+    setProfFirstName(account.firstName ?? "");
+    setProfLastName(account.lastName ?? "");
+    setProfPhone(account.phone ?? "");
+    setProfDisplayName(account.displayName ?? "");
+    setProfAvatarUrls(account.avatarUrl ? [account.avatarUrl] : []);
+    setProfUploading(false);
+    setProfError(null);
+    setEditingProfile(true);
+  }
+
+  async function handleProfileSave(event: FormEvent) {
+    event.preventDefault();
+    if (!account) return;
+    if (!profFirstName.trim()) {
+      setProfError("First name is required.");
+      return;
+    }
+    if (profUploading) {
+      setProfError("Please wait for your photo to finish uploading.");
+      return;
+    }
+
+    setProfBusy(true);
+    setProfError(null);
+    try {
+      const { user } = await updateUserProfile({
+        first_name: profFirstName.trim(),
+        last_name: profLastName.trim(),
+        phone: profPhone.trim(),
+        display_name: profDisplayName.trim(),
+        avatar_url: profAvatarUrls[0] ?? "",
+      });
+      // Carry the existing subscription status through. `auth/update_profile`
+      // returns only `membership_active` from genie_user, which can disagree
+      // with Stripe — re-deriving from it would flash a V.I.Bee member as Free
+      // until hydrateAuthenticatedSession() catches up.
+      onAccountChange(
+        toConsumerAccount(user, account.subscriptionStatus),
+        "Profile updated."
+      );
+      setEditingProfile(false);
+    } catch (error) {
+      setProfError(
+        error instanceof Error ? error.message : "Could not save your profile."
+      );
+    } finally {
+      setProfBusy(false);
+    }
+  }
 
   useEffect(() => {
     onModeChange?.(mode);
@@ -231,11 +304,16 @@ export function AccountSection({
     return;
   }
 
-  // Free signup — show magic link confirmation as before
-  setMessage(
-    result.message ||
-      "Check your email for a magic link to complete your account!"
-  );
+  // Free signup — magic link is sent, but we don't wait for it. Advance the
+  // onboarding wizard (preferences → roles → completion) on the guest session.
+  if (onAdvanceOnboarding) {
+    onAdvanceOnboarding(form.email.trim());
+  } else {
+    setMessage(
+      result.message ||
+        "Check your email for a magic link to complete your account!"
+    );
+  }
 } catch (error) {
   const nextMessage =
     error instanceof Error ? error.message : "Could not create your account.";
@@ -674,10 +752,111 @@ export function AccountSection({
             </div>
           </div>
         </>
-      ) : (
+      ) : editingProfile ? (
         <>
           <h2 className="text-center text-[1.65rem] font-semibold leading-tight text-gray-900 dark:text-white">
-            Hi {account.firstName}, Genie remembers you now.
+            Edit your profile
+          </h2>
+
+          <form onSubmit={(e) => void handleProfileSave(e)} className="mt-6 space-y-4">
+            <div>
+              <label className="mb-1.5 block text-[13px] font-medium text-gray-500 dark:text-white/55">
+                Profile photo
+              </label>
+              <ImageUploader
+                mode="single"
+                folder="avatars"
+                value={profAvatarUrls}
+                onChange={setProfAvatarUrls}
+                onUploadingChange={setProfUploading}
+              />
+            </div>
+
+            <input
+              type="text"
+              value={profFirstName}
+              onChange={(e) => setProfFirstName(e.target.value)}
+              placeholder="First name"
+              style={{ fontSize: "16px" }}
+              className={PROFILE_INPUT_CLASS}
+            />
+            <input
+              type="text"
+              value={profLastName}
+              onChange={(e) => setProfLastName(e.target.value)}
+              placeholder="Last name"
+              style={{ fontSize: "16px" }}
+              className={PROFILE_INPUT_CLASS}
+            />
+            <input
+              type="text"
+              value={profDisplayName}
+              onChange={(e) => setProfDisplayName(e.target.value)}
+              placeholder="Display name"
+              style={{ fontSize: "16px" }}
+              className={PROFILE_INPUT_CLASS}
+            />
+            <input
+              type="tel"
+              value={profPhone}
+              onChange={(e) => setProfPhone(e.target.value)}
+              placeholder="Phone"
+              style={{ fontSize: "16px" }}
+              className={PROFILE_INPUT_CLASS}
+            />
+
+            {/* Email is the magic-link login identity and cannot be changed here. */}
+            <div>
+              <input
+                type="email"
+                value={account.email}
+                readOnly
+                disabled
+                style={{ fontSize: "16px" }}
+                className={`${PROFILE_INPUT_CLASS} cursor-not-allowed opacity-60`}
+              />
+              <p className="mt-1.5 text-[11px] text-gray-400 dark:text-white/40">
+                Your email is how you sign in, so it can&apos;t be changed here.
+              </p>
+            </div>
+
+            {profError ? (
+              <p className="text-sm text-red-500 dark:text-red-400">{profError}</p>
+            ) : null}
+
+            <div className="flex gap-3 pt-1">
+              <ActionButton
+                variant="secondary"
+                className="flex-1"
+                onClick={() => setEditingProfile(false)}
+              >
+                Cancel
+              </ActionButton>
+              <ActionButton
+                type="submit"
+                className="flex-1"
+                disabled={profBusy || profUploading}
+              >
+                {profUploading ? "Uploading…" : profBusy ? "Saving…" : "Save"}
+              </ActionButton>
+            </div>
+          </form>
+        </>
+      ) : (
+        <>
+          {account.avatarUrl ? (
+            <div className="mx-auto mb-4 h-20 w-20 overflow-hidden rounded-full border-2 border-red-400 shadow-[0_0_16px_rgba(220,38,38,0.35)]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={account.avatarUrl}
+                alt={account.displayName || account.firstName}
+                className="h-full w-full object-cover"
+              />
+            </div>
+          ) : null}
+
+          <h2 className="text-center text-[1.65rem] font-semibold leading-tight text-gray-900 dark:text-white">
+            Hi {account.displayName || account.firstName}, Genie remembers you now.
           </h2>
           <p className="mt-2 text-center text-[15px] leading-relaxed text-gray-500 dark:text-white/60">
             {account.membership === "vibee"
@@ -707,6 +886,9 @@ export function AccountSection({
                   View V.I.Bee Offers
                 </ActionButton>
               ) : null}
+              <ActionButton onClick={openEditProfile} className="w-full">
+                Edit profile
+              </ActionButton>
               <ActionButton onClick={onOpenPreferences} className="w-full">
                 Tune my preferences
               </ActionButton>

@@ -3,6 +3,7 @@
 import { type ReactNode, useEffect, useState } from "react";
 
 import { BackIcon } from "@/app/components/single-page/ui";
+import ImageUploader from "@/app/components/ImageUploader";
 import { type ConsumerAccount } from "@/app/lib/localState";
 import { type SocialProfile } from "@/app/lib/publicApiClient";
 
@@ -17,10 +18,13 @@ type ProfileSectionProps = {
     lastName: string;
     email: string;
     phone: string;
+    displayName: string;
+    avatarUrl: string;
   }) => Promise<void>;
   onEditPreferences?: () => void;
   onOpenMembership?: () => void;
   onUpgradeMembership?: () => void;
+  onOpenNotifications?: () => void;
   onDeleteAccount?: () => Promise<void> | void;
 };
 
@@ -104,6 +108,51 @@ function DetailField({ label, value }: { label: string; value: string }) {
         {value || "—"}
       </p>
     </div>
+  );
+}
+
+/**
+ * WhatsApp-style opt-out for DM push notifications. Reads (and, on first read,
+ * initializes) the current user's preferences, then toggles `notify_new_message`.
+ * Uses the same per-user notification-preferences endpoints the producer
+ * settings screen uses — the GET must run before the POST (it seeds defaults).
+ */
+function BellIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="text-red-600 dark:text-[#E70703]"
+    >
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+    </svg>
+  );
+}
+
+function ChevronRightIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="text-gray-400 dark:text-white/40"
+    >
+      <path d="M9 18l6-6-6-6" />
+    </svg>
   );
 }
 
@@ -228,12 +277,16 @@ function StyledInput({
   placeholder,
   type = "text",
   onChange,
+  disabled = false,
+  helperText,
 }: {
   label: string;
   value: string;
   placeholder: string;
   type?: string;
   onChange: (v: string) => void;
+  disabled?: boolean;
+  helperText?: string;
 }) {
   return (
     <label className="block">
@@ -245,9 +298,16 @@ function StyledInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        disabled={disabled}
+        readOnly={disabled}
         style={{ fontSize: "16px" }}
-        className="w-full rounded-[16px] border border-[#E7070380] bg-gray-50 px-4 py-3 text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#E7070380] dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
+        className={`w-full rounded-[16px] border border-[#E7070380] bg-gray-50 px-4 py-3 text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#E7070380] dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a] ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
       />
+      {helperText ? (
+        <span className="mt-1.5 block text-[11px] text-gray-400 dark:text-white/40">
+          {helperText}
+        </span>
+      ) : null}
     </label>
   );
 }
@@ -262,6 +322,7 @@ export function ProfileSection({
   onEditPreferences,
   onOpenMembership,
   onUpgradeMembership,
+  onOpenNotifications,
   onDeleteAccount,
 }: ProfileSectionProps) {
   const [editing, setEditing] = useState(false);
@@ -269,6 +330,9 @@ export function ProfileSection({
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [avatarUrls, setAvatarUrls] = useState<string[]>([]);
+  const [avatarUploading, setAvatarUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [deleteSheetOpen, setDeleteSheetOpen] = useState(false);
@@ -279,6 +343,8 @@ export function ProfileSection({
       setLastName(account.lastName ?? "");
       setEmail(account.email ?? "");
       setPhone(account.phone ?? "");
+      setDisplayName(account.displayName ?? "");
+      setAvatarUrls(account.avatarUrl ? [account.avatarUrl] : []);
       setStatusMsg(null);
     }
     if (!visible) {
@@ -310,6 +376,18 @@ export function ProfileSection({
 
         {/* Form */}
         <div className="space-y-4">
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium text-gray-600 dark:text-white/72">
+              Profile photo
+            </span>
+            <ImageUploader
+              mode="single"
+              folder="avatars"
+              value={avatarUrls}
+              onChange={setAvatarUrls}
+              onUploadingChange={setAvatarUploading}
+            />
+          </label>
           <StyledInput
             label="First Name"
             value={firstName}
@@ -323,11 +401,19 @@ export function ProfileSection({
             onChange={setLastName}
           />
           <StyledInput
+            label="Display Name"
+            value={displayName}
+            placeholder="How Genie should greet you"
+            onChange={setDisplayName}
+          />
+          <StyledInput
             label="Email"
             value={email}
             placeholder="Email address"
             type="email"
             onChange={setEmail}
+            disabled
+            helperText="Your email is how you sign in, so it can't be changed here."
           />
           <StyledInput
             label="Phone"
@@ -347,10 +433,21 @@ export function ProfileSection({
         <button
           type="button"
           onClick={async () => {
+            if (avatarUploading) {
+              setStatusMsg("Please wait for your photo to finish uploading.");
+              return;
+            }
             setSaving(true);
             setStatusMsg(null);
             try {
-              await onSave({ firstName, lastName, email, phone });
+              await onSave({
+                firstName,
+                lastName,
+                email,
+                phone,
+                displayName,
+                avatarUrl: avatarUrls[0] ?? "",
+              });
               setEditing(false);
             } catch (error) {
               setStatusMsg(
@@ -405,7 +502,23 @@ export function ProfileSection({
           editAriaLabel="Edit details"
         >
           <div className="space-y-4">
+            {account?.avatarUrl ? (
+              <div className="mx-auto h-16 w-16 overflow-hidden rounded-full border-2 border-red-400 shadow-[0_0_16px_rgba(220,38,38,0.35)]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={account.avatarUrl}
+                  alt={account.displayName || fullName}
+                  className="h-full w-full object-cover"
+                />
+              </div>
+            ) : null}
             <DetailField label="Name" value={fullName} />
+            {account?.displayName ? (
+              <>
+                <div className="h-px bg-black/10 dark:bg-white/10" />
+                <DetailField label="Display Name" value={account.displayName} />
+              </>
+            ) : null}
             <div className="h-px bg-black/10 dark:bg-white/10" />
             <DetailField label="Email" value={account?.email ?? ""} />
             <div className="h-px bg-black/10 dark:bg-white/10" />
@@ -455,6 +568,23 @@ export function ProfileSection({
             ))}
           </div>
         </ProfileCard>
+
+        {/* Notifications */}
+        {onOpenNotifications ? (
+          <button
+            type="button"
+            onClick={onOpenNotifications}
+            className="flex w-full items-center justify-between rounded-[22px] border border-[#E7070380] bg-transparent px-5 py-4 text-left transition hover:bg-black/[0.02] dark:border-[#E7070380] dark:bg-black/20 dark:hover:bg-white/[0.03]"
+          >
+            <span className="flex items-center gap-3">
+              <BellIcon />
+              <span className="text-[1.1rem] font-semibold text-gray-900 dark:text-white">
+                Manage Notifications
+              </span>
+            </span>
+            <ChevronRightIcon />
+          </button>
+        ) : null}
       </div>
 
       {/* Delete my account — anchored to bottom */}

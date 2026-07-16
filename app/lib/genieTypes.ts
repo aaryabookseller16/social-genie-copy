@@ -33,6 +33,8 @@ export type RawGenieVenue = {
   image_url?: string | null;
   image_primary_url?: string | null;
   image_fallback_url?: string | null;
+  /** Ordered vendor-uploaded gallery; index 0 is the primary. */
+  image_urls?: string[] | null;
   energy_level?: string | null;
   music?: string | null;
   crowd?: string | null;
@@ -49,6 +51,8 @@ export type RawGenieVenue = {
   reservations_supported?: boolean | null;
   best_time_to_go?: string | null;
   is_open_now?: boolean | null;
+  /** Computed by fn_calculate_social_energy_dev from live venue_checkins; refreshed every 5 min. */
+  social_energy_state?: "Quiet" | "Getting Attention" | "Buzzing" | "On Fire" | null;
   is_official_vendor?: boolean | null;
   is_vendor_subscriber?: boolean | null;
   priority_tier?: string | null;
@@ -73,6 +77,9 @@ export type GenieVenue = Omit<RawGenieVenue, "latitude" | "longitude"> & {
   longitude: number | null;
 };
 
+/** A hosted video plus its Cloudinary-derived thumbnail. Matches Xano's `video_urls` shape. */
+export type GenieVideoItem = { url: string; thumbnail_url: string };
+
 export type RawGenieEvent = {
   id: number;
   title: string;
@@ -81,6 +88,8 @@ export type RawGenieEvent = {
   start_time?: string;
   end_time?: string;
   cover_image_url?: string;
+  /** Separate from any photo gallery; combined count is capped at 5 by Xano. */
+  video_urls?: GenieVideoItem[];
   public_slug?: string;
   status?: string;
   ticket_url?: string;
@@ -92,6 +101,8 @@ export type RawGenieEvent = {
   age_requirement?: number;
   rsvp_count?: number;
   going_count?: number;
+  interested_count?: number;
+  user_rsvp_status?: "going" | "interested" | "saved" | null;
   category?: string;
   event_category?: string;
   venue_address?: string;

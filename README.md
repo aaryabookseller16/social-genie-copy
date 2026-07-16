@@ -6,9 +6,9 @@ Social Genie is an AI-powered social concierge that helps people get social inst
 
 This repo contains the **Genie-first frontend**, built with Next.js + React 19, integrated with **Xano** as the backend for Genie’s venues, and includes the Phase 1 UI used for live user testing.
 
--
+---
 
-## 🚀 What Genie Does (Phase 1)
+## 🚀 What Genie Does [Phase 1]
 
 ### ✔ Conversational-style input  
 Users type into Genie’s “How can I get you social?” prompt. Genie parses the vibe keywords and returns matching venues.
@@ -188,7 +188,6 @@ Upcoming major changes:
 ## 📬 Contact
 
 **Alphonso Roundtree**  
-Founder & CEO — Social Bevy  
-Social Genie Team Lead  
+Founder & CEO - Social Bevy  
 
  

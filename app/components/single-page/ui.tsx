@@ -4,9 +4,11 @@ import Image from "next/image";
 import { type ReactNode, type RefObject } from "react";
 
 import { type GenieVenue } from "@/app/lib/genieClient";
+import { getDistanceLabel } from "@/app/lib/geo";
 
 export type FlowAnchor =
   | "home"
+  | "homescreen"
   | "listening"
   | "thinking"
   | "decision"
@@ -14,19 +16,30 @@ export type FlowAnchor =
   | "detail"
   | "saved"
   | "offers"
+  | "events-tab"
   | "offer-detail"
   | "offer-activated"
   | "redemptions"
   | "preferences"
   | "account"
+  | "role-identifier"
+  | "role-setup"
+  | "onboarding-complete"
   | "vendor"
+  | "producer-dashboard"
+  | "influencer-dashboard"
+  | "role-unlock"
   | "profile"
   | "dashboard"
   | "contact"
   | "event-detail"
   | "event-survey"
   | "vibbee-trial"
-  | "membership";
+  | "membership"
+  | "notifications"
+  | "notification-settings"
+  | "messages"
+  | "conversation";
 
 export function BackIcon({
   size = 20,
@@ -188,16 +201,44 @@ export function GenieBubble({
   );
 }
 
+function OffersDockIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="9" cy="9.5" r="1.6" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="15" cy="14.5" r="1.6" stroke="currentColor" strokeWidth="1.6" />
+      <line x1="8" y1="16" x2="16" y2="8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function EventsDockIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <rect x="3.5" y="5" width="17" height="15" rx="2.2" stroke="currentColor" strokeWidth="1.8" />
+      <line x1="3.5" y1="9.5" x2="20.5" y2="9.5" stroke="currentColor" strokeWidth="1.8" />
+      <line x1="7.5" y1="3" x2="7.5" y2="6.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <line x1="16.5" y1="3" x2="16.5" y2="6.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <line x1="12" y1="12.5" x2="12" y2="17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <line x1="9.25" y1="14.75" x2="14.75" y2="14.75" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function BottomDock({
   activeId,
   onHome,
   onProfile,
   onCenter,
+  onOffers,
+  onEvents,
 }: {
   activeId?: FlowAnchor;
   onHome: () => void;
   onProfile: () => void;
   onCenter: () => void;
+  onOffers: () => void;
+  onEvents: () => void;
 }) {
   const isProfileActive =
     activeId === "account" ||
@@ -206,11 +247,21 @@ export function BottomDock({
     activeId === "membership" ||
     activeId === "contact" ||
     activeId === "vendor";
-  const isHomeActive = !isProfileActive;
+  const isOffersActive =
+    activeId === "offers" ||
+    activeId === "offer-detail" ||
+    activeId === "offer-activated" ||
+    activeId === "redemptions";
+  const isEventsActive = activeId === "events-tab";
+  const isHomeActive =
+    !isProfileActive &&
+    !isOffersActive &&
+    !isEventsActive &&
+    (activeId === "homescreen" || activeId === "home" || !activeId);
 
   return (
     <div className="pointer-events-none fixed bottom-0 left-1/2 z-[80] w-[min(100vw,28rem)] -translate-x-1/2">
-      <div className="pointer-events-auto relative flex items-center justify-between bg-white/10 px-8 pb-[calc(env(safe-area-inset-bottom,0px)+8px)] pt-2 backdrop-blur-3xl dark:bg-black/30">
+      <div className="pointer-events-auto relative flex items-center justify-between bg-white/10 px-5 pb-[calc(env(safe-area-inset-bottom,0px)+8px)] pt-2 backdrop-blur-3xl dark:bg-black/30">
         {/* Red line pinned to the very top of the nav bar */}
         <Image
           src="/bottom-red-line.png"
@@ -249,6 +300,18 @@ export function BottomDock({
 
         <button
           type="button"
+          onClick={onOffers}
+          className={`relative z-10 flex h-12 w-12 touch-manipulation items-center justify-center text-red-600 dark:text-white ${
+            isOffersActive ? "opacity-100" : "opacity-40 dark:opacity-45"
+          }`}
+          aria-label="Open offers"
+          aria-current={isOffersActive ? "page" : undefined}
+        >
+          <OffersDockIcon className="h-7 w-7" />
+        </button>
+
+        <button
+          type="button"
           onClick={onCenter}
           className="relative z-10 -mt-3 flex h-[60px] w-[60px] touch-manipulation items-center justify-center"
           aria-label="Start voice search"
@@ -260,6 +323,18 @@ export function BottomDock({
             sizes="60px"
             className="pointer-events-none object-contain"
           />
+        </button>
+
+        <button
+          type="button"
+          onClick={onEvents}
+          className={`relative z-10 flex h-12 w-12 touch-manipulation items-center justify-center text-red-600 dark:text-white ${
+            isEventsActive ? "opacity-100" : "opacity-40 dark:opacity-45"
+          }`}
+          aria-label="Open events"
+          aria-current={isEventsActive ? "page" : undefined}
+        >
+          <EventsDockIcon className="h-7 w-7" />
         </button>
 
         <button
@@ -293,35 +368,6 @@ export function BottomDock({
   );
 }
 
-// Haversine-based distance between two lat/lng points. Returns miles by
-// default; kilometers for non-US/UK locales (detected via navigator.language).
-function computeDistance(
-  userLat: number,
-  userLng: number,
-  venueLat: number,
-  venueLng: number,
-  useMetric: boolean
-): number {
-  const R = useMetric ? 6371 : 3958.8; // Earth radius
-  const toRad = (deg: number) => (deg * Math.PI) / 180;
-  const dLat = toRad(venueLat - userLat);
-  const dLng = toRad(venueLng - userLng);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(userLat)) *
-      Math.cos(toRad(venueLat)) *
-      Math.sin(dLng / 2) *
-      Math.sin(dLng / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
-function shouldUseMetric(): boolean {
-  if (typeof navigator === "undefined") return false;
-  const locale = navigator.language || "en-US";
-  return !["en-US", "en-GB", "my-MM"].includes(locale);
-}
-
 /**
  * Real-world distance label between the user and a venue.
  *
@@ -340,28 +386,7 @@ export function getVenueDistance(
 ): string | null {
   const venueLat = typeof venue.latitude === "number" ? venue.latitude : null;
   const venueLng = typeof venue.longitude === "number" ? venue.longitude : null;
-  if (
-    !userCoords ||
-    !Number.isFinite(userCoords.lat) ||
-    !Number.isFinite(userCoords.lng) ||
-    venueLat === null ||
-    venueLng === null
-  ) {
-    return null;
-  }
-
-  const useMetric = shouldUseMetric();
-  const distance = computeDistance(
-    userCoords.lat,
-    userCoords.lng,
-    venueLat,
-    venueLng,
-    useMetric
-  );
-  const unit = useMetric ? "km" : "mi";
-  if (distance < 0.1) return `Less than 0.1 ${unit}`;
-  if (distance < 10) return `${distance.toFixed(1)} ${unit}`;
-  return `${Math.round(distance)} ${unit}`;
+  return getDistanceLabel(userCoords, venueLat, venueLng);
 }
 
 export function getVenueHeadline(venue: GenieVenue) {
@@ -369,9 +394,23 @@ export function getVenueHeadline(venue: GenieVenue) {
   return parts.length > 0 ? parts.join(" - ") : "Houston";
 }
 
+// Maps the live social_energy_state (from venue_checkins, refreshed every 5
+// min server-side) onto the badge copy/tone shown in venue lists.
+const SOCIAL_ENERGY_STATUS: Record<string, { text: string; tone: "busy" | "good" | "picks" }> = {
+  "On Fire": { text: "Packed right now", tone: "busy" },
+  "Buzzing": { text: "Busy right now", tone: "busy" },
+  "Getting Attention": { text: "Good time to go", tone: "good" },
+  "Quiet": { text: "Picks up after 9pm", tone: "picks" },
+};
+
 export function getVenueStatus(venue: GenieVenue, index: number) {
   if (venue.is_open_now) {
     return "Open now";
+  }
+
+  const energyStatus = venue.social_energy_state ? SOCIAL_ENERGY_STATUS[venue.social_energy_state] : undefined;
+  if (energyStatus) {
+    return energyStatus.text;
   }
 
   if (venue.best_time_to_go) {
@@ -383,10 +422,16 @@ export function getVenueStatus(venue: GenieVenue, index: number) {
 }
 
 export function getVenueStatusTone(venue: GenieVenue, index: number) {
-  const fallbackIndex = index % 3;
   if (venue.is_open_now) {
-    return fallbackIndex === 1 ? "good" : "open";
+    return "open" as const;
   }
+
+  const energyStatus = venue.social_energy_state ? SOCIAL_ENERGY_STATUS[venue.social_energy_state] : undefined;
+  if (energyStatus) {
+    return energyStatus.tone;
+  }
+
+  const fallbackIndex = index % 3;
   return ["busy", "good", "picks"][fallbackIndex] as "busy" | "good" | "picks";
 }
 
@@ -496,15 +541,10 @@ export function ResultCard({
   const statusColor =
     tone === "busy"
       ? "bg-red-500"
-      : tone === "good"
+      : tone === "good" || tone === "open"
         ? "bg-green-500"
         : "bg-amber-400";
-  const statusText =
-    tone === "busy"
-      ? "Busy right now"
-      : tone === "good"
-        ? "Good time to go"
-        : "Picks up after 9pm";
+  const statusText = getVenueStatus(venue, index);
 
   return (
     <button

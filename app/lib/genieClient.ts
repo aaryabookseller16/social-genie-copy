@@ -10,6 +10,7 @@ import { getRuntimeConfig } from "./runtimeConfig";
 import {
   readSessionToken,
   readExternalUserId,
+  readSessionId,
   writeSessionToken,
   writeSessionId,
 } from "./sessionToken";
@@ -42,6 +43,7 @@ export async function callGenie(
     external_user_id: readExternalUserId() || (account?.id ? String(account.id) : "web_guest"),
     user_name: account?.firstName || undefined,
     session_token: readSessionToken(),
+    session_id: readSessionId() || undefined,
     city_context:
       typeof cityContext === "string" && cityContext.trim().length > 0
         ? cityContext.trim()

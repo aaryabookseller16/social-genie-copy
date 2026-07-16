@@ -17,21 +17,37 @@ import { type ConsumerAccount, readConsumerAccount, writeConsumerAccount } from 
 import {
   createSubscriptionCheckout,
   createVendorBusiness,
+  fetchMyVendorProfile,
+  fetchVendorAnalytics,
   fetchVendorDashboard,
+  fetchVendorInfluencerCodes,
+  fetchVendorNotifPrefs,
+  fetchVendorInfluencerOffers,
   fetchVendorVenue,
+  fetchVenueImages,
+  reviewInfluencerOffer,
+  saveVenueImages,
   searchVendorBusinesses,
+  toggleVendorOffer,
+  updateVendorNotifPrefs,
   updateVendorProfile,
   updateVendorVenue,
   vendorOnboardingSearch,
   vendorOnboardingContact,
   vendorOnboardingConfirm,
+  type InfluencerOffer,
+  type VendorInfluencerCode,
+  type VendorAnalyticsTotals,
+  type VendorAnalyticsDailyRecord,
 } from "@/app/lib/publicApiClient";
+import { readExternalUserId } from "@/app/lib/sessionToken";
 import {
   readVendorDraft,
   writeVendorDraft,
   clearVendorDraft,
 } from "@/app/lib/vendorOnboarding";
 
+import ImageUploader from "@/app/components/ImageUploader";
 import { ActionButton } from "./ui";
 
 /* ------------------------------------------------------------------ */
@@ -39,11 +55,13 @@ import { ActionButton } from "./ui";
 /* ------------------------------------------------------------------ */
 
 type VendorStep =
+  | "loading"
   | "claim"
   | "finding"
   | "not-found"
   | "match"
   | "contact"
+  | "photos"
   | "location"
   | "plan"
   | "success"
@@ -52,7 +70,12 @@ type VendorStep =
   | "manual-profile"
   | "manual-contact"
   | "dashboard"
-  | "profile";
+  | "profile"
+  | "analytics"
+  | "offers"
+  | "boost"
+  | "influencer-codes"
+  | "settings";
 
 type VendorContactState = {
   firstName: string;
@@ -85,7 +108,6 @@ type ManualProfileInfo = {
   music: string;
   hookah: string;
   happyHour: string;
-  mainPhotoUrl: string;
 };
 
 type ManualContactInfo = {
@@ -151,6 +173,9 @@ type FullDashboardData = {
   boost_active?: boolean;
   boost_amount?: number;
   boost_period_label?: string;
+  // Dashboard widgets (offer_count is already declared above, non-optional)
+  checkins_today?: number;
+  is_open_now?: boolean | null;
 };
 
 /* ------------------------------------------------------------------ */
@@ -429,6 +454,40 @@ function VendorInput({
   );
 }
 
+/**
+ * Venue photos, up to 5, first one is the main photo. Optional everywhere —
+ * a vendor can skip this and add photos later from the dashboard.
+ */
+function VenuePhotoPicker({
+  photos,
+  onChange,
+  onUploadingChange,
+  label = "Photos",
+}: {
+  photos: string[];
+  onChange: (urls: string[]) => void;
+  onUploadingChange?: (busy: boolean) => void;
+  label?: string;
+}) {
+  return (
+    <div>
+      <ImageUploader
+        mode="multi"
+        max={5}
+        folder="venues"
+        label={label}
+        value={photos}
+        onChange={onChange}
+        onUploadingChange={onUploadingChange}
+      />
+      <p className="mt-1.5 text-[13px] text-gray-400 dark:text-white/40">
+        Optional — up to 5 photos. The first is your main photo. You can add or
+        change these later from your dashboard.
+      </p>
+    </div>
+  );
+}
+
 function SelectInput({
   value,
   placeholder,
@@ -471,6 +530,19 @@ function SelectInput({
 /*  Main component                                                     */
 /* ------------------------------------------------------------------ */
 
+/** Auto-dismiss a transient toast/message a few seconds after it's set. */
+function useAutoClear(
+  value: string | null,
+  setter: (v: null) => void,
+  ms = 4000
+) {
+  useEffect(() => {
+    if (!value) return;
+    const t = setTimeout(() => setter(null), ms);
+    return () => clearTimeout(t);
+  }, [value, setter, ms]);
+}
+
 export function VendorSection({
   visible,
   sectionRef,
@@ -489,18 +561,7 @@ export function VendorSection({
   onRefreshSession?: () => void;
 }) {
   const [initialDraft] = useState(() => readVendorDraft());
-  const [step, setStep] = useState<VendorStep>(() => {
-    // If account already has a vendorId, go straight to dashboard
-    if (account?.vendorId) return "dashboard";
-    // Resume from saved step if vendor_id exists (in-progress onboarding)
-    if (initialDraft.vendorId && initialDraft.currentStep) {
-      const saved = initialDraft.currentStep as VendorStep;
-      if (["contact", "plan", "success", "dashboard", "manual-info", "manual-location", "manual-profile", "manual-contact"].includes(saved)) {
-        return saved;
-      }
-    }
-    return "claim";
-  });
+  const [step, setStep] = useState<VendorStep>("loading");
   const [searchInput, setSearchInput] = useState(
     () => initialDraft.searchText ?? ""
   );
@@ -531,7 +592,7 @@ export function VendorSection({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [vendorId, setVendorId] = useState<number | null>(
-    () => initialDraft.vendorId ?? null
+    () => initialDraft.vendorId ?? readConsumerAccount()?.vendorId ?? null
   );
   const [onboardingId, setOnboardingId] = useState<number | null>(
     () => initialDraft.onboardingId ?? null
@@ -559,8 +620,15 @@ export function VendorSection({
     music: "",
     hookah: "",
     happyHour: "",
-    mainPhotoUrl: "",
   });
+
+  /**
+   * Venue photos picked during onboarding. They upload to Cloudinary immediately,
+   * but the venue does not exist until createVendorBusiness() runs on the plan
+   * step — so the URLs are held here and attached in completeRegistration().
+   */
+  const [onboardingPhotos, setOnboardingPhotos] = useState<string[]>([]);
+  const [photosUploading, setPhotosUploading] = useState(false);
   const [manualContact, setManualContact] = useState<ManualContactInfo>({
     firstName: account?.firstName ?? "",
     lastName: account?.lastName ?? "",
@@ -578,18 +646,71 @@ export function VendorSection({
     website_url: "",
     reservation_url: "",
     hours: "",
-    image_primary_url: "",
   });
+  /** Venue gallery, ordered; index 0 is the primary. Saved separately from the form. */
+  const [venuePhotos, setVenuePhotos] = useState<string[]>([]);
+  const [venuePhotosUploading, setVenuePhotosUploading] = useState(false);
+  /**
+   * False when the gallery failed to load. Saving is a whole-set replace, so
+   * writing an empty list we never successfully read would delete the vendor's
+   * existing photos.
+   */
+  const [venuePhotosLoaded, setVenuePhotosLoaded] = useState(false);
   const [isProfileSaving, setIsProfileSaving] = useState(false);
   const [isProfileLoading, setIsProfileLoading] = useState(false);
   const [profileMessage, setProfileMessage] = useState<string | null>(null);
 
+  // Analytics screen
+  const [analyticsPeriod, setAnalyticsPeriod] = useState<"7_days" | "30_days" | "all_time">("30_days");
+  const [analyticsTotals, setAnalyticsTotals] = useState<VendorAnalyticsTotals | null>(null);
+  const [analyticsDaily, setAnalyticsDaily] = useState<VendorAnalyticsDailyRecord[]>([]);
+  const [isAnalyticsLoading, setIsAnalyticsLoading] = useState(false);
+
+  // Offers screen
+  const [offerMessage, setOfferMessage] = useState<string | null>(null);
+
+  // Influencer offer review queue (venue owner)
+  const [influencerOffers, setInfluencerOffers] = useState<InfluencerOffer[]>([]);
+  const [isLoadingPending, setIsLoadingPending] = useState(false);
+  const [vendorOfferFilter, setVendorOfferFilter] = useState<
+    "active" | "pending" | "rejected" | "cancelled"
+  >("pending");
+  const [rejectingOfferId, setRejectingOfferId] = useState<number | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [reviewingOfferId, setReviewingOfferId] = useState<number | null>(null);
+
+  // Boost screen
+  const [selectedBoostTier, setSelectedBoostTier] = useState<string | null>(null);
+  const [isBoostLoading, setIsBoostLoading] = useState(false);
+
+  // Open/closed switch
+  const [isOpenToggleSaving, setIsOpenToggleSaving] = useState(false);
+
+  // Influencer codes screen
+  const [influencerCodes, setInfluencerCodes] = useState<VendorInfluencerCode[]>([]);
+  const [influencerLoading, setInfluencerLoading] = useState(false);
+  const [selectedInfluencerCode, setSelectedInfluencerCode] = useState<string | null>(null);
+
+  // Settings screen
+  const [settingsForm, setSettingsForm] = useState({ smsPhone: "", emailNotif: true, pushNotif: true, smsNotif: false });
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+
+  // Auto-dismiss transient toast messages after a few seconds.
+  useAutoClear(offerMessage, setOfferMessage);
+  useAutoClear(statusMessage, setStatusMessage);
+  useAutoClear(profileMessage, setProfileMessage);
+  useAutoClear(settingsMessage, setSettingsMessage);
+
   const progressStep: Record<VendorStep, number> = {
+    loading: 0,
     claim: 1,
     finding: 1,
     "not-found": 1,
     match: 1,
     contact: 2,
+    photos: 3,
     "manual-info": 1,
     "manual-location": 2,
     "manual-profile": 3,
@@ -599,7 +720,58 @@ export function VendorSection({
     success: 4,
     dashboard: 4,
     profile: 4,
+    analytics: 4,
+    offers: 4,
+    boost: 4,
+    "influencer-codes": 4,
+    settings: 4,
   };
+
+  // Gate check — runs once when the section becomes visible.
+  // Mirrors the producer pattern: always ask the server, never rely solely on cache.
+  useEffect(() => {
+    if (!visible) return;
+    if (step !== "loading") return;
+    let cancelled = false;
+
+    fetchMyVendorProfile()
+      .then(({ vendor }) => {
+        if (cancelled) return;
+        if (vendor?.id) {
+          setVendorId(vendor.id);
+          persistVendorIdToAccount(vendor.id);
+          setStep("dashboard");
+        } else {
+          // Fall back to draft for in-progress onboarding
+          const draft = readVendorDraft();
+          if (draft.vendorId && draft.currentStep) {
+            const saved = draft.currentStep as VendorStep;
+            if (["contact", "photos", "plan", "success", "dashboard", "manual-info", "manual-location", "manual-profile", "manual-contact"].includes(saved)) {
+              setVendorId(draft.vendorId);
+              setStep(saved);
+              return;
+            }
+          }
+          setStep("claim");
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // Not logged in or network error — check draft then fall to claim
+        const draft = readVendorDraft();
+        if (draft.vendorId && draft.currentStep) {
+          const saved = draft.currentStep as VendorStep;
+          if (["contact", "photos", "plan", "success", "dashboard", "manual-info", "manual-location", "manual-profile", "manual-contact"].includes(saved)) {
+            setVendorId(draft.vendorId);
+            setStep(saved);
+            return;
+          }
+        }
+        setStep("claim");
+      });
+
+    return () => { cancelled = true; };
+  }, [visible, step]);
 
   useEffect(() => {
     if (!account) {
@@ -637,9 +809,15 @@ export function VendorSection({
     Promise.all([
       fetchVendorDashboard(vid).catch(() => null),
       fetchVendorVenue().catch(() => null),
+      fetchVenueImages().then(
+        (photos) => ({ photos, ok: true }),
+        () => ({ photos: [] as string[], ok: false })
+      ),
     ])
-      .then(([d, venueResp]) => {
+      .then(([d, venueResp, photoResult]) => {
         if (cancelled) return;
+        setVenuePhotos(photoResult.photos);
+        setVenuePhotosLoaded(photoResult.ok);
         const venue = venueResp?.venue ?? null;
         const vendor = venueResp?.vendor ?? null;
         setProfileForm({
@@ -654,9 +832,6 @@ export function VendorSection({
               d?.reservation_url
           ),
           hours: str(venue?.hours_text ?? d?.hours_text),
-          image_primary_url: str(
-            venue?.image_primary_url ?? d?.image_primary_url
-          ),
         });
       })
       .catch(() => {
@@ -670,15 +845,68 @@ export function VendorSection({
     };
   }, [visible, step, account, vendorId]);
 
+  // Influencer codes loader
   useEffect(() => {
-    if (!visible) return;
-    const vid = account?.vendorId || initialDraft.vendorId;
+    if (!visible || step !== "influencer-codes") return;
+    const vid = vendorId ?? account?.vendorId;
     if (!vid) return;
-    if (step === "claim") {
-      setVendorId(vid);
-      setStep("dashboard");
-    }
-  }, [visible, account, step, initialDraft.vendorId]);
+    let cancelled = false;
+    setInfluencerLoading(true);
+    fetchVendorInfluencerCodes(vid)
+      .then((res) => {
+        if (!cancelled) setInfluencerCodes(res?.codes ?? []);
+      })
+      .catch(() => {
+        // Gracefully fall back to empty — endpoint may not exist yet
+        if (!cancelled) setInfluencerCodes([]);
+      })
+      .finally(() => { if (!cancelled) setInfluencerLoading(false); });
+    return () => { cancelled = true; };
+  }, [visible, step, vendorId, account]);
+
+  // Analytics loader
+  useEffect(() => {
+    if (!visible || step !== "analytics") return;
+    const vid = vendorId ?? account?.vendorId;
+    if (!vid) return;
+    let cancelled = false;
+    setIsAnalyticsLoading(true);
+    fetchVendorAnalytics(vid, analyticsPeriod)
+      .then((res) => {
+        if (cancelled) return;
+        setAnalyticsTotals(res?.totals ?? null);
+        setAnalyticsDaily(res?.daily_records ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAnalyticsTotals(null);
+          setAnalyticsDaily([]);
+        }
+      })
+      .finally(() => { if (!cancelled) setIsAnalyticsLoading(false); });
+    return () => { cancelled = true; };
+  }, [visible, step, vendorId, account, analyticsPeriod]);
+
+  // Settings — pre-load notification preferences
+  useEffect(() => {
+    if (!visible || step !== "settings" || settingsLoaded) return;
+    const extId = readExternalUserId();
+    if (!extId) return;
+    let cancelled = false;
+    fetchVendorNotifPrefs(extId)
+      .then((prefs) => {
+        if (cancelled) return;
+        setSettingsForm({
+          smsPhone: prefs.sms_phone ?? "",
+          emailNotif: prefs.email_notifications ?? true,
+          pushNotif: prefs.push_notifications ?? true,
+          smsNotif: prefs.sms_notifications ?? false,
+        });
+        setSettingsLoaded(true);
+      })
+      .catch(() => { /* keep defaults */ });
+    return () => { cancelled = true; };
+  }, [visible, step, account, settingsLoaded]);
 
   const loadDashboard = useCallback(async () => {
     const vid = vendorId ?? account?.vendorId;
@@ -736,6 +964,7 @@ export function VendorSection({
           merged.vibe_notes = venue.vibe_notes;
         }
         if (venue.phone) merged.phone = venue.phone;
+        if (venue.is_open_now != null) merged.is_open_now = venue.is_open_now;
         if (venue.hours_text) merged.hours_text = venue.hours_text;
         if (venue.image_primary_url) merged.image_primary_url = venue.image_primary_url;
       } else if (vendor?.reservation_url) {
@@ -754,10 +983,105 @@ export function VendorSection({
     }
   }, [vendorId, account]);
 
+  // Optimistic open/closed switch — revert on failure so the control never
+  // shows a state the venue record doesn't actually have.
+  const toggleOpenNow = useCallback(async (next: boolean) => {
+    setIsOpenToggleSaving(true);
+    setDashboardData((prev) => (prev ? { ...prev, is_open_now: next } : prev));
+    try {
+      await updateVendorVenue({ is_open_now: next });
+    } catch (error) {
+      setDashboardData((prev) =>
+        prev ? { ...prev, is_open_now: !next } : prev
+      );
+      setStatusMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not update your open/closed status."
+      );
+    } finally {
+      setIsOpenToggleSaving(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!visible || step !== "dashboard") return;
     void loadDashboard();
   }, [visible, step, loadDashboard]);
+
+  // ── Influencer offer review queue (venue owner) ────────────────────────────
+
+  const [pendingError, setPendingError] = useState<string | null>(null);
+
+  const loadInfluencerOffers = useCallback(async () => {
+    setIsLoadingPending(true);
+    setPendingError(null);
+    try {
+      const res = await fetchVendorInfluencerOffers();
+      setInfluencerOffers(res.offers ?? []);
+    } catch (err) {
+      setInfluencerOffers([]);
+      setPendingError(
+        err instanceof Error ? err.message : "Could not load offers."
+      );
+    } finally {
+      setIsLoadingPending(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!visible || step !== "offers") return;
+    void loadInfluencerOffers();
+  }, [visible, step, loadInfluencerOffers]);
+
+  const handleReviewOffer = useCallback(
+    async (
+      offerId: number,
+      decision: "approve" | "reject" | "cancel",
+      reason?: string
+    ) => {
+      setReviewingOfferId(offerId);
+      setOfferMessage(null);
+      try {
+        await reviewInfluencerOffer({
+          offer_id: offerId,
+          decision,
+          rejection_reason: reason,
+        });
+        // Move the reviewed offer to its new status in place so it appears
+        // under the Active / Rejected / Cancelled tab instead of vanishing.
+        const newStatus =
+          decision === "approve"
+            ? "active"
+            : decision === "cancel"
+              ? "cancelled"
+              : "rejected";
+        setInfluencerOffers((prev) =>
+          prev.map((o) =>
+            o.id === offerId
+              ? { ...o, status: newStatus, rejection_reason: reason }
+              : o
+          )
+        );
+        setRejectingOfferId(null);
+        setRejectReason("");
+        setOfferMessage(
+          decision === "approve"
+            ? "Offer approved."
+            : decision === "cancel"
+              ? "Offer cancelled."
+              : "Offer rejected."
+        );
+      } catch (err) {
+        setOfferMessage(
+          err instanceof Error ? err.message : "Could not review offer."
+        );
+      } finally {
+        setReviewingOfferId(null);
+      }
+    },
+    []
+  );
 
   /** Persist vendor_id into ConsumerAccount localStorage so dashboard survives refresh */
   const persistVendorIdToAccount = (vid: number) => {
@@ -858,6 +1182,11 @@ export function VendorSection({
         onContinueHome();
         break;
       case "profile":
+      case "analytics":
+      case "offers":
+      case "boost":
+      case "influencer-codes":
+      case "settings":
         setStep("dashboard");
         break;
       case "finding":
@@ -999,9 +1328,9 @@ export function VendorSection({
         ...readVendorDraft(),
         vendorId,
         onboardingId,
-        currentStep: "plan",
+        currentStep: "photos",
       });
-      setStep("plan");
+      setStep("photos");
       trackEvent(analyticsEvents.vendorContactInfoCompleted);
     } catch (error) {
       setStatusMessage(
@@ -1045,7 +1374,7 @@ export function VendorSection({
           music: manualProfile.music,
           hookah: manualProfile.hookah,
           happy_hour: manualProfile.happyHour,
-          main_photo_url: manualProfile.mainPhotoUrl,
+          main_photo_url: onboardingPhotos[0] ?? "",
           role_title: manualContact.roleTitle,
         });
         setVendorId(createResult.vendor_id);
@@ -1063,6 +1392,21 @@ export function VendorSection({
         trackEvent(analyticsEvents.vendorManualAddCompleted, {
           businessName: manualInfo.businessName.trim(),
         });
+      }
+
+      // Attach the photos now that the vendor and its venue exist. Do this before
+      // any Stripe redirect, or the URLs are lost when we leave the page.
+      // A failure here is not fatal — the vendor is created, and they can add
+      // photos from the dashboard — but it must not pass silently.
+      if (onboardingPhotos.length > 0) {
+        try {
+          await saveVenueImages(onboardingPhotos);
+        } catch (error) {
+          console.error("Could not attach venue photos during onboarding", error);
+          setStatusMessage(
+            "Your business was created, but the photos didn't save. You can add them from your dashboard."
+          );
+        }
       }
 
       if (selectedPlan === "pro" && finalVendorId) {
@@ -1136,10 +1480,13 @@ export function VendorSection({
         payload.reservation_url = profileForm.reservation_url.trim();
       if (profileForm.hours.trim())
         payload.hours_text = profileForm.hours.trim();
-      if (profileForm.image_primary_url.trim())
-        payload.image_primary_url = profileForm.image_primary_url.trim();
 
+      // The gallery is its own endpoint, and it keeps image_primary_url in sync
+      // with photo 0 — so this must not also send image_primary_url.
       await updateVendorVenue(payload);
+      if (venuePhotosLoaded) {
+        await saveVenueImages(venuePhotos);
+      }
       setProfileMessage("Profile updated successfully.");
     } catch (error) {
       setProfileMessage(
@@ -1151,6 +1498,7 @@ export function VendorSection({
   };
 
   const stepTitle: Record<VendorStep, string> = {
+    loading: "",
     claim:
       searchInput.trim().length >= 2
         ? "Select your business"
@@ -1159,6 +1507,7 @@ export function VendorSection({
     "not-found": "Add your business",
     match: "Select your business",
     contact: "Your contact info",
+    photos: "Add your photos",
     "manual-info": "Business Info",
     "manual-location": "Location - Required",
     "manual-profile": "Genie Profile",
@@ -1168,9 +1517,48 @@ export function VendorSection({
     success: "",
     dashboard: "",
     profile: "Edit Profile",
+    analytics: "Analytics",
+    offers: "Manage Offers",
+    boost: "Boost Your Listing",
+    "influencer-codes": "Influencer Codes",
+    settings: "Settings",
   };
 
   const isPro = Boolean(dashboardData?.is_pro);
+
+  if (step === "loading") {
+    return (
+      <section ref={sectionRef} className="flex min-h-[40vh] flex-col items-center justify-center gap-4 pb-28">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-red-200 border-t-red-600 dark:border-white/10 dark:border-t-red-500" />
+        <p className="text-sm text-gray-500 dark:text-white/50">Checking your profile…</p>
+      </section>
+    );
+  }
+
+  // Onboarding needs an account: photo upload and the final createVendorBusiness
+  // call both require a bearer token. Ask up front rather than letting someone
+  // fill in five screens of business details and fail at the last step.
+  if (!account && step !== "dashboard") {
+    return (
+      <section ref={sectionRef} className="relative min-h-screen px-5 pb-32 pt-6">
+        <h2 className="mt-8 text-center text-[1.65rem] font-semibold leading-tight text-gray-900 dark:text-white">
+          Sign in to list your business
+        </h2>
+        <p className="mx-auto mt-3 max-w-sm text-center text-[15px] leading-relaxed text-gray-500 dark:text-white/60">
+          You&apos;ll need an account so we can save your business, your photos, and
+          your plan. It only takes a moment.
+        </p>
+        <div className="mx-auto mt-8 flex max-w-sm flex-col gap-3">
+          <ActionButton onClick={onOpenAccount} className="w-full">
+            Sign in or create an account
+          </ActionButton>
+          <ActionButton onClick={onContinueHome} variant="secondary" className="w-full">
+            Not now
+          </ActionButton>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section
@@ -1293,6 +1681,32 @@ export function VendorSection({
                 from scratch
               </p>
             )}
+
+          {!isSearching &&
+            suggestions.length === 0 &&
+            searchInput.trim().length >= 2 && (
+              <div className="space-y-2 pt-1">
+                <p className="text-center text-[13px] text-gray-400 dark:text-white/42">
+                  No results for &ldquo;{searchInput}&rdquo;
+                </p>
+                <ActionButton
+                  onClick={() => {
+                    setEntryMode("manual");
+                    setManualInfo((c) => ({ ...c, businessName: searchInput }));
+                    writeVendorDraft({
+                      ...readVendorDraft(),
+                      isManualEntry: true,
+                      currentStep: "manual-info",
+                    });
+                    setStep("manual-info");
+                    trackEvent(analyticsEvents.vendorManualAddStarted);
+                  }}
+                  className="w-full"
+                >
+                  Add my business manually
+                </ActionButton>
+              </div>
+            )}
         </div>
       )}
 
@@ -1408,6 +1822,31 @@ export function VendorSection({
         </form>
       )}
 
+      {/* ======== STEP: Photos (claim/match path) ======== */}
+      {step === "photos" && (
+        <form
+          className="mt-6 space-y-4"
+          onSubmit={(e: FormEvent<HTMLFormElement>) => {
+            e.preventDefault();
+            writeVendorDraft({ ...readVendorDraft(), currentStep: "plan" });
+            setStep("plan");
+          }}
+        >
+          <VenuePhotoPicker
+            photos={onboardingPhotos}
+            onChange={setOnboardingPhotos}
+            onUploadingChange={setPhotosUploading}
+          />
+          <ActionButton type="submit" className="w-full" disabled={photosUploading}>
+            {photosUploading
+              ? "Uploading photos…"
+              : onboardingPhotos.length > 0
+                ? "Next"
+                : "Skip for now"}
+          </ActionButton>
+        </form>
+      )}
+
       {/* ======== STEP: MANUAL — Business Info ======== */}
       {step === "manual-info" && (
         <form
@@ -1424,8 +1863,6 @@ export function VendorSection({
         >
           <VendorInput label="Business Name" value={manualInfo.businessName} placeholder="Business Name" onChange={(v) => setManualInfo((c) => ({ ...c, businessName: v }))} />
           <SelectInput label="Category / Type" value={manualInfo.category} placeholder="restaurant, bar, & grill" options={["Restaurant", "Bar", "Lounge", "Club", "Cafe", "Food Truck", "Other"]} onChange={(v) => setManualInfo((c) => ({ ...c, category: v }))} />
-          <VendorInput label="Cuisine" value={manualInfo.cuisine} placeholder="Seafood, Mexican, Italian" onChange={(v) => setManualInfo((c) => ({ ...c, cuisine: v }))} />
-          <VendorInput label="Phone" value={manualInfo.phone} placeholder="Phone" onChange={(v) => setManualInfo((c) => ({ ...c, phone: v }))} />
           <VendorInput label="Website" value={manualInfo.website} placeholder="Website" type="url" onChange={(v) => setManualInfo((c) => ({ ...c, website: v }))} />
           <VendorInput label="Reservation Link (if available)" value={manualInfo.reservationUrl} placeholder="Reservation URL" type="url" onChange={(v) => setManualInfo((c) => ({ ...c, reservationUrl: v }))} />
           <VendorInput label="Instagram" value={manualInfo.instagram} placeholder="Instagram" onChange={(v) => setManualInfo((c) => ({ ...c, instagram: v }))} />
@@ -1467,11 +1904,14 @@ export function VendorSection({
         >
           <VendorInput label="Short Description / Vibe" value={manualProfile.shortDescription} placeholder="Short Description / Vibe" onChange={(v) => setManualProfile((c) => ({ ...c, shortDescription: v }))} />
           <SelectInput label="Price Band" value={manualProfile.priceBand} placeholder="$, $$, $$$, $$$$ - (Optional)" options={["$", "$$", "$$$", "$$$$"]} onChange={(v) => setManualProfile((c) => ({ ...c, priceBand: v }))} />
-          <VendorInput label="Music" value={manualProfile.music} placeholder="Music" onChange={(v) => setManualProfile((c) => ({ ...c, music: v }))} />
-          <VendorInput label="Hookah" value={manualProfile.hookah} placeholder="Hookah" onChange={(v) => setManualProfile((c) => ({ ...c, hookah: v }))} />
-          <VendorInput label="Happy Hour" value={manualProfile.happyHour} placeholder="Happy Hour" onChange={(v) => setManualProfile((c) => ({ ...c, happyHour: v }))} />
-          <VendorInput label="Main Photo - Required" value={manualProfile.mainPhotoUrl} placeholder="Main Photo URL" type="url" onChange={(v) => setManualProfile((c) => ({ ...c, mainPhotoUrl: v }))} />
-          <ActionButton type="submit" className="w-full">Next</ActionButton>
+          <VenuePhotoPicker
+            photos={onboardingPhotos}
+            onChange={setOnboardingPhotos}
+            onUploadingChange={setPhotosUploading}
+          />
+          <ActionButton type="submit" className="w-full" disabled={photosUploading}>
+            {photosUploading ? "Uploading photos…" : "Next"}
+          </ActionButton>
         </form>
       )}
 
@@ -1761,6 +2201,63 @@ export function VendorSection({
                     </>
                   ) : null}
 
+                  {/* ── Widgets: check-ins today | active offers | open-closed ── */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-3 py-4 text-center dark:bg-black/25">
+                      <p className="text-[1.35rem] font-bold text-gray-900 dark:text-white">
+                        {d.checkins_today ?? 0}
+                      </p>
+                      <p className="mt-0.5 text-[0.72rem] text-gray-500 dark:text-white/55">
+                        Check-ins Today
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setStep("offers")}
+                      className="rounded-2xl border border-[#E7070380] bg-white/5 px-3 py-4 text-center transition hover:bg-white/10 dark:bg-black/25 dark:hover:bg-black/35"
+                    >
+                      <p className="text-[1.35rem] font-bold text-gray-900 dark:text-white">
+                        {d.offer_count ?? 0}
+                      </p>
+                      <p className="mt-0.5 text-[0.72rem] text-gray-500 dark:text-white/55">
+                        Active Offers
+                      </p>
+                    </button>
+
+                    {(() => {
+                      const isOpen = d.is_open_now ?? false;
+                      return (
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={isOpen}
+                          aria-label="We're open"
+                          disabled={isOpenToggleSaving}
+                          onClick={() => void toggleOpenNow(!isOpen)}
+                          className="flex flex-col items-center justify-center rounded-2xl border border-[#E7070380] bg-white/5 px-3 py-4 transition hover:bg-white/10 disabled:opacity-50 dark:bg-black/25 dark:hover:bg-black/35"
+                        >
+                          <span
+                            className={`flex h-6 w-11 items-center rounded-full p-0.5 transition ${
+                              isOpen
+                                ? "bg-green-500 dark:bg-[#34c059]"
+                                : "bg-gray-300 dark:bg-white/25"
+                            }`}
+                          >
+                            <span
+                              className={`h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                                isOpen ? "translate-x-5" : "translate-x-0"
+                              }`}
+                            />
+                          </span>
+                          <p className="mt-1.5 text-[0.72rem] text-gray-500 dark:text-white/55">
+                            {isOpen ? "We're Open" : "We're Closed"}
+                          </p>
+                        </button>
+                      );
+                    })()}
+                  </div>
+
                   {/* ── Business Details ── */}
                   <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-5 dark:bg-black/25">
                     <div className="flex items-center justify-between py-4">
@@ -1813,6 +2310,34 @@ export function VendorSection({
                     </div>
                   </div>
 
+                  {/* ── Quick Actions grid ── */}
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { label: "Analytics", icon: (
+                        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 4-6"/></svg>
+                      ), step: "analytics" as VendorStep },
+                      { label: "Manage Offers", icon: (
+                        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>
+                      ), step: "offers" as VendorStep },
+                      { label: "Influencer Codes", icon: (
+                        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                      ), step: "influencer-codes" as VendorStep },
+                      { label: "Settings", icon: (
+                        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                      ), step: "settings" as VendorStep },
+                    ].map(({ label, icon, step: target }) => (
+                      <button
+                        key={target}
+                        type="button"
+                        onClick={() => setStep(target)}
+                        className="flex items-center gap-3 rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 text-left transition hover:bg-white/10 dark:bg-black/20 dark:hover:bg-black/30"
+                      >
+                        <span className="text-red-500 dark:text-[#ff7b7b]">{icon}</span>
+                        <span className="text-[0.88rem] font-medium text-gray-800 dark:text-white">{label}</span>
+                      </button>
+                    ))}
+                  </div>
+
                   {/* ── Bottom section: Pro → Boost status | Free → Upgrade + Boost CTAs ── */}
                   {isPro ? (
                     <div className="space-y-3">
@@ -1843,36 +2368,7 @@ export function VendorSection({
                         </button>
                       </div>
                       <ActionButton
-                        onClick={() => {
-                          void (async () => {
-                            if (!d.vendor_id) {
-                              setStatusMessage(
-                                "Vendor profile is still loading. Please try again in a moment."
-                              );
-                              return;
-                            }
-                            try {
-                              const { checkout_url } =
-                                await createSubscriptionCheckout({
-                                  vendor_id: d.vendor_id,
-                                  plan_type: "founding_partner",
-                                });
-                              if (!checkout_url) {
-                                setStatusMessage(
-                                  "Boost is unavailable right now. Please try again later."
-                                );
-                                return;
-                              }
-                              window.location.href = checkout_url;
-                            } catch (err) {
-                              const message =
-                                err instanceof Error && err.message
-                                  ? err.message
-                                  : "Could not start boost.";
-                              setStatusMessage(message);
-                            }
-                          })();
-                        }}
+                        onClick={() => setStep("boost")}
                         className="w-full"
                       >
                         Boost your listing
@@ -1884,71 +2380,13 @@ export function VendorSection({
                         Unlock more insights & boost your business
                       </p>
                       <ActionButton
-                        onClick={() => {
-                          void (async () => {
-                            if (!d.vendor_id) {
-                              setStatusMessage(
-                                "Vendor profile is still loading. Please try again in a moment."
-                              );
-                              return;
-                            }
-                            try {
-                              const { checkout_url } =
-                                await createSubscriptionCheckout({
-                                  vendor_id: d.vendor_id,
-                                  plan_type: "founding_partner",
-                                });
-                              if (!checkout_url) {
-                                setStatusMessage(
-                                  "Upgrade is unavailable right now. Please try again later."
-                                );
-                                return;
-                              }
-                              window.location.href = checkout_url;
-                            } catch (err) {
-                              const message =
-                                err instanceof Error && err.message
-                                  ? err.message
-                                  : "Could not start upgrade.";
-                              setStatusMessage(message);
-                            }
-                          })();
-                        }}
+                        onClick={() => setStep("boost")}
                         className="w-full"
                       >
                         Upgrade to Pro
                       </ActionButton>
                       <ActionButton
-                        onClick={() => {
-                          void (async () => {
-                            if (!d.vendor_id) {
-                              setStatusMessage(
-                                "Vendor profile is still loading. Please try again in a moment."
-                              );
-                              return;
-                            }
-                            try {
-                              const { checkout_url } =
-                                await createSubscriptionCheckout({
-                                  vendor_id: d.vendor_id,
-                                  plan_type: "founding_partner",
-                                });
-                              if (!checkout_url) {
-                                setStatusMessage(
-                                  "Boost is unavailable right now. Please try again later."
-                                );
-                                return;
-                              }
-                              window.location.href = checkout_url;
-                            } catch (err) {
-                              const message =
-                                err instanceof Error && err.message
-                                  ? err.message
-                                  : "Could not start boost.";
-                              setStatusMessage(message);
-                            }
-                          })();
-                        }}
+                        onClick={() => setStep("boost")}
                         variant="secondary"
                         className="w-full"
                       >
@@ -2003,10 +2441,23 @@ export function VendorSection({
           <VendorInput value={profileForm.website_url} placeholder="Website URL" type="url" onChange={(v) => setProfileForm((c) => ({ ...c, website_url: v }))} />
           <VendorInput value={profileForm.reservation_url} placeholder="Reservation URL" type="url" onChange={(v) => setProfileForm((c) => ({ ...c, reservation_url: v }))} />
           <VendorInput value={profileForm.hours} placeholder="Hours (e.g. Open Until 2 AM)" onChange={(v) => setProfileForm((c) => ({ ...c, hours: v }))} />
-          <VendorInput value={profileForm.image_primary_url} placeholder="Primary image URL" type="url" onChange={(v) => setProfileForm((c) => ({ ...c, image_primary_url: v }))} />
+          <VenuePhotoPicker
+            photos={venuePhotos}
+            onChange={setVenuePhotos}
+            onUploadingChange={setVenuePhotosUploading}
+            label="Venue photos"
+          />
 
-          <ActionButton type="submit" className="w-full" disabled={isProfileSaving}>
-            {isProfileSaving ? "Saving..." : "Save Profile"}
+          <ActionButton
+            type="submit"
+            className="w-full"
+            disabled={isProfileSaving || venuePhotosUploading}
+          >
+            {venuePhotosUploading
+              ? "Uploading photos…"
+              : isProfileSaving
+                ? "Saving..."
+                : "Save Profile"}
           </ActionButton>
           <ActionButton onClick={() => { setStep("dashboard"); setProfileMessage(null); }} variant="secondary" className="w-full">
             Back to Dashboard
@@ -2022,6 +2473,659 @@ export function VendorSection({
             </div>
           )}
         </form>
+      )}
+
+      {/* ======== STEP: ANALYTICS ======== */}
+      {step === "analytics" && (() => {
+        const periodLabel =
+          analyticsPeriod === "7_days" ? "Last 7 Days" : analyticsPeriod === "30_days" ? "Last 30 Days" : "All Time";
+        const appearancesPoints = analyticsDaily.map((r) => r.genie_appearances ?? 0);
+        const savesPoints = analyticsDaily.map((r) => r.saves ?? 0);
+        const profileViewsPoints = analyticsDaily.map((r) => r.profile_views ?? 0);
+        const hasData = analyticsDaily.length > 0;
+
+        return (
+          <div className="mt-2 space-y-6 pb-24">
+            {/* Period selector */}
+            <div className="flex gap-2">
+              {(["7_days","30_days","all_time"] as const).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setAnalyticsPeriod(p)}
+                  className={`flex-1 rounded-xl py-2 text-[0.8rem] font-semibold transition ${
+                    analyticsPeriod === p
+                      ? "bg-red-600 text-white"
+                      : "border border-[#E7070380] text-gray-500 dark:text-white/60"
+                  }`}
+                >
+                  {p === "7_days" ? "7 Days" : p === "30_days" ? "30 Days" : "All Time"}
+                </button>
+              ))}
+            </div>
+
+            {isAnalyticsLoading ? (
+              <p className="py-8 text-center text-[0.85rem] text-gray-400 dark:text-white/50">Loading analytics…</p>
+            ) : !hasData ? (
+              <p className="py-8 text-center text-[0.85rem] text-gray-400 dark:text-white/50">No analytics data yet for this period.</p>
+            ) : (
+              <>
+                {/* Line chart: Genie Appearances */}
+                <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 dark:bg-black/20">
+                  <p className="mb-2 text-[0.82rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Genie Appearances</p>
+                  <PerformanceChart points={appearancesPoints.map((v) => ({ value: v }))} headLabel={periodLabel} />
+                  <p className="mt-1 text-right text-[1.1rem] font-bold text-gray-900 dark:text-white">{(analyticsTotals?.genie_appearances ?? appearancesPoints.reduce((a,b) => a+b,0)).toLocaleString()} total</p>
+                </div>
+
+                {/* Line chart: Saves */}
+                <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 dark:bg-black/20">
+                  <p className="mb-2 text-[0.82rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Saves</p>
+                  <PerformanceChart points={savesPoints.map((v) => ({ value: v }))} headLabel={periodLabel} />
+                  <p className="mt-1 text-right text-[1.1rem] font-bold text-gray-900 dark:text-white">{(analyticsTotals?.saves ?? savesPoints.reduce((a,b) => a+b,0)).toLocaleString()} total</p>
+                </div>
+
+                {/* Line chart: Profile Views */}
+                <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 dark:bg-black/20">
+                  <p className="mb-2 text-[0.82rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Profile Views</p>
+                  <PerformanceChart points={profileViewsPoints.map((v) => ({ value: v }))} headLabel={periodLabel} />
+                  <p className="mt-1 text-right text-[1.1rem] font-bold text-gray-900 dark:text-white">{(analyticsTotals?.profile_views ?? profileViewsPoints.reduce((a,b) => a+b,0)).toLocaleString()} total</p>
+                </div>
+
+                {/* Engagement summary */}
+                {analyticsTotals ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-3 dark:bg-black/20">
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Call Clicks</p>
+                      <p className="mt-1 text-[1.1rem] font-bold text-gray-900 dark:text-white">{analyticsTotals.call_clicks.toLocaleString()}</p>
+                    </div>
+                    <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-3 dark:bg-black/20">
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Map Clicks</p>
+                      <p className="mt-1 text-[1.1rem] font-bold text-gray-900 dark:text-white">{analyticsTotals.map_clicks.toLocaleString()}</p>
+                    </div>
+                    <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-3 dark:bg-black/20">
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Reservation Clicks</p>
+                      <p className="mt-1 text-[1.1rem] font-bold text-gray-900 dark:text-white">{analyticsTotals.reservation_clicks.toLocaleString()}</p>
+                    </div>
+                    <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-3 dark:bg-black/20">
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Engagement Rate</p>
+                      <p className="mt-1 text-[1.1rem] font-bold text-gray-900 dark:text-white">{(analyticsTotals.engagement_rate * 100).toFixed(1)}%</p>
+                    </div>
+                  </div>
+                ) : null}
+              </>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ======== STEP: OFFERS ======== */}
+      {step === "offers" && (() => {
+        const offers = dashboardData?.offers ?? [];
+        return (
+          <div className="mt-2 space-y-4 pb-24">
+            {/* Influencer offers — Active / Pending / Rejected */}
+            {(() => {
+              const statusOf = (o: InfluencerOffer) =>
+                (o.status ?? "pending").toLowerCase();
+              const counts = {
+                active: influencerOffers.filter((o) => statusOf(o) === "active")
+                  .length,
+                pending: influencerOffers.filter(
+                  (o) => statusOf(o) === "pending"
+                ).length,
+                rejected: influencerOffers.filter(
+                  (o) => statusOf(o) === "rejected"
+                ).length,
+                cancelled: influencerOffers.filter(
+                  (o) => statusOf(o) === "cancelled"
+                ).length,
+              };
+              const tabs: Array<{
+                key: "active" | "pending" | "rejected" | "cancelled";
+                label: string;
+              }> = [
+                { key: "active", label: "Active" },
+                { key: "pending", label: "Pending" },
+                { key: "rejected", label: "Rejected" },
+                { key: "cancelled", label: "Cancelled" },
+              ];
+              const filtered = influencerOffers.filter(
+                (o) => statusOf(o) === vendorOfferFilter
+              );
+              return (
+                <div className="space-y-3">
+                  <p className="text-[0.72rem] font-bold uppercase tracking-[0.14em] text-red-500 dark:text-[#ff7b7b]">
+                    Influencer Offers
+                  </p>
+
+                  {/* Segmented tab bar with a sliding red indicator */}
+                  <div className="relative flex rounded-full border border-[#E7070380] bg-white/5 p-1 dark:bg-black/20">
+                    {/* sliding pill — moves to the active tab */}
+                    <span
+                      aria-hidden
+                      className="absolute top-1 bottom-1 rounded-full bg-red-600 transition-transform duration-300 ease-out"
+                      style={{
+                        width: "calc((100% - 0.5rem) / 4)",
+                        left: "0.25rem",
+                        transform: `translateX(${
+                          tabs.findIndex((t) => t.key === vendorOfferFilter) * 100
+                        }%)`,
+                      }}
+                    />
+                    {tabs.map((tab) => {
+                      const isActive = vendorOfferFilter === tab.key;
+                      return (
+                        <button
+                          key={tab.key}
+                          type="button"
+                          onClick={() => setVendorOfferFilter(tab.key)}
+                          className={`relative z-10 flex-1 rounded-full px-1 py-1.5 text-[0.72rem] font-semibold transition-colors duration-300 ${
+                            isActive
+                              ? "text-white"
+                              : "text-gray-500 dark:text-white/60"
+                          }`}
+                        >
+                          {tab.label}
+                          {counts[tab.key] > 0 ? ` (${counts[tab.key]})` : ""}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {isLoadingPending ? (
+                    <div className="flex min-h-[6rem] items-center justify-center">
+                      <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-red-600" />
+                    </div>
+                  ) : pendingError ? (
+                    <p className="rounded-2xl border border-red-300/70 bg-red-50/60 px-4 py-3 text-[0.8rem] text-red-700 dark:border-red-500/30 dark:bg-red-500/5 dark:text-red-300">
+                      {pendingError}
+                    </p>
+                  ) : filtered.length === 0 ? (
+                    <p className="rounded-2xl border border-gray-200 bg-white/5 px-4 py-3 text-center text-[0.82rem] text-gray-400 dark:border-white/10 dark:text-white/40">
+                      {vendorOfferFilter === "pending"
+                        ? "No pending requests."
+                        : vendorOfferFilter === "active"
+                          ? "No active offers."
+                          : vendorOfferFilter === "rejected"
+                            ? "No rejected offers."
+                            : "No cancelled offers."}
+                    </p>
+                  ) : (
+                    filtered.map((offer) => {
+                      const status = statusOf(offer);
+                      const discount = offer.discount_value
+                        ? offer.discount_type === "percent"
+                          ? `${offer.discount_value}%`
+                          : `$${offer.discount_value}`
+                        : null;
+                      const isRejecting = rejectingOfferId === offer.id;
+                      const isBusy = reviewingOfferId === offer.id;
+                      const cardTone =
+                        status === "active"
+                          ? "border-green-300/70 bg-green-50/60 dark:border-green-500/30 dark:bg-green-500/5"
+                          : status === "rejected"
+                            ? "border-red-300/70 bg-red-50/50 dark:border-red-500/30 dark:bg-red-500/5"
+                            : status === "cancelled"
+                              ? "border-gray-300/70 bg-gray-100/60 dark:border-white/15 dark:bg-white/5"
+                              : "border-amber-300/70 bg-amber-50/60 dark:border-amber-500/30 dark:bg-amber-500/5";
+                      return (
+                        <div
+                          key={offer.id}
+                          className={`rounded-2xl border px-4 py-4 ${cardTone}`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[0.9rem] font-semibold text-gray-900 dark:text-white">
+                                {offer.offer_title}
+                              </p>
+                              <div className="mt-1 flex flex-wrap items-center gap-2">
+                                <span className="text-[0.72rem] capitalize text-gray-500 dark:text-white/50">
+                                  {offer.offer_type?.replace(/_/g, " ")}
+                                </span>
+                                {discount ? (
+                                  <span className="text-[0.72rem] font-semibold text-red-600 dark:text-[#ff7b7b]">
+                                    {discount} off
+                                  </span>
+                                ) : null}
+                              </div>
+                              {offer.offer_description ? (
+                                <p className="mt-1.5 text-[0.78rem] text-gray-500 dark:text-white/50">
+                                  {offer.offer_description}
+                                </p>
+                              ) : null}
+                              {offer.promo_code ? (
+                                <p className="mt-1.5 text-[0.72rem] font-bold uppercase tracking-wider text-red-600 dark:text-[#ff7b7b]">
+                                  {offer.promo_code}
+                                </p>
+                              ) : null}
+                              {(status === "rejected" ||
+                                status === "cancelled") &&
+                              offer.rejection_reason ? (
+                                <p className="mt-1.5 text-[0.72rem] text-red-600 dark:text-red-300">
+                                  Reason: {offer.rejection_reason}
+                                </p>
+                              ) : null}
+                            </div>
+                          </div>
+
+                          {status === "pending" &&
+                            (isRejecting ? (
+                              <div className="mt-3 space-y-2">
+                                <VendorInput
+                                  value={rejectReason}
+                                  placeholder="Reason for rejection (optional)"
+                                  onChange={setRejectReason}
+                                />
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    disabled={isBusy}
+                                    onClick={() =>
+                                      void handleReviewOffer(
+                                        offer.id,
+                                        "reject",
+                                        rejectReason.trim() || undefined
+                                      )
+                                    }
+                                    className="flex-1 rounded-lg border border-red-500 bg-red-600 px-3 py-2 text-[0.78rem] font-semibold text-white disabled:opacity-60"
+                                  >
+                                    {isBusy ? "…" : "Confirm Reject"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={isBusy}
+                                    onClick={() => {
+                                      setRejectingOfferId(null);
+                                      setRejectReason("");
+                                    }}
+                                    className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-[0.78rem] font-medium text-gray-600 dark:border-white/20 dark:text-white/70"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="mt-3 flex gap-2">
+                                <button
+                                  type="button"
+                                  disabled={isBusy}
+                                  onClick={() =>
+                                    void handleReviewOffer(offer.id, "approve")
+                                  }
+                                  className="flex-1 rounded-lg border border-green-500 bg-green-600 px-3 py-2 text-[0.78rem] font-semibold text-white disabled:opacity-60"
+                                >
+                                  {isBusy ? "…" : "Approve"}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={isBusy}
+                                  onClick={() => {
+                                    setRejectingOfferId(offer.id);
+                                    setRejectReason("");
+                                  }}
+                                  className="flex-1 rounded-lg border border-[#E7070380] px-3 py-2 text-[0.78rem] font-medium text-gray-600 dark:text-white/70"
+                                >
+                                  Reject
+                                </button>
+                              </div>
+                            ))}
+
+                          {status === "active" &&
+                            (isRejecting ? (
+                              <div className="mt-3 space-y-2">
+                                <VendorInput
+                                  value={rejectReason}
+                                  placeholder="Reason for cancelling (optional)"
+                                  onChange={setRejectReason}
+                                />
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    disabled={isBusy}
+                                    onClick={() =>
+                                      void handleReviewOffer(
+                                        offer.id,
+                                        "cancel",
+                                        rejectReason.trim() || undefined
+                                      )
+                                    }
+                                    className="flex-1 rounded-lg border border-red-500 bg-red-600 px-3 py-2 text-[0.78rem] font-semibold text-white disabled:opacity-60"
+                                  >
+                                    {isBusy ? "…" : "Confirm Cancel"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={isBusy}
+                                    onClick={() => {
+                                      setRejectingOfferId(null);
+                                      setRejectReason("");
+                                    }}
+                                    className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-[0.78rem] font-medium text-gray-600 dark:border-white/20 dark:text-white/70"
+                                  >
+                                    Keep Active
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="mt-3">
+                                <button
+                                  type="button"
+                                  disabled={isBusy}
+                                  onClick={() => {
+                                    setRejectingOfferId(offer.id);
+                                    setRejectReason("");
+                                  }}
+                                  className="w-full rounded-lg border border-[#E7070380] px-3 py-2 text-[0.78rem] font-medium text-gray-600 dark:text-white/70"
+                                >
+                                  Cancel Offer
+                                </button>
+                              </div>
+                            ))}
+                        </div>
+                      );
+                    })
+                  )}
+                  <div className="h-px bg-gray-200 dark:bg-white/10" />
+                </div>
+              );
+            })()}
+
+            {/* Offer list */}
+            <div className="space-y-3">
+              {offers.map((offer) => (
+                <div
+                  key={offer.id}
+                  className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 dark:bg-black/20"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[0.9rem] font-semibold text-gray-900 dark:text-white">{offer.title}</p>
+                      <div className="mt-1 flex items-center gap-2">
+                        <span className={`inline-block rounded-full px-2 py-0.5 text-[0.7rem] font-semibold ${
+                          offer.active
+                            ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                            : "bg-gray-100 text-gray-500 dark:bg-white/10 dark:text-white/40"
+                        }`}>
+                          {offer.active ? "Active" : "Inactive"}
+                        </span>
+                        <span className="text-[0.72rem] text-gray-400 dark:text-white/40 capitalize">{offer.offer_type?.replace(/_/g," ")}</span>
+                      </div>
+                      {offer.redeem_instructions && (
+                        <p className="mt-1.5 text-[0.78rem] text-gray-500 dark:text-white/50">{offer.redeem_instructions}</p>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void toggleVendorOffer(offer.id, !offer.active)
+                            .then(() => void loadDashboard())
+                            .catch(() => setOfferMessage("Could not update offer."));
+                        }}
+                        className="rounded-lg border border-[#E7070380] px-2.5 py-1 text-[0.72rem] font-medium text-gray-600 dark:text-white/70 hover:bg-red-50 dark:hover:bg-white/5"
+                      >
+                        {offer.active ? "Deactivate" : "Reactivate"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {offerMessage && (
+              <p className={`text-sm ${/could ?n[o']?t|failed|error|required|not found|unable/i.test(offerMessage) ? "text-red-500" : "text-green-500"}`}>{offerMessage}</p>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ======== STEP: BOOST ======== */}
+      {step === "boost" && (() => {
+        // `id` is the Stripe tier code Xano's checkout_vendor_plan expects as
+        // `boost_tier` — it must stay in sync with the stripe_price_boost_* env vars.
+        const tiers = [
+          { id: "1999", label: "3-Day Boost",   price: "$19.99", desc: "Quick visibility spike for a weekend or event" },
+          { id: "3999", label: "7-Day Boost",   price: "$39.99", desc: "Week-long push — great for new menu launches" },
+          { id: "5999", label: "14-Day Boost",  price: "$59.99", desc: "Two-week momentum for sustained discovery" },
+          { id: "7999", label: "Monthly Boost", price: "$79.99", desc: "30 days of top placement in Genie results" },
+        ];
+        return (
+          <div className="mt-2 space-y-4 pb-24">
+            <p className="text-[0.9rem] text-gray-500 dark:text-white/60">
+              Boost puts your listing at the top of Genie results for your area. Pick a duration:
+            </p>
+            <div className="space-y-3">
+              {tiers.map((tier) => (
+                <button
+                  key={tier.id}
+                  type="button"
+                  onClick={() => setSelectedBoostTier(tier.id)}
+                  className={`w-full rounded-2xl border px-4 py-4 text-left transition ${
+                    selectedBoostTier === tier.id
+                      ? "border-red-500 bg-red-50 dark:border-red-500 dark:bg-red-900/20"
+                      : "border-[#E7070380] bg-white/5 dark:bg-black/20"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <p className="text-[0.95rem] font-semibold text-gray-900 dark:text-white">{tier.label}</p>
+                    <p className="text-[1.1rem] font-bold text-red-600 dark:text-[#ff7b7b]">{tier.price}</p>
+                  </div>
+                  <p className="mt-1 text-[0.8rem] text-gray-500 dark:text-white/55">{tier.desc}</p>
+                </button>
+              ))}
+            </div>
+            <ActionButton
+              onClick={() => {
+                if (!selectedBoostTier) { setStatusMessage("Please select a boost duration."); return; }
+                setIsBoostLoading(true);
+                const vid = vendorId ?? dashboardData?.vendor_id;
+                if (!vid) { setStatusMessage("Vendor not found. Please try again."); setIsBoostLoading(false); return; }
+                void createSubscriptionCheckout({ vendor_id: vid, plan_type: "boost", boost_tier: selectedBoostTier })
+                  .then(({ checkout_url }) => { window.location.href = checkout_url; })
+                  .catch((err) => { setStatusMessage(err instanceof Error ? err.message : "Could not start checkout."); })
+                  .finally(() => setIsBoostLoading(false));
+              }}
+              disabled={isBoostLoading || !selectedBoostTier}
+              className="w-full"
+            >
+              {isBoostLoading ? "Redirecting to Stripe..." : "Purchase Boost"}
+            </ActionButton>
+            <p className="text-center text-[0.75rem] text-gray-400 dark:text-white/40">
+              You&apos;ll be taken to Stripe to complete your purchase securely.
+            </p>
+          </div>
+        );
+      })()}
+
+      {/* ======== STEP: INFLUENCER CODES ======== */}
+      {step === "influencer-codes" && (() => {
+        const codes = influencerCodes;
+        const selected = codes.find((c) => c.code === selectedInfluencerCode) ?? null;
+        return (
+          <div className="mt-2 space-y-4 pb-24">
+            <p className="text-[0.82rem] text-gray-400 dark:text-white/50">
+              Influencer codes driving traffic to your listing. Tap a code to see redemption history.
+            </p>
+
+            {influencerLoading && (
+              <div className="flex justify-center py-8">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-red-500 border-t-transparent" />
+              </div>
+            )}
+
+            {/* Code list */}
+            {!influencerLoading && !selected && (
+              <>
+                {codes.length === 0 ? (
+                  <p className="text-center text-[0.88rem] text-gray-400 dark:text-white/50 py-6">
+                    No influencer codes yet.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {codes.map((c) => (
+                      <button
+                        key={c.code}
+                        type="button"
+                        onClick={() => setSelectedInfluencerCode(c.code)}
+                        className="w-full rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 text-left transition hover:bg-white/10 dark:bg-black/20 dark:hover:bg-black/30"
+                      >
+                        <div className="flex items-center justify-between">
+                          <p className="text-[0.95rem] font-semibold text-gray-900 dark:text-white font-mono">{c.code}</p>
+                          <svg viewBox="0 0 24 24" className="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" strokeWidth="2"><path d="m9 6 6 6-6 6"/></svg>
+                        </div>
+                        <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+                          <div>
+                            <p className="text-[1rem] font-bold text-gray-900 dark:text-white">{c.redeemed}</p>
+                            <p className="text-[0.68rem] text-gray-400 dark:text-white/50">Redeemed</p>
+                          </div>
+                          <div>
+                            <p className="text-[1rem] font-bold text-gray-900 dark:text-white">{c.new_users}</p>
+                            <p className="text-[0.68rem] text-gray-400 dark:text-white/50">New Users</p>
+                          </div>
+                          <div>
+                            <p className="text-[1rem] font-bold text-gray-900 dark:text-white">{c.vibee_conversions}</p>
+                            <p className="text-[0.68rem] text-gray-400 dark:text-white/50">V.I.Bee Conv.</p>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Detail view */}
+            {selected && (
+              <div className="space-y-4">
+                <button type="button" onClick={() => setSelectedInfluencerCode(null)} className="flex items-center gap-1.5 text-[0.85rem] text-red-500">
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H6m0 0 5-5m-5 5 5 5"/></svg>
+                  All Codes
+                </button>
+                <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 dark:bg-black/20">
+                  <p className="text-[1.1rem] font-bold font-mono text-gray-900 dark:text-white">{selected.code}</p>
+                  <div className="mt-3 grid grid-cols-3 gap-3 text-center">
+                    {[{ label: "Redeemed", val: selected.redeemed },{ label: "New Users", val: selected.new_users },{ label: "V.I.Bee", val: selected.vibee_conversions }].map(({ label, val }) => (
+                      <div key={label} className="rounded-xl border border-[#E7070380] py-3 dark:border-[#E7070380]">
+                        <p className="text-[1.2rem] font-bold text-gray-900 dark:text-white">{val}</p>
+                        <p className="text-[0.68rem] text-gray-400 dark:text-white/50">{label}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {(selected.history ?? []).length > 0 && (
+                  <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 dark:bg-black/20">
+                    <p className="mb-3 text-[0.82rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Redemption History</p>
+                    <div className="space-y-2">
+                      {(selected.history ?? []).map((date, i) => (
+                        <div key={i} className="flex items-center justify-between border-t border-red-100/30 pt-2 dark:border-white/10">
+                          <p className="text-[0.85rem] text-gray-700 dark:text-white/80">Redemption #{selected.redeemed - i}</p>
+                          <p className="text-[0.8rem] text-gray-400 dark:text-white/50">{date}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ======== STEP: SETTINGS ======== */}
+      {step === "settings" && (
+        <div className="mt-2 space-y-5 pb-24">
+          {/* Plan info */}
+          <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 dark:bg-black/20">
+            <p className="text-[0.82rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Current Plan</p>
+            <div className="mt-2 flex items-center justify-between">
+              <p className="text-[1rem] font-semibold text-gray-900 dark:text-white capitalize">
+                {dashboardData?.plan_selected ?? "Basic"}
+              </p>
+              <span className={`rounded-full px-3 py-1 text-[0.75rem] font-bold ${
+                dashboardData?.is_pro
+                  ? "bg-red-600 text-white"
+                  : "bg-gray-200 text-gray-600 dark:bg-white/10 dark:text-white/60"
+              }`}>
+                {dashboardData?.is_pro ? "PRO" : "FREE"}
+              </span>
+            </div>
+            {!dashboardData?.is_pro && (
+              <button type="button" onClick={() => setStep("boost")} className="mt-3 text-[0.82rem] font-medium text-red-500 hover:underline">
+                Upgrade to Pro →
+              </button>
+            )}
+          </div>
+
+          {/* Notifications */}
+          <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 dark:bg-black/20 space-y-4">
+            <p className="text-[0.82rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Notifications</p>
+            {([
+              { key: "emailNotif", label: "Email notifications" },
+              { key: "pushNotif",  label: "Push notifications" },
+              { key: "smsNotif",   label: "SMS notifications" },
+            ] as const).map(({ key, label }) => (
+              <div key={key} className="flex items-center justify-between">
+                <p className="text-[0.9rem] text-gray-700 dark:text-white/80">{label}</p>
+                <button
+                  type="button"
+                  onClick={() => setSettingsForm((c) => ({ ...c, [key]: !c[key] }))}
+                  className={`relative h-6 w-11 rounded-full transition-colors ${settingsForm[key] ? "bg-red-600" : "bg-gray-300 dark:bg-white/20"}`}
+                >
+                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${settingsForm[key] ? "translate-x-5" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+            ))}
+            <VendorInput
+              value={settingsForm.smsPhone}
+              placeholder="SMS phone number"
+              type="tel"
+              onChange={(v) => setSettingsForm((c) => ({ ...c, smsPhone: v }))}
+              label="SMS Number"
+            />
+          </div>
+
+          {/* Account info */}
+          <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 dark:bg-black/20 space-y-3">
+            <p className="text-[0.82rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Account</p>
+            <DetailRow label="Email" value={dashboardData?.email ?? account?.email} />
+            <DetailRow label="Business" value={dashboardData?.business_name} withDivider />
+          </div>
+
+          {settingsMessage && (
+            <p className={`text-sm ${settingsMessage.includes("saved") ? "text-green-500" : "text-red-500"}`}>{settingsMessage}</p>
+          )}
+
+          <ActionButton
+            onClick={() => {
+              const extId = readExternalUserId();
+              if (!extId) { setSettingsMessage("Account not found. Please log in again."); return; }
+              setIsSavingSettings(true);
+              setSettingsMessage(null);
+              updateVendorNotifPrefs({
+                external_user_id: extId,
+                email_notifications: settingsForm.emailNotif,
+                push_notifications: settingsForm.pushNotif,
+                sms_notifications: settingsForm.smsNotif,
+                sms_phone: settingsForm.smsPhone || undefined,
+              })
+                .then(() => setSettingsMessage("Settings saved successfully!"))
+                .catch((err) => setSettingsMessage(err instanceof Error ? err.message : "Could not save settings."))
+                .finally(() => setIsSavingSettings(false));
+            }}
+            disabled={isSavingSettings}
+            className="w-full"
+          >
+            {isSavingSettings ? "Saving..." : "Save Settings"}
+          </ActionButton>
+
+          <ActionButton
+            variant="secondary"
+            onClick={onContinueHome}
+            className="w-full"
+          >
+            Back to Home
+          </ActionButton>
+        </div>
       )}
 
       {statusMessage && (

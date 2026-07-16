@@ -26,9 +26,12 @@ export type PublicApiUser = {
   last_name: string;
   email: string;
   phone?: string | null;
+  display_name?: string | null;
+  avatar_url?: string | null;
   membership: "free" | "vibee";
   subscription_status?: ConsumerSubscriptionStatus;
   vendor_id?: number | null;
+  verified?: boolean;
 };
 
 export type SocialProfile = {
@@ -141,7 +144,7 @@ async function readErrorMessage(response: Response) {
   }
 }
 
-async function apiJson<T>(path: string, init: JsonInit = {}) {
+export async function apiJson<T>(path: string, init: JsonInit = {}) {
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json");
 
@@ -179,9 +182,12 @@ export function toConsumerAccount(
     lastName: user.last_name,
     email: user.email,
     phone: user.phone ?? undefined,
+    displayName: user.display_name ?? undefined,
+    avatarUrl: user.avatar_url ?? undefined,
     membership: status === "active" ? "vibee" : user.membership,
     subscriptionStatus: status,
     vendorId: user.vendor_id ?? null,
+    verified: user.verified ?? false,
     createdAt: Date.now(),
   };
 }
@@ -286,11 +292,16 @@ export async function fetchCurrentUser() {
   return apiJson<{ user: PublicApiUser }>("/api/auth/me");
 }
 
+/**
+ * `email` is intentionally absent — it is the identity the magic-link login
+ * resolves against, so it cannot be changed without a re-verification flow.
+ */
 export async function updateUserProfile(payload: {
   first_name?: string;
   last_name?: string;
-  email?: string;
   phone?: string;
+  display_name?: string;
+  avatar_url?: string;
 }) {
   return apiJson<{ user: PublicApiUser }>("/api/auth/update-profile", {
     method: "POST",
@@ -610,6 +621,38 @@ export async function redeemVibeeOffer(offerId: number) {
   return result;
 }
 
+/**
+ * Redeem an influencer offer via the influencer-specific endpoint so the
+ * influencer's commission is credited. Requires a logged-in genie_user JWT
+ * (auto-attached by apiJson). Input is only the promo_code.
+ */
+export async function redeemInfluencerOffer(promoCode: string) {
+  if (!readAuthToken()) {
+    throw new Error("Sign in required to redeem offers.");
+  }
+
+  const result = await apiJson<{
+    success?: boolean;
+    error?: string;
+    redemption_id?: number;
+    offer_title?: string;
+    offer_type?: string;
+    discount_value?: number | string;
+    discount_type?: string;
+    influencer_name?: string;
+    message?: string;
+  }>("/api/genie/redeem-influencer-offer", {
+    method: "POST",
+    body: JSON.stringify({ promo_code: promoCode }),
+  });
+
+  if (result.success === false) {
+    throw new Error(result.error || "Could not redeem this offer.");
+  }
+
+  return result;
+}
+
 export async function fetchUserRedemptions() {
   const externalUserId = readExternalUserId();
   if (!externalUserId) {
@@ -786,6 +829,23 @@ export async function searchVendorBusinesses(query: string, city = "Houston") {
   return (response.results ?? []).map(mapVenue);
 }
 
+export type PublicEventSearchResult = {
+  id: number;
+  title: string;
+  event_date?: string;
+  venue_name?: string | null;
+  city?: string;
+};
+
+export async function searchPublicEvents(query: string) {
+  const params = new URLSearchParams({ query });
+  const response = await apiJson<{
+    results: PublicEventSearchResult[];
+    count?: number;
+  }>(`/api/events/search?${params.toString()}`, { auth: false });
+  return response.results ?? [];
+}
+
 export async function vendorOnboardingSearch(payload: {
   business_name: string;
 }) {
@@ -859,9 +919,14 @@ export async function createVendorBusiness(payload: {
     "/api/vendor/create",
     {
       method: "POST",
-      auth: false,
       body: JSON.stringify(payload),
     }
+  );
+}
+
+export async function fetchMyVendorProfile() {
+  return apiJson<{ vendor: { id: number; business_name?: string; is_live?: boolean; onboarding_completed?: boolean } | null }>(
+    `/api/vendor/profile`
   );
 }
 
@@ -990,6 +1055,36 @@ export type VendorVenueDetails = {
   venue: VenueRecord | null;
 };
 
+export type VenueImage = {
+  id: number;
+  venue_id: number;
+  image_url: string;
+  image_type?: "primary" | "fallback" | "gallery";
+  sort_order?: number;
+  source?: string;
+  is_active?: boolean;
+};
+
+type VenueImagesResponse = {
+  success: boolean;
+  venue_id: number;
+  images: VenueImage[];
+};
+
+/** Ordered venue photos for the signed-in vendor. Index 0 is the primary. */
+export async function fetchVenueImages() {
+  const { images } = await apiJson<VenueImagesResponse>("/api/vendor/venue-images");
+  return images.map((image) => image.image_url);
+}
+
+/** Replaces the whole gallery. Pass [] to remove every photo. */
+export async function saveVenueImages(images: string[]) {
+  return apiJson<VenueImagesResponse>("/api/vendor/venue-images", {
+    method: "POST",
+    body: JSON.stringify({ images }),
+  });
+}
+
 export async function fetchVendorVenue() {
   const external_user_id = readExternalUserId();
   if (!external_user_id) {
@@ -1009,6 +1104,7 @@ export async function updateVendorVenue(payload: {
   reservation_url?: string;
   reservation_platform?: string;
   hours_text?: string;
+  is_open_now?: boolean;
   image_primary_url?: string;
   address?: string;
   city?: string;
@@ -1135,6 +1231,52 @@ export function logEventInteraction(
 /* ------------------------------------------------------------------ */
 /*  Signup Prompt                                                      */
 /* ------------------------------------------------------------------ */
+
+export async function saveProducerDetails(payload: {
+  brand_name?: string;
+  producer_handle?: string;
+}) {
+  const externalUserId = readExternalUserId();
+  if (!externalUserId) throw new Error("No session found.");
+  return apiJson<{ success: boolean; brand_name: string; producer_handle: string }>(
+    "/api/genie/save-producer-details",
+    {
+      method: "POST",
+      auth: false,
+      body: JSON.stringify({ external_user_id: externalUserId, ...payload }),
+    }
+  );
+}
+
+export async function saveInfluencerDetails(payload: {
+  influencer_handle?: string;
+}) {
+  const externalUserId = readExternalUserId();
+  if (!externalUserId) throw new Error("No session found.");
+  return apiJson<{ success: boolean; influencer_handle: string }>(
+    "/api/genie/save-influencer-details",
+    {
+      method: "POST",
+      auth: false,
+      body: JSON.stringify({ external_user_id: externalUserId, ...payload }),
+    }
+  );
+}
+
+export async function setUserRoles(roles: string[]) {
+  const externalUserId = readExternalUserId();
+  if (!externalUserId) {
+    throw new Error("No session found — cannot save roles.");
+  }
+  return apiJson<{ success: boolean; roles: string[] }>(
+    "/api/genie/set-user-roles",
+    {
+      method: "POST",
+      auth: false,
+      body: JSON.stringify({ external_user_id: externalUserId, roles }),
+    }
+  );
+}
 
 export async function checkSignupPrompt() {
   const externalUserId = readExternalUserId();
@@ -1265,6 +1407,27 @@ export function persistSessionState(payload: {
 /*  Vendor Analytics & Profile Completeness                            */
 /* ------------------------------------------------------------------ */
 
+export type VendorAnalyticsTotals = {
+  genie_appearances: number;
+  profile_views: number;
+  call_clicks: number;
+  map_clicks: number;
+  reservation_clicks: number;
+  saves: number;
+  total_actions: number;
+  engagement_rate: number;
+};
+
+export type VendorAnalyticsDailyRecord = {
+  date: string;
+  genie_appearances?: number;
+  profile_views?: number;
+  call_clicks?: number;
+  map_clicks?: number;
+  reservation_clicks?: number;
+  saves?: number;
+};
+
 export async function fetchVendorAnalytics(
   vendorId: number,
   period: "7_days" | "30_days" | "all_time" = "30_days"
@@ -1275,8 +1438,8 @@ export async function fetchVendorAnalytics(
   });
   return apiJson<{
     period: string;
-    totals: Record<string, number>;
-    daily_records: Array<Record<string, unknown>>;
+    totals: VendorAnalyticsTotals;
+    daily_records: VendorAnalyticsDailyRecord[];
   }>(`/api/vendor/analytics?${params.toString()}`);
 }
 
@@ -1289,6 +1452,125 @@ export async function fetchVendorProfileCompleteness(vendorId: number) {
     recommended_missing: string[];
     completed_fields: string[];
   }>(`/api/vendor/profile-completeness?${params.toString()}`);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Vendor Offers (list / toggle / delete)                            */
+/* ------------------------------------------------------------------ */
+
+export type VendorOfferItem = {
+  id: number;
+  title: string;
+  description?: string;
+  offer_type: string;
+  active?: boolean;
+  vibee_only?: boolean;
+  redeem_instructions?: string | null;
+  discount_value?: string | null;
+};
+
+export async function fetchVendorOffers(vendorId: number) {
+  const params = new URLSearchParams({ vendor_id: String(vendorId) });
+  return apiJson<VendorOfferItem[]>(`/api/vendor/offers?${params.toString()}`);
+}
+
+export async function toggleVendorOffer(offerId: number, active: boolean) {
+  return apiJson<{ success: boolean }>("/api/vendor/offers", {
+    method: "PATCH",
+    body: JSON.stringify({ offer_id: offerId, active }),
+  });
+}
+
+export async function deleteVendorOffer(offerId: number) {
+  return apiJson<{ success: boolean }>(
+    `/api/vendor/offers?offer_id=${offerId}`,
+    { method: "DELETE" }
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Vendor — Influencer Offer Review Queue                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * All influencer offers (active / pending / rejected) for the venues the
+ * calling owner has claimed. Owned venues are resolved server-side from the
+ * caller's JWT. Pass `status` to filter server-side, or omit for all.
+ */
+export async function fetchVendorInfluencerOffers(
+  status?: "active" | "pending" | "rejected"
+) {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+  return apiJson<{
+    success?: boolean;
+    offers?: InfluencerOffer[];
+    count?: number;
+  }>(`/api/vendor/influencer-offers${qs}`);
+}
+
+/**
+ * Approve or reject a pending influencer offer. Only the venue owner may
+ * review. `rejection_reason` is stored when rejecting.
+ */
+export async function reviewInfluencerOffer(payload: {
+  offer_id: number;
+  decision: "approve" | "reject" | "cancel";
+  rejection_reason?: string;
+}) {
+  return apiJson<{
+    success?: boolean;
+    offer_id?: number;
+    status?: string;
+    reviewed_at?: string | number;
+  }>("/api/vendor/review-offer", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Vendor Influencer Codes                                            */
+/* ------------------------------------------------------------------ */
+
+export type VendorInfluencerCode = {
+  code: string;
+  redeemed: number;
+  new_users: number;
+  vibee_conversions: number;
+  history?: string[];
+};
+
+export async function fetchVendorInfluencerCodes(vendorId: number) {
+  const params = new URLSearchParams({ vendor_id: String(vendorId) });
+  return apiJson<{ codes: VendorInfluencerCode[] }>(
+    `/api/vendor/influencer-codes?${params.toString()}`
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Vendor Notification Preferences                                    */
+/* ------------------------------------------------------------------ */
+
+export type VendorNotifPrefs = {
+  external_user_id: string;
+  email_notifications: boolean;
+  push_notifications: boolean;
+  sms_notifications: boolean;
+  sms_phone?: string;
+};
+
+export async function fetchVendorNotifPrefs(externalUserId: string) {
+  const params = new URLSearchParams({ external_user_id: externalUserId });
+  return apiJson<Partial<VendorNotifPrefs>>(
+    `/api/vendor/notifications?${params.toString()}`
+  );
+}
+
+export async function updateVendorNotifPrefs(prefs: VendorNotifPrefs) {
+  return apiJson<{ success: boolean }>("/api/vendor/notifications", {
+    method: "POST",
+    body: JSON.stringify(prefs),
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -1320,5 +1602,1349 @@ export async function fetchStripeSession(sessionId: string) {
 export async function fetchStripeSessionLineItems(sessionId: string) {
   return apiJson<Record<string, unknown>>(
     `/api/stripe/sessions/${encodeURIComponent(sessionId)}/line_items`
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Influencer                                                         */
+/* ------------------------------------------------------------------ */
+
+export interface MyInfluencerProfile {
+  id?: number;
+  user_id?: number;
+  handle?: string;
+  display_name?: string;
+  bio?: string;
+  profile_image_url?: string | null;
+  instagram_handle?: string;
+  tiktok_handle?: string;
+  youtube_handle?: string;
+  content_niche?: string;
+  content_categories?: Record<string, unknown>;
+  primary_platform?: string;
+  total_followers?: number;
+  tier?: string;
+  plan_tier?: string;
+  is_verified?: boolean;
+  verified_at?: number;
+  total_redemptions?: number;
+  total_earnings?: number;
+  total_venues_partnered?: number;
+  referral_count?: number;
+  vibes_score?: number;
+}
+
+export interface InfluencerOffer {
+  id: number;
+  offer_type: string;
+  offer_title: string;
+  offer_description?: string;
+  promo_code?: string;
+  unique_code?: string;
+  discount_value?: number | string;
+  discount_type?: string;
+  max_redemptions?: number;
+  redemption_count?: number;
+  redemptions_used?: number;
+  status: string;
+  expires_at?: string | number;
+  // Exactly one of these is set. Venue-based offers carry `venue_id` (event_id
+  // absent/null); event-based offers carry `event_id` (the API reports
+  // `venue_id: 0` on those rows rather than omitting it, so don't rely on
+  // `venue_id` being falsy to mean "no venue" — check `event_id` instead).
+  venue_id?: number;
+  event_id?: number;
+  event_title?: string;
+  event_date?: string;
+  total_clicks?: number;
+  rejection_reason?: string;
+  reviewed_at?: string | number;
+  image_urls?: string[];
+  video_urls?: VideoItem[];
+}
+
+export interface InfluencerDashboardData {
+  active_codes_count?: number;
+  total_redemptions?: number;
+  total_commission_earned?: number;
+  referral_signups?: number;
+  pending_commission?: number;
+  paid_commission?: number;
+  offers?: InfluencerOffer[];
+  landing_url?: string;
+  referral_url?: string;
+}
+
+export async function fetchMyInfluencerProfile() {
+  return apiJson<MyInfluencerProfile>("/api/genie/influencer-profile");
+}
+
+export async function createInfluencerProfile(payload: {
+  display_name: string;
+  bio?: string;
+  instagram_handle?: string;
+  tiktok_handle?: string;
+  content_niche?: string;
+}) {
+  return apiJson<MyInfluencerProfile>("/api/genie/create-influencer-profile", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchInfluencerDashboard() {
+  return apiJson<InfluencerDashboardData>("/api/genie/influencer-dashboard");
+}
+
+export async function fetchInfluencerOffers(handle: string) {
+  const params = new URLSearchParams({ handle });
+  return apiJson<{ offers?: InfluencerOffer[]; success?: boolean }>(
+    `/api/genie/influencer-offers?${params.toString()}`,
+    { auth: false }
+  );
+}
+
+export interface CreatedInfluencerOffer {
+  success?: boolean;
+  offer_id?: number;
+  status?: string;
+  promo_code?: string;
+  offer_type?: string;
+  offer_title?: string;
+  landing_url?: string;
+}
+
+/**
+ * Influencer creates an offer tied to either a venue or an event. Offer
+ * starts in `pending` status until the venue owner (vendor) or event owner
+ * (producer) approves it. Provide exactly one of `venue_id` / `event_id`.
+ */
+export async function createInfluencerOffer(payload: {
+  venue_id?: number;
+  event_id?: number;
+  offer_title: string;
+  offer_type: string;
+  offer_description?: string;
+  discount_value?: number;
+  promo_code?: string;
+  max_redemptions?: number;
+  expires_at?: string;
+  image_urls?: string[];
+  video_urls?: VideoItem[];
+}) {
+  return apiJson<CreatedInfluencerOffer>("/api/genie/create-influencer-offer", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export type InfluencerOfferAnalytics = InfluencerOffer & {
+  total_redemptions?: number;
+  new_user_count?: number;
+  vibbee_conversions?: number;
+};
+
+/**
+ * Per-offer aggregate analytics for the calling influencer (all statuses).
+ * Returns aggregate counts only — there is no per-redemption list.
+ */
+export async function fetchInfluencerOfferAnalytics() {
+  return apiJson<{
+    influencer_id?: number;
+    offers?: InfluencerOfferAnalytics[];
+  }>("/api/genie/influencer-offer-analytics");
+}
+
+/* ------------------------------------------------------------------ */
+/*  Producer                                                           */
+/* ------------------------------------------------------------------ */
+
+export type ProducerProfile = {
+  id?: number;
+  user_id?: number;
+  display_name?: string;
+  bio?: string;
+  instagram_handle?: string;
+  instagram_url?: string;
+  tiktok_url?: string;
+  website_url?: string;
+  event_type_tags?: string[];
+  profile_photo_url?: string;
+  city?: string;
+  status?: string;
+  is_verified?: boolean;
+  follower_count?: number;
+  total_events_created?: number;
+  total_events_live?: number;
+  average_going_count?: number;
+};
+
+/** A hosted video plus its Cloudinary-derived thumbnail. Matches the Xano `video_urls` shape. */
+export type VideoItem = { url: string; thumbnail_url: string };
+
+export type ProducerEvent = {
+  id: number;
+  title: string;
+  category?: string;
+  description?: string;
+  event_date?: string;
+  start_time?: string;
+  end_time?: string;
+  venue_name?: string;
+  venue_address?: string;
+  city?: string;
+  cover_image_url?: string;
+  /** Ordered gallery; index 0 is the cover. Legacy rows may return `{}` from Xano. */
+  image_urls?: string[];
+  /** Separate from image_urls; combined count with image_urls is capped at 5 by Xano. */
+  video_urls?: VideoItem[];
+  ticket_url?: string;
+  ticket_price_min?: number;
+  is_free?: boolean;
+  age_requirement?: string;
+  rsvp_limit?: number;
+  rsvp_count?: number;
+  going_count?: number;
+  created_at?: number;
+  /** Powers the public event microsite at /events/{slug}. May be empty for older rows. */
+  public_slug?: string;
+};
+
+export type ProducerPost = {
+  id: number;
+  author_id?: number;
+  author_type?: string;
+  post_text: string;
+  image_url?: string;
+  /** Ordered gallery; index 0 is the primary. Legacy rows may return `{}` from Xano. */
+  image_urls?: string[];
+  /** Separate from image_urls; combined count with image_urls is capped at 5 by Xano. */
+  video_urls?: VideoItem[];
+  like_count?: number;
+  comment_count?: number;
+  created_at?: number;
+};
+
+export type ProducerEventAnalytics = {
+  event_id: number;
+  rsvp_count?: number;
+  view_count?: number;
+  save_count?: number;
+  [key: string]: unknown;
+};
+
+export type ProducerAudienceAnalytics = {
+  producer_id?: number;
+  follower_count?: number;
+  total_events?: number;
+  total_going?: number;
+  total_views?: number;
+  cities?: Array<{ city: string; count: number }>;
+  [key: string]: unknown;
+};
+
+export type ProducerRsvpEntry = {
+  id: number;
+  user_id?: number;
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  rsvped_at?: number;
+  [key: string]: unknown;
+};
+
+/**
+ * Gate check: look up the current user's producer profile via JWT.
+ * Returns { profile: ProducerProfile } if found (any status), { profile: null } if not.
+ * Uses /api/producer/profile → ep_get_my_producer_profile_dev.
+ */
+export async function fetchMyProducerProfile() {
+  return apiJson<{ profile: ProducerProfile | null }>(`/api/producer/profile`);
+}
+
+export async function fetchMyEvents(page = 1, perPage = 20) {
+  return apiJson<{ success: boolean; events: ProducerEvent[]; total: number }>(
+    `/api/producer/events?page=${page}&per_page=${perPage}`
+  );
+}
+
+export async function fetchMyPosts(page = 1, perPage = 20) {
+  return apiJson<{ success: boolean; posts: ProducerPost[]; total: number }>(
+    `/api/producer/post?page=${page}&per_page=${perPage}`
+  );
+}
+
+export async function setupProducerProfile(payload: {
+  display_name: string;
+  bio?: string;
+  instagram_handle?: string;
+  event_type_tags?: string[];
+}) {
+  return apiJson<ProducerProfile>("/api/producer/profile", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createProducerEvent(payload: {
+  title: string;
+  category: string;
+  producer_id?: number;
+  description?: string;
+  event_date?: string;
+  start_time?: string;
+  end_time?: string;
+  venue_id?: number;
+  venue_name?: string;
+  venue_address?: string;
+  city?: string;
+  cover_image_url?: string;
+  image_urls?: string[];
+  video_urls?: VideoItem[];
+  ticket_url?: string;
+  ticket_price_min?: number;
+  is_free?: boolean;
+  age_requirement?: string;
+  rsvp_limit?: number;
+  event_id?: number;
+}) {
+  return apiJson<ProducerEvent>("/api/producer/event", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchProducerEventAnalytics(eventId: number) {
+  return apiJson<ProducerEventAnalytics>(
+    `/api/producer/event-analytics?event_id=${eventId}`
+  );
+}
+
+export async function fetchProducerAudienceAnalytics() {
+  return apiJson<ProducerAudienceAnalytics>("/api/producer/audience-analytics");
+}
+
+export async function fetchProducerRsvpList(eventId: number) {
+  return apiJson<ProducerRsvpEntry[] | { rsvps?: ProducerRsvpEntry[] }>(
+    `/api/producer/rsvp-list?event_id=${eventId}`
+  );
+}
+
+export async function createProducerPost(payload: {
+  post_text: string;
+  image_url?: string;
+  image_urls?: string[];
+  video_urls?: VideoItem[];
+}) {
+  return apiJson<ProducerPost>("/api/producer/post", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Public Post Detail (/posts/{id})                                   */
+/* ------------------------------------------------------------------ */
+
+export type PublicPostAuthor = {
+  id?: number;
+  display_name?: string;
+  profile_photo_url?: string;
+  is_verified?: boolean;
+};
+
+export type PublicPost = {
+  id: number;
+  author_id?: number;
+  author_type?: string;
+  post_text: string;
+  // Xano `json` columns — a string URL when set, but `{}` (not `""`/`[]`)
+  // when empty. Always read these through galleryFor()/toImageList()
+  // (app/lib/image.ts), never assume the type directly.
+  image_url?: unknown;
+  image_urls?: unknown;
+  video_urls?: unknown;
+  like_count?: number;
+  comment_count?: number;
+  created_at?: number;
+};
+
+export type PublicPostDetailResponse = {
+  success: boolean;
+  post: PublicPost;
+  author: PublicPostAuthor | null;
+};
+
+export type PostComment = {
+  id: number;
+  user_id: number;
+  content_type?: string;
+  content_id?: number;
+  comment_text: string;
+  parent_comment_id?: number;
+  like_count?: number;
+  created_at?: number;
+  // Populated once ep_get_post_comments_dev joins genie_user — absent on
+  // older backend responses, so callers must still fall back gracefully.
+  author_name?: string;
+  author_avatar_url?: string;
+};
+
+export async function fetchPostComments(postId: number, page = 1, perPage = 20) {
+  return apiJson<{
+    success: boolean;
+    total: number;
+    page: number;
+    per_page: number;
+    comments: PostComment[];
+  }>(`/api/post/${postId}/comments?page=${page}&per_page=${perPage}`, { auth: false });
+}
+
+export async function addPostComment(
+  postId: number,
+  commentText: string,
+  parentCommentId?: number
+) {
+  return apiJson<{ success: boolean; comment: PostComment }>(
+    `/api/post/${postId}/comments`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        comment_text: commentText,
+        parent_comment_id: parentCommentId,
+      }),
+    }
+  );
+}
+
+export async function toggleLikePost(postId: number) {
+  return apiJson<{ success: boolean; action: "liked" | "unliked"; post_id: number }>(
+    `/api/post/${postId}/like`,
+    { method: "POST" }
+  );
+}
+
+// Only call when readAuthToken() is truthy — this route 401s otherwise.
+export async function fetchMyPostLikeStatus(postId: number) {
+  return apiJson<{ success: boolean; post_id: number; liked: boolean }>(
+    `/api/post/${postId}/like-status`
+  );
+}
+
+/**
+ * The homescreen's paginated Social Post feed (infinite scroll). apiJson
+ * auto-attaches the caller's auth token when present, so the route handler
+ * pages through the visitor's real posts when logged in, or serves a single
+ * curated fallback post on page 1 only when logged out.
+ */
+export async function fetchHomescreenPosts(page = 1, perPage = 1) {
+  const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+  return apiJson<{ posts: Array<{ post: PublicPost; author: PublicPostAuthor | null }> }>(
+    `/api/genie/homescreen-post?${params.toString()}`
+  );
+}
+
+export type ProducerNotifPrefs = {
+  notify_new_follower?: boolean;
+  notify_post_like?: boolean;
+  notify_post_comment?: boolean;
+  notify_going_match?: boolean;
+  notify_venue_energy_alert?: boolean;
+  notify_event_reminder?: boolean;
+  notify_promoter_new_event?: boolean;
+  notify_new_message?: boolean;
+  notify_genie_alerts?: boolean;
+};
+
+export async function fetchProducerNotifPrefs() {
+  return apiJson<ProducerNotifPrefs>("/api/producer/notifications");
+}
+
+export async function updateProducerNotifPrefs(prefs: ProducerNotifPrefs) {
+  return apiJson<{ success: boolean }>("/api/producer/notifications", {
+    method: "POST",
+    body: JSON.stringify(prefs),
+  });
+}
+
+export type FollowProducerResult = {
+  success: boolean;
+  action: "followed" | "unfollowed";
+  followed_id: number;
+  followed_type: string;
+};
+
+export async function followProducer(
+  producerId: number,
+  source: string = "profile"
+) {
+  return apiJson<FollowProducerResult>("/api/producer/follow", {
+    method: "POST",
+    body: JSON.stringify({
+      followed_id: producerId,
+      followed_type: "producer",
+      follow_source: source,
+    }),
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Producer — Influencer Offer Review Queue                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * All influencer offers (any status, or filtered) for events the calling
+ * producer owns. Owned events are resolved server-side from the caller's JWT.
+ */
+export async function fetchProducerInfluencerOffers(
+  status?: "active" | "pending" | "rejected" | "cancelled"
+) {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+  return apiJson<{
+    success?: boolean;
+    offers?: InfluencerOffer[];
+    count?: number;
+  }>(`/api/producer/influencer-offers${qs}`);
+}
+
+/**
+ * Approve or reject a pending influencer offer targeting one of the caller's
+ * events. Same underlying review endpoint as the vendor flow — ownership is
+ * resolved server-side depending on whether the offer targets a venue or event.
+ */
+export async function reviewProducerOffer(payload: {
+  offer_id: number;
+  decision: "approve" | "reject" | "cancel";
+  rejection_reason?: string;
+}) {
+  return apiJson<{
+    success?: boolean;
+    offer_id?: number;
+    status?: string;
+    reviewed_at?: string | number;
+  }>("/api/producer/review-offer", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Producer public profile page                                       */
+/* ------------------------------------------------------------------ */
+
+export type ProducerPublicPageData = {
+  success: boolean;
+  producer: ProducerProfile;
+  is_following: boolean;
+  upcoming_events: ProducerEvent[];
+  event_count: number;
+};
+
+export async function fetchProducerPublicProfile(producerId: number) {
+  return apiJson<ProducerPublicPageData>(
+    `/api/producer/profile-public?producer_id=${producerId}`
+  );
+}
+
+/** This producer's posts, for the public profile page. Requires login (same gate the page already applies). */
+export async function fetchProducerPosts(producerId: number, page = 1, perPage = 20) {
+  const params = new URLSearchParams({
+    producer_id: String(producerId),
+    page: String(page),
+    per_page: String(perPage),
+  });
+  return apiJson<{ success: boolean; posts: ProducerPost[]; total: number }>(
+    `/api/producer/posts-public?${params.toString()}`
+  );
+}
+
+export type FollowedProducerItem = {
+  id: number;
+  display_name?: string;
+  profile_photo_url?: string;
+  is_verified?: boolean;
+  [key: string]: unknown;
+};
+
+export type FollowedProducersResult = {
+  success: boolean;
+  followed_producers: FollowedProducerItem[];
+  count: number;
+};
+
+export async function fetchFollowedProducers() {
+  return apiJson<FollowedProducersResult>("/api/producer/followed");
+}
+
+export type SuggestedProducerResult = {
+  success: boolean;
+  suggested_follows: FollowedProducerItem[];
+  count: number;
+};
+
+export async function fetchSuggestedProducers() {
+  return apiJson<SuggestedProducerResult>("/api/producer/suggested");
+}
+
+export type UserBasicProfile = {
+  success: boolean;
+  user_id: number;
+  display_name: string;
+  avatar_url: string;
+};
+
+/** Minimal public lookup for a plain genie_user (name + avatar only) — used
+ * to resolve a real customer name in the producer's message inbox instead
+ * of the generic "Customer" placeholder. */
+export async function fetchUserBasicProfile(userId: number) {
+  return apiJson<UserBasicProfile>(`/api/user/basic-profile?user_id=${userId}`);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Notifications                                                       */
+/* ------------------------------------------------------------------ */
+
+export type UserNotification = {
+  id: number;
+  type: string;
+  title: string;
+  body: string;
+  is_read: boolean;
+  created_at: number;
+  target_url?: string;
+  actor_name?: string;
+  actor_image_url?: string;
+};
+
+/** Raw notification row as returned by Xano (genie/get-notifications-dev). */
+type RawNotification = {
+  id: number;
+  notification_type?: string;
+  title?: string;
+  body?: string;
+  is_read?: boolean;
+  created_at?: string | number;
+  data_json?: Record<string, unknown> | null;
+};
+
+function normalizeNotification(row: RawNotification): UserNotification {
+  const data = (row.data_json ?? {}) as Record<string, unknown>;
+  // The UI's timeAgo() expects Unix *seconds*. Xano returns created_at as a Unix
+  // millisecond number (e.g. 1782859974610); tolerate an ISO string too.
+  let createdAt = 0;
+  if (typeof row.created_at === "number") {
+    // Values >= 1e11 are milliseconds; smaller ones are already seconds.
+    createdAt =
+      row.created_at >= 1e11
+        ? Math.floor(row.created_at / 1000)
+        : row.created_at;
+  } else if (typeof row.created_at === "string") {
+    const parsed = Date.parse(row.created_at);
+    createdAt = Number.isNaN(parsed) ? 0 : Math.floor(parsed / 1000);
+  }
+  const pickString = (key: string) =>
+    typeof data[key] === "string" ? (data[key] as string) : undefined;
+
+  return {
+    id: row.id,
+    type: row.notification_type ?? "notification",
+    title: row.title ?? "",
+    body: row.body ?? "",
+    is_read: Boolean(row.is_read),
+    created_at: createdAt,
+    target_url: pickString("target_url"),
+    actor_name: pickString("actor_name"),
+    actor_image_url: pickString("actor_image_url"),
+  };
+}
+
+export async function fetchUserNotifications() {
+  const raw = await apiJson<{ notifications?: RawNotification[] }>(
+    "/api/user/notifications"
+  );
+  return {
+    notifications: (raw.notifications ?? []).map(normalizeNotification),
+  };
+}
+
+export async function fetchUnreadNotifCount() {
+  return apiJson<{ unread_count: number }>(
+    "/api/user/notifications/unread-count"
+  );
+}
+
+/** Mark one or many notifications as read (single tap → pass [id]). */
+export async function markNotificationsRead(notificationIds: number[]) {
+  return apiJson<{ success: boolean }>("/api/user/notifications", {
+    method: "PATCH",
+    body: JSON.stringify({ notification_ids: notificationIds }),
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Messaging                                                           */
+/* ------------------------------------------------------------------ */
+
+export type MessageThreadType = "producer" | "user";
+
+/** Max characters allowed in a single message (mirrored by the composer's maxLength). */
+export const MAX_MESSAGE_LENGTH = 2000;
+
+function assertMessageLength(text: string) {
+  if (text.length > MAX_MESSAGE_LENGTH) {
+    throw new Error(`Message is too long (max ${MAX_MESSAGE_LENGTH} characters).`);
+  }
+}
+
+type RawProducerThread = {
+  id: number;
+  user_id: number;
+  producer_id: number;
+  producer_display_name?: string;
+  producer_profile_photo_url?: string;
+  user_unread_count?: number;
+  producer_unread_count?: number;
+  last_message_at?: number | string;
+  last_message_preview?: string;
+  status?: "request" | "active" | "archived";
+  thread_origin?: string;
+};
+
+type RawUserThread = {
+  id: number;
+  participant_one_id: number;
+  participant_two_id: number;
+  participant_one_unread?: number;
+  participant_two_unread?: number;
+  last_message_preview?: string;
+  last_message_at?: number | string;
+  status?: string;
+};
+
+export type Conversation = {
+  threadId: number;
+  threadType: MessageThreadType;
+  counterpartId: number;
+  counterpartName?: string;
+  counterpartAvatarUrl?: string;
+  lastMessagePreview?: string;
+  lastMessageAt: number;
+  unreadCount: number;
+  status?: string;
+  /**
+   * For threadType "producer" only: whether the current viewer IS the
+   * producer (business owner reading their inbox) or the consumer who
+   * messaged that producer. genie_message_threads is asymmetric — the
+   * producer replies via a different endpoint (ep_producer_reply_dev) and
+   * the counterpart is the other party, not always producer_id.
+   */
+  viewerRole?: "consumer" | "producer";
+};
+
+export type RawMessage = {
+  id: number;
+  thread_id: number;
+  sender_id: number;
+  recipient_id: number;
+  recipient_type: MessageThreadType;
+  message_text: string;
+  is_read: boolean;
+  created_at: string | number;
+};
+
+function toEpochMs(value: number | string | undefined): number {
+  if (!value) return 0;
+  if (typeof value === "number") return value;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/** Raw threads fetch — caller must merge producer_threads + user_threads (different shapes). */
+export async function fetchMessageThreads(
+  threadType: "all" | MessageThreadType = "all",
+  page = 1,
+  perPage = 20
+) {
+  return apiJson<{
+    success?: boolean;
+    producer_threads?: RawProducerThread[];
+    user_threads?: RawUserThread[];
+  }>(
+    `/api/messages/threads?page=${page}&per_page=${perPage}&thread_type=${threadType}`
+  );
+}
+
+/** Normalizes + merges both thread shapes into one sorted-by-recency list for the unified inbox UI. */
+export function mergeThreadsToConversations(
+  raw: { producer_threads?: RawProducerThread[]; user_threads?: RawUserThread[] },
+  currentUserId?: number
+): Conversation[] {
+  const fromProducer: Conversation[] = (raw.producer_threads ?? []).map((t) => {
+    // If the viewer isn't the thread's consumer (user_id), they must be the
+    // producer owner looking at their business inbox — the counterpart is
+    // then the consumer, not the producer (themselves).
+    const viewerIsProducerOwner = currentUserId !== undefined && t.user_id !== currentUserId;
+    return {
+      threadId: t.id,
+      threadType: "producer" as const,
+      counterpartId: viewerIsProducerOwner ? t.user_id : t.producer_id,
+      counterpartName: viewerIsProducerOwner ? undefined : t.producer_display_name,
+      counterpartAvatarUrl: viewerIsProducerOwner ? undefined : t.producer_profile_photo_url,
+      lastMessagePreview: t.last_message_preview,
+      lastMessageAt: toEpochMs(t.last_message_at),
+      unreadCount: (viewerIsProducerOwner ? t.producer_unread_count : t.user_unread_count) ?? 0,
+      status: t.status,
+      viewerRole: viewerIsProducerOwner ? ("producer" as const) : ("consumer" as const),
+    };
+  });
+
+  const fromUser: Conversation[] = (raw.user_threads ?? []).map((t) => {
+    const isP1 = t.participant_one_id === currentUserId;
+    return {
+      threadId: t.id,
+      threadType: "user" as const,
+      counterpartId: isP1 ? t.participant_two_id : t.participant_one_id,
+      lastMessagePreview: t.last_message_preview,
+      lastMessageAt: toEpochMs(t.last_message_at),
+      unreadCount: (isP1 ? t.participant_one_unread : t.participant_two_unread) ?? 0,
+      status: t.status,
+    };
+  });
+
+  return [...fromProducer, ...fromUser].sort((a, b) => b.lastMessageAt - a.lastMessageAt);
+}
+
+/** No dedicated unread-count endpoint exists; derive it from the inbox fetch. */
+export async function fetchUnreadMessageCount(currentUserId?: number) {
+  const raw = await fetchMessageThreads("all", 1, 100);
+  const conversations = mergeThreadsToConversations(raw, currentUserId);
+  return conversations.reduce((sum, c) => sum + c.unreadCount, 0);
+}
+
+/** Generic dispatcher so future entry points (vendor/consumer profiles) are a one-line wire-up. */
+export async function sendMessage(input: {
+  recipientId: number;
+  recipientType: MessageThreadType;
+  text: string;
+}) {
+  if (input.recipientType === "producer") {
+    return sendMessageToProducer(input.recipientId, input.text);
+  }
+  return sendMessageToUser(input.recipientId, input.text);
+}
+
+export async function sendMessageToProducer(producerId: number, text: string) {
+  assertMessageLength(text);
+  return apiJson<{ success: boolean; message: RawMessage; thread_id: number; is_new_thread?: boolean }>(
+    "/api/messages/producer",
+    {
+      method: "POST",
+      body: JSON.stringify({ recipient_id: producerId, recipient_type: "producer", message_text: text }),
+    }
+  );
+}
+
+export async function sendMessageToUser(recipientUserId: number, text: string) {
+  assertMessageLength(text);
+  return apiJson<{ success: boolean; message: RawMessage; thread_id: number; is_new_thread: boolean }>(
+    "/api/messages/user",
+    {
+      method: "POST",
+      body: JSON.stringify({ recipient_id: recipientUserId, message_text: text }),
+    }
+  );
+}
+
+/** The producer-owner side of a business thread replies here — a different
+ * endpoint than sendMessageToProducer, since the producer isn't "messaging
+ * a producer" (themselves), they're replying within an existing thread. */
+export async function replyAsProducer(threadId: number, text: string) {
+  assertMessageLength(text);
+  return apiJson<{ success: boolean; message: RawMessage; thread_id: number }>(
+    "/api/messages/producer-reply",
+    {
+      method: "POST",
+      body: JSON.stringify({ thread_id: threadId, message_text: text }),
+    }
+  );
+}
+
+/** Zeroes the caller's own unread counter for a thread (fire-and-forget from the UI). */
+export async function markThreadRead(threadType: MessageThreadType, threadId: number) {
+  return apiJson<{ success: boolean }>("/api/messages/mark-read", {
+    method: "POST",
+    body: JSON.stringify({ thread_id: threadId, thread_type: threadType }),
+  });
+}
+
+export async function fetchThreadMessages(
+  threadType: MessageThreadType,
+  threadId: number,
+  page = 1,
+  perPage = 30
+) {
+  const path = threadType === "producer" ? "/api/messages/producer-thread" : "/api/messages/user-thread";
+  return apiJson<{
+    success?: boolean;
+    thread?: Record<string, unknown>;
+    total?: number;
+    page?: number;
+    per_page?: number;
+    messages?: RawMessage[];
+  }>(`${path}?thread_id=${threadId}&page=${page}&per_page=${perPage}`);
+}
+
+export async function blockUser(userId: number) {
+  return apiJson<{ success: boolean }>("/api/messages/block", {
+    method: "POST",
+    body: JSON.stringify({ blocked_user_id: userId }),
+  });
+}
+
+export async function unblockUser(userId: number) {
+  return apiJson<{ success: boolean }>("/api/messages/unblock", {
+    method: "POST",
+    body: JSON.stringify({ blocked_user_id: userId }),
+  });
+}
+
+export async function fetchBlockedUsers() {
+  return apiJson<{ success?: boolean; blocked_user_ids?: number[]; count?: number }>(
+    "/api/messages/blocked"
+  );
+}
+
+export async function reportUserProfile(payload: {
+  userId: number;
+  reason: "spam" | "inappropriate" | "false_info" | "harassment" | "hate_speech" | "other";
+  details?: string;
+}) {
+  return apiJson<{ success: boolean }>("/api/messages/report", {
+    method: "POST",
+    body: JSON.stringify({
+      content_type: "profile",
+      content_id: payload.userId,
+      report_reason: payload.reason,
+      report_details: payload.details,
+    }),
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Homescreen Feed                                                     */
+/* ------------------------------------------------------------------ */
+
+export type UpcomingEvent = {
+  id: number;
+  title: string;
+  producer_id?: number;
+  producer?: {
+    id?: number;
+    name?: string;
+    display_name?: string;
+    image_url?: string;
+    profile_photo_url?: string;
+    event_count?: number;
+    total_events_live?: number;
+    is_verified?: boolean;
+    is_following?: boolean;
+  };
+  cover_image_url?: string;
+  image_urls?: string[];
+  /** Separate from image_urls; combined count is capped at 5 by Xano. */
+  video_urls?: VideoItem[];
+  event_date?: string;
+  start_time?: string;
+  end_time?: string;
+  venue_name?: string;
+  venue_address?: string;
+  neighborhood?: string;
+  city?: string;
+  description?: string;
+  category?: string;
+  event_category?: string;
+  going_count?: number;
+  rsvp_count?: number;
+  is_free?: boolean;
+  is_sold_out?: boolean;
+  ticket_url?: string;
+  ticket_price_min?: number;
+  ticket_price_max?: number;
+  age_requirement?: number;
+  public_slug?: string;
+  status?: string;
+  is_on_fire?: boolean;
+  [key: string]: unknown;
+};
+
+export type TrendingVenue = {
+  id: number | string;
+  venue_name: string;
+  venue_type?: string;
+  image_primary_url?: string;
+  image_fallback_url?: string;
+  cover_image_url?: string;
+  image_url?: string;
+  neighborhood?: string;
+  area_neighborhood?: string;
+  neighborhood_text?: string;
+  energy_level?: string;
+  social_energy_state?: string;
+  going_count?: number;
+  sb_going_count?: number;
+  is_on_fire?: boolean;
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+  trending_score?: number;
+  [key: string]: unknown;
+};
+
+export type HomescreenApiResponse = {
+  success: boolean;
+  city_id: number;
+  city_name: string;
+  weather?: Record<string, unknown>;
+  trending_venues?: TrendingVenue[];
+  upcoming_events?: UpcomingEvent[];
+  active_placements?: Record<string, unknown>[];
+  top_neighborhoods?: Record<string, unknown>[];
+  generated_at?: string;
+};
+
+export type HomescreenStory = {
+  id: number;
+  name: string;
+  image_url: string;
+};
+
+export type HomescreenFeatured = {
+  id: number;
+  type: "event" | "venue";
+  title: string;
+  image_url: string;
+};
+
+export type EventFeedItem = {
+  feed_type: "event";
+  id: number;
+  title: string;
+  venue_name?: string;
+  start_time?: string;
+  event_date?: string;
+  cover_image_url?: string;
+  going_count?: number;
+  people_you_know?: number;
+  is_on_fire?: boolean;
+  badge?: string;
+  producer_id?: number;
+  producer?: {
+    name: string;
+    image_url?: string;
+    event_count?: number;
+    producer_id?: number;
+    handle?: string;
+    is_verified?: boolean;
+    is_following?: boolean;
+  };
+  reason?: string;
+  raw: UpcomingEvent;
+};
+
+export type OnFireVenueItem = {
+  feed_type: "on_fire_venue";
+  id: number;
+  venue_name: string;
+  venue_address?: string;
+  venue_latitude?: number;
+  venue_longitude?: number;
+  neighborhood?: string;
+  category?: string;
+  description?: string;
+  going_count?: number;
+  badge?: string;
+};
+
+export type SuggestedProducerItem = {
+  feed_type: "suggested_producer";
+  id: number;
+  name: string;
+  image_url?: string;
+  event_count?: number;
+  producer_id?: number;
+  handle?: string;
+};
+
+export type FeedItem =
+  | EventFeedItem
+  | OnFireVenueItem
+  | SuggestedProducerItem;
+
+export type HomescreenData = {
+  stories: HomescreenStory[];
+  featured: HomescreenFeatured[];
+  feed: FeedItem[];
+  raw?: HomescreenApiResponse;
+};
+
+export async function fetchHomescreen(options: {
+  cityId?: number;
+  cityName?: string;
+  userId?: number;
+  lat?: number;
+  lng?: number;
+  page?: number;
+} = {}): Promise<HomescreenApiResponse> {
+  const { cityId = 1, cityName = "Houston", userId, lat, lng, page = 1 } = options;
+  const params = new URLSearchParams();
+  params.set("city_id", String(cityId));
+  params.set("city_name", cityName);
+  params.set("page", String(page));
+  if (userId) params.set("user_id", String(userId));
+  if (lat != null) params.set("lat", String(lat));
+  if (lng != null) params.set("lng", String(lng));
+  return apiJson<HomescreenApiResponse>(
+    `/api/genie/homescreen?${params.toString()}`,
+    { auth: false }
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Event Detail                                                        */
+/* ------------------------------------------------------------------ */
+
+export type EventDetailProducer = {
+  id?: number;
+  name?: string;
+  image_url?: string;
+  event_count?: number;
+  is_verified?: boolean;
+  is_following?: boolean;
+};
+
+export type EventDetailMiniEvent = {
+  id: number;
+  title?: string;
+  cover_image_url?: string;
+  category?: string;
+  event_date?: string;
+  [key: string]: unknown;
+};
+
+// Mirrors the actual (nested) shape /api/genie/event-detail returns from Xano's
+// ep_get_event_detail_dev — { success, event, venue, related_events, related_count }.
+// Per-event fields (title, going_count, user_rsvp_status, ...) live under `event`,
+// not at the top level; this used to be declared flat, which is how the
+// user_rsvp_status/going_count merge bug in EventDetailSection went unnoticed.
+export type EventDetailResponse = {
+  success?: boolean;
+  event: {
+    id: number;
+    title: string;
+    cover_image_url?: string;
+    event_date?: string;
+    start_time?: string;
+    end_time?: string;
+    venue_name?: string;
+    venue_address?: string;
+    description?: string;
+    category?: string;
+    ticket_url?: string;
+    is_free?: boolean;
+    ticket_price_min?: number;
+    public_slug?: string;
+    going_count?: number;
+    interested_count?: number;
+    user_rsvp_status?: "going" | "interested" | "saved" | null;
+    is_on_fire?: boolean;
+    producer?: EventDetailProducer;
+    offer_type?: string;
+    offer_title?: string;
+    offer_description?: string;
+    [key: string]: unknown;
+  };
+  venue?: Record<string, unknown> | null;
+  related_events?: EventDetailMiniEvent[];
+  related_count?: number;
+  [key: string]: unknown;
+};
+
+export async function fetchEventDetail(eventId: number): Promise<EventDetailResponse> {
+  return apiJson<EventDetailResponse>(
+    `/api/genie/event-detail?event_id=${eventId}`
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Event offers (V.I.Bee + influencer)                                */
+/* ------------------------------------------------------------------ */
+
+export type InfluencerEventOffer = {
+  id: number;
+  influencer_id: number;
+  event_id: number;
+  venue_id?: number;
+  offer_title: string;
+  offer_description?: string;
+  offer_type?: string;
+  discount_value?: string;
+  discount_type?: string | null;
+  unique_code?: string;
+  unique_url_slug?: string;
+  promo_code?: string;
+  status?: string;
+  expires_at?: string;
+  influencer_name?: string;
+  influencer_handle?: string;
+  influencer_profile_image_url?: string;
+  [key: string]: unknown;
+};
+
+/** V.I.Bee house offers — table is currently empty in this workspace, exact
+ * field shape unconfirmed against live data; treated permissively. */
+export type VibbeeEventOffer = {
+  id: number;
+  event_id: number;
+  offer_title?: string;
+  offer_description?: string;
+  offer_type?: string;
+  [key: string]: unknown;
+};
+
+export type EventOffersResult = {
+  success: boolean;
+  event_id: number;
+  vibbee_offers: VibbeeEventOffer[];
+  influencer_offers: InfluencerEventOffer[];
+  total_offers: number;
+};
+
+export async function fetchEventOffers(eventId: number) {
+  return apiJson<EventOffersResult>(`/api/genie/event-offers?event_id=${eventId}`);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Event RSVP (Going / Interested)                                    */
+/* ------------------------------------------------------------------ */
+
+export type RsvpStatus = "going" | "interested" | "saved" | "removed";
+
+export type RsvpEventResult = {
+  success: boolean;
+  message: string;
+  rsvp: unknown;
+};
+
+export async function rsvpToEvent(
+  eventId: number,
+  status: RsvpStatus,
+  source = "event-detail"
+) {
+  return apiJson<RsvpEventResult>("/api/genie/rsvp-event", {
+    method: "POST",
+    body: JSON.stringify({ event_id: eventId, status, source }),
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Events Page (Upcoming / Liked / Past)                              */
+/* ------------------------------------------------------------------ */
+
+export type ManagedEvent = UpcomingEvent & {
+  user_rsvp_status?: "going" | "interested" | "saved" | null;
+  user_has_rated?: boolean;
+  venue_latitude?: number | null;
+  venue_longitude?: number | null;
+};
+
+export type EventsFeedResult = {
+  success: boolean;
+  page?: number;
+  per_page?: number;
+  total?: number;
+  /** present on the signed-out v2 fallback feed instead of `total` */
+  count?: number;
+  events: ManagedEvent[];
+};
+
+export async function fetchEventsFeed(page = 1, perPage = 20) {
+  return apiJson<EventsFeedResult>(`/api/events/feed?page=${page}&per_page=${perPage}`);
+}
+
+export async function fetchSavedEvents(page = 1, perPage = 20) {
+  return apiJson<EventsFeedResult>(`/api/events/saved?page=${page}&per_page=${perPage}`);
+}
+
+export async function fetchPastEvents(page = 1, perPage = 20) {
+  return apiJson<EventsFeedResult>(`/api/events/past?page=${page}&per_page=${perPage}`);
+}
+
+export type SubmitEventSurveyInput = {
+  event_id: number;
+  did_attend: boolean;
+  vibe_rating?: number;
+  venue_rating?: number;
+};
+
+export type SubmitEventSurveyResult = {
+  success: boolean;
+  response_id?: number;
+  event_id: number;
+  did_attend: boolean;
+  message?: string;
+};
+
+export async function submitEventSurvey(input: SubmitEventSurveyInput) {
+  return apiJson<SubmitEventSurveyResult>("/api/genie/submit-event-survey", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Venue Check-in                                                      */
+/* ------------------------------------------------------------------ */
+
+export type CheckinResult = {
+  success: boolean;
+  checkin?: { id: number; venue_id: number; checked_in_at: string; expires_at: number } | null;
+  already_checked_in?: boolean;
+  social_energy_score?: number;
+  social_energy_state?: string;
+};
+
+export type CheckoutResult = {
+  success: boolean;
+  checked_out: boolean;
+  venue_id: number;
+};
+
+export type VenueCheckinsResult = {
+  success: boolean;
+  venue_id: number;
+  active_checkins: number;
+  user_is_checked_in: boolean;
+};
+
+export async function checkInToVenue(venueId: number) {
+  return apiJson<CheckinResult>("/api/genie/checkin", {
+    method: "POST",
+    body: JSON.stringify({ venue_id: venueId }),
+  });
+}
+
+export async function checkOutOfVenue(venueId: number) {
+  return apiJson<CheckoutResult>("/api/genie/checkout", {
+    method: "POST",
+    body: JSON.stringify({ venue_id: venueId }),
+  });
+}
+
+export async function fetchVenueCheckins(venueId: number) {
+  // The route handler resolves "is this user checked in" from the caller's
+  // own auth token server-side — no user id needs to (or should) be sent
+  // from here.
+  return apiJson<VenueCheckinsResult>(
+    `/api/genie/venue-checkins?venue_id=${venueId}`
   );
 }

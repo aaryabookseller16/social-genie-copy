@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -8,8 +9,24 @@ import {
   type AccountScreenMode,
 } from "@/app/components/single-page/AccountSection";
 import { DrawerMenu, type DrawerMenuActionId } from "@/app/components/single-page/DrawerMenu";
+import { RoleSwitcherDialog } from "@/app/components/single-page/RoleSwitcherDialog";
+import { LoginSuccessDialog } from "@/app/components/single-page/LoginSuccessDialog";
 import { ProfileSection } from "@/app/components/single-page/ProfileSection";
+import { NotificationSettingsSection } from "@/app/components/single-page/NotificationSettingsSection";
 import { VendorSection } from "@/app/components/single-page/VendorSection";
+import { ProducerSection } from "@/app/components/single-page/ProducerSection";
+import { RoleIdentifierSection } from "@/app/components/single-page/RoleIdentifierSection";
+import { RoleSetupSection } from "@/app/components/single-page/RoleSetupSection";
+import { OnboardingCompleteSection } from "@/app/components/single-page/OnboardingCompleteSection";
+import { VerifyEmailGate } from "@/app/components/single-page/VerifyEmailGate";
+import { InfluencerSection } from "@/app/components/single-page/InfluencerSection";
+import { NotificationsScreen } from "@/app/components/single-page/NotificationsScreen";
+import { MessagesScreen } from "@/app/components/single-page/MessagesScreen";
+import { ConversationScreen } from "@/app/components/single-page/ConversationScreen";
+import { HomescreenSection } from "@/app/components/homescreen/HomescreenSection";
+import { EventDetailSection } from "@/app/components/event-detail/EventDetailSection";
+import EventsPage from "@/app/components/events/EventsPage";
+import { type ManagedEvent } from "@/app/lib/publicApiClient";
 import {
   BottomDock,
   GenieBubble,
@@ -28,7 +45,11 @@ import {
 } from "@/app/components/single-page/ui";
 import { HomeScreen } from "@/app/components/discovery/HomeScreen";
 import { GenieOrb } from "@/app/components/shared/GenieOrb";
-import { requestPushPermission } from "@/app/components/shared/NotificationsBoot";
+import {
+  requestPushPermission,
+  isPushPermissionGranted,
+  getPushSubscriptionId,
+} from "@/app/components/shared/NotificationsBoot";
 import {
   trackEvent,
   trackHomeScreenViewed,
@@ -48,7 +69,11 @@ import {
 import {
   readAuthToken,
   readConsumerAccount,
+  readOnboardingPending,
+  writeOnboardingPending,
+  readSelectedRoles,
   type ConsumerAccount,
+  type OnboardingRole,
 } from "@/app/lib/localState";
 import {
   type SocialProfile,
@@ -76,6 +101,9 @@ import {
   registerPushToken,
   redeemVibeeOffer,
   saveVenueForUser,
+  checkInToVenue,
+  checkOutOfVenue,
+  fetchVenueCheckins,
   submitContactForm,
   syncSavedVenueIds,
   trackSocialSignal,
@@ -83,6 +111,14 @@ import {
   updateSocialProfile,
   unsaveVenueForUser,
   createSubscriptionCheckout,
+  setUserRoles,
+  saveProducerDetails,
+  saveInfluencerDetails,
+  fetchUnreadNotifCount,
+  fetchUnreadMessageCount,
+  fetchMessageThreads,
+  mergeThreadsToConversations,
+  type MessageThreadType,
 } from "@/app/lib/publicApiClient";
 import { getRuntimeConfig } from "@/app/lib/runtimeConfig";
 import { extractCityFromMessage, mentionsNearMe } from "@/app/lib/cityExtractor";
@@ -427,7 +463,7 @@ type SinglePageGenieAppProps = {
 };
 
 export function SinglePageGenieApp({
-  initialScreen = "home",
+  initialScreen = "homescreen",
   initialVenueId = null,
 }: SinglePageGenieAppProps = {}) {
   const config = getRuntimeConfig();
@@ -439,6 +475,7 @@ export function SinglePageGenieApp({
   const moreNearbyImpressionResponseRef =
     useRef<GenieResponseEnvelope | null>(null);
   const screenHistoryRef = useRef<FlowAnchor[]>([]);
+  const pendingReturnRef = useRef<{ screen: FlowAnchor; eventId: number | null; event: Record<string, unknown> } | null>(null);
   const homeRef = useRef<HTMLElement | null>(null);
   const listeningRef = useRef<HTMLElement | null>(null);
   const thinkingRef = useRef<HTMLElement | null>(null);
@@ -451,7 +488,23 @@ export function SinglePageGenieApp({
   const accountRef = useRef<HTMLElement | null>(null);
   const vendorRef = useRef<HTMLElement | null>(null);
   const profileRef = useRef<HTMLElement | null>(null);
+  const roleIdentifierRef = useRef<HTMLElement | null>(null);
+  const roleSetupRef = useRef<HTMLElement | null>(null);
+  const onboardingCompleteRef = useRef<HTMLElement | null>(null);
+  const roleUnlockRef = useRef<HTMLElement | null>(null);
   const [activeScreen, setActiveScreen] = useState<FlowAnchor>(initialScreen);
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
+  const [activeConversation, setActiveConversation] = useState<{
+    threadId: number | null;
+    threadType: MessageThreadType;
+    counterpartId: number;
+    counterpartName?: string;
+    counterpartAvatarUrl?: string;
+    viewerRole?: "consumer" | "producer";
+  } | null>(null);
+  const [isRoleSwitcherOpen, setIsRoleSwitcherOpen] = useState(false);
+  const [loginSuccessSheetOpen, setLoginSuccessSheetOpen] = useState(false);
   const [detailReturnScreen, setDetailReturnScreen] = useState<
     "decision" | "more" | "saved"
   >("decision");
@@ -464,6 +517,10 @@ export function SinglePageGenieApp({
   const [queryMode, setQueryMode] = useState<"venue" | "event" | "both">("venue");
   const [savedVenueIds, setSavedVenueIds] = useState<string[]>([]);
   const [savedVenues, setSavedVenues] = useState<GenieVenue[]>([]);
+  // ── Venue check-in state ────────────────────────────────────────────────
+  const [checkedInVenueIds, setCheckedInVenueIds] = useState<number[]>([]);
+  const [venueActiveCheckins, setVenueActiveCheckins] = useState<number | null>(null);
+  const [checkinBusy, setCheckinBusy] = useState(false);
   const [offers, setOffers] = useState<VibeeOffer[]>([]);
   const [offersLoading, setOffersLoading] = useState(false);
   const [offersError, setOffersError] = useState<string | null>(null);
@@ -529,8 +586,17 @@ const [trialSuccess, setTrialSuccess] = useState(false);
   const [sharedVenue, setSharedVenue] = useState<GenieVenue | null>(null);
   const [sharedVenueLoading, setSharedVenueLoading] = useState(false);
   const [selectedOfferId, setSelectedOfferId] = useState<number | null>(null);
+  const router = useRouter();
   const [account, setAccount] = useState<ConsumerAccount | null>(null);
   const [isAuthChecked, setIsAuthChecked] = useState(false);
+  // Onboarding wizard: under magic-link there is no auth session until the link
+  // is clicked, so the wizard runs on the guest session. `isOnboarding` routes
+  // the preferences "Next" button into the role steps; `onboardingEmail` feeds
+  // the completion + verification gate.
+  const [isOnboarding, setIsOnboarding] = useState(false);
+  const [onboardingEmail, setOnboardingEmail] = useState("");
+  const [onboardingRoles, setOnboardingRoles] = useState<OnboardingRole[]>([]);
+  const [verifyGateOpen, setVerifyGateOpen] = useState(false);
   const [mapPreviewFailed, setMapPreviewFailed] = useState(false);
   const [accountScreenMode, setAccountScreenMode] =
     useState<AccountScreenMode>(null);
@@ -552,8 +618,22 @@ const [trialSuccess, setTrialSuccess] = useState(false);
   const [installPrompt, setInstallPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
   const [isStandalone, setIsStandalone] = useState(false);
-  const [locationPromptDismissed, setLocationPromptDismissed] = useState(true);
   const [locationGranted, setLocationGranted] = useState(false);
+  // "unknown" while the permission check is still resolving (or unsupported
+  // browser); once resolved, drives whether/which location-prompt banner to
+  // show. See the geolocation-permission effect below.
+  const [geoPermissionState, setGeoPermissionState] = useState<
+    "unknown" | "granted" | "denied" | "prompt"
+  >("unknown");
+  // Which flavor of the location-ask banner to show: guest copy (asked once,
+  // permanently dismissible), registered-user copy (re-asked each new
+  // browser session until granted), or "blocked" (we know for certain the
+  // browser will never show its native prompt again, so we stop offering a
+  // dead "Allow" button and just point them at browser settings, once).
+  // Null = hidden.
+  const [locationPromptVariant, setLocationPromptVariant] = useState<
+    "guest" | "registered" | "blocked" | null
+  >(null);
   const [userCoords, setUserCoords] = useState<{
     latitude: number;
     longitude: number;
@@ -574,6 +654,33 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     [userCoords]
   );
   const hasPromptedForPushRef = useRef(false);
+  // The external_user_id this device's push token was last registered under.
+  // Lets us re-register on login (guest → real user) so the recipient's token
+  // is tied to the right account, without re-prompting every render.
+  const lastRegisteredPushExtIdRef = useRef<string | null>(null);
+
+  // Register this device's OneSignal token under the current user so DM pushes
+  // can reach them. Silent when permission is already granted; prompts at most
+  // once per session otherwise (never on cold start — callers gate on login /
+  // a meaningful screen). No-op if already registered under this external id.
+  const syncPushRegistration = useCallback(async () => {
+    const externalUserId = readExternalUserId();
+    if (!externalUserId) return;
+    if (lastRegisteredPushExtIdRef.current === externalUserId) return;
+
+    let playerId = isPushPermissionGranted() ? getPushSubscriptionId() : null;
+    if (!playerId && !hasPromptedForPushRef.current) {
+      hasPromptedForPushRef.current = true;
+      playerId = await requestPushPermission();
+    }
+    if (!playerId) return;
+
+    lastRegisteredPushExtIdRef.current = externalUserId;
+    await registerPushToken(playerId).catch((error) => {
+      console.error("Failed to register push token", error);
+    });
+  }, []);
+
   const offersLoadedRef = useRef(false);
   const profileLoadedRef = useRef(false);
   const resultVenues = useMemo(
@@ -712,7 +819,7 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     screenHistoryRef.current = [];
     stopListeningSession();
     setIsDrawerOpen(false);
-    setActiveScreen("home");
+    setActiveScreen("homescreen");
   }, [stopListeningSession]);
 
   const navigateTo = useCallback(
@@ -765,6 +872,30 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     },
     [account, activeScreen, config.signupPromptSuppressAfter, navigateTo]
   );
+
+  // Magic-link verification gate: a user who finished the onboarding wizard but
+  // hasn't clicked their link has no auth token. Block gated actions and show
+  // the resend prompt. Returns true when the gate was shown (caller aborts).
+  const maybeBlockForVerification = useCallback((): boolean => {
+    if (account) {
+      if (isAuthChecked && account.verified === false) {
+        setOnboardingEmail(account.email);
+        setVerifyGateOpen(true);
+        return true;
+      }
+      return false;
+    }
+    if (readAuthToken()) {
+      return false;
+    }
+    const pending = readOnboardingPending();
+    if (!pending || pending.verified) {
+      return false;
+    }
+    setOnboardingEmail(pending.email);
+    setVerifyGateOpen(true);
+    return true;
+  }, [account, isAuthChecked]);
 
   const hydrateAuthenticatedSession = useCallback(async () => {
     const token = readAuthToken();
@@ -839,7 +970,7 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     // surfaced and users saw "already redeemed" forever. Always fetch on
     // screen entry; skip only when we recently finished loading AND the
     // caller didn't explicitly request a force refresh.
-    if (!account || account.membership !== "vibee") {
+    if (!account) {
       return;
     }
     void force;
@@ -864,6 +995,36 @@ const [trialSuccess, setTrialSuccess] = useState(false);
       setRedemptionsLoading(false);
     }
   }, [account]);
+
+  useEffect(() => {
+    if (!account) return;
+    fetchUnreadNotifCount()
+      .then((r) => setUnreadNotifCount(r.unread_count ?? 0))
+      .catch(() => {});
+  }, [account]);
+
+  // Keep the homescreen message badge live: fetch on load, poll while the app
+  // is open, and refetch on every screen change (so a recipient sees a new
+  // message's badge, and it clears right after reading a thread + navigating
+  // back). The unread count has no dedicated endpoint — it's derived from the
+  // thread list — so this is intentionally lightweight, not per-second.
+  useEffect(() => {
+    if (!account) return;
+    let cancelled = false;
+    const refresh = () => {
+      fetchUnreadMessageCount(account.id)
+        .then((count) => {
+          if (!cancelled) setUnreadMessageCount(count);
+        })
+        .catch(() => {});
+    };
+    refresh();
+    const interval = setInterval(refresh, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [account, activeScreen]);
 
   const loadSocialPreferences = useCallback(async () => {
     if (profileLoadedRef.current) {
@@ -892,7 +1053,11 @@ const [trialSuccess, setTrialSuccess] = useState(false);
       return;
     }
 
-    screenHistoryRef.current = ["home"];
+    if (maybeBlockForVerification()) {
+      return;
+    }
+
+    screenHistoryRef.current = ["homescreen"];
     setActiveScreen("thinking");
     setLastQuery(trimmed);
     setStatusMessage(null);
@@ -1117,6 +1282,11 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     index: number,
     source: "decision" | "more" | "saved"
   ) => {
+    // Verification gate takes precedence: an unverified onboarded user must
+    // click their magic link before opening a detail screen.
+    if (maybeBlockForVerification()) {
+      return;
+    }
     // Account Intro gate: on the Decision screen, after the user has completed
     // at least two queries, the first venue tap by an unauthenticated user
     // takes them to the Account Intro instead of the detail view.
@@ -1181,6 +1351,10 @@ const [trialSuccess, setTrialSuccess] = useState(false);
   );
 
   const handleSaveVenue = async (venue: GenieVenue) => {
+    if (maybeBlockForVerification()) {
+      return;
+    }
+
     let token = readAuthToken();
 
     if (!account || !token) {
@@ -1266,6 +1440,41 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     }
   };
 
+  const handleToggleCheckin = async (venue: GenieVenue) => {
+    if (checkinBusy) return;
+    if (!account || !readAuthToken()) {
+      maybeTriggerSignup("checkin_attempt");
+      return;
+    }
+
+    const venueId = Number(venue.id);
+    const isCheckedIn = checkedInVenueIds.includes(venueId);
+
+    setCheckinBusy(true);
+    try {
+      if (isCheckedIn) {
+        await checkOutOfVenue(venueId);
+        logVenueInteraction("checkout", venueId, activeScreen);
+        setCheckedInVenueIds((prev) => prev.filter((id) => id !== venueId));
+        setVenueActiveCheckins((prev) => (prev != null ? Math.max(0, prev - 1) : prev));
+      } else {
+        const result = await checkInToVenue(venueId);
+        logVenueInteraction("checkin", venueId, activeScreen);
+        setCheckedInVenueIds((prev) => (prev.includes(venueId) ? prev : [...prev, venueId]));
+        // Xano returns already_checked_in when a stale local state missed an
+        // existing session — don't double-count in that case.
+        if (!result.already_checked_in) {
+          setVenueActiveCheckins((prev) => (prev != null ? prev + 1 : prev));
+        }
+      }
+    } catch (error) {
+      console.error("Failed to update check-in", error);
+      setStatusMessage("Could not update check-in right now.");
+    } finally {
+      setCheckinBusy(false);
+    }
+  };
+
   const handleShareVenue = async (venue: GenieVenue) => {
     const venueId = getVenueId(venue);
     const text = `Check out ${venue.venue_name} on Genie by Social Bevy`;
@@ -1298,6 +1507,9 @@ const [trialSuccess, setTrialSuccess] = useState(false);
 
   const handleRedeemOffer = useCallback(
     async (offer: VibeeOffer) => {
+      if (maybeBlockForVerification()) {
+        return;
+      }
       if (!account || account.membership !== "vibee") {
         setStatusMessage("Upgrade to V.I.Bee to redeem offers.");
         navigateTo("account");
@@ -1457,11 +1669,14 @@ const [trialSuccess, setTrialSuccess] = useState(false);
       setSocialProfile(updated);
       profileLoadedRef.current = true;
       setStatusMessage("Preferences saved. Genie will use these on your next ask.");
-      // "Next" previously only saved and left the user stranded on the
-      // Preferences screen — users perceived this as being bounced back to
-      // Profile. Advance to Home so the button actually progresses the flow
-      // and the user can immediately try out their updated vibe.
-      navigateTo("home", false);
+      // During the onboarding wizard, "Next" advances to the role identifier
+      // (Step 3) instead of bouncing home. Outside onboarding (e.g. "Tune my
+      // preferences") it returns home so the button still progresses the flow.
+      if (isOnboarding) {
+        navigateTo("role-identifier");
+      } else {
+        navigateTo("home", false);
+      }
     } catch (error) {
       const message =
         error instanceof Error
@@ -1471,14 +1686,15 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     } finally {
       setSocialSaving(false);
     }
-  }, [socialProfile, navigateTo]);
+  }, [socialProfile, navigateTo, isOnboarding]);
 
   useEffect(() => {
     trackHomeScreenViewed();
     setAccount(readConsumerAccount());
     void (async () => {
       const url = new URL(window.location.href);
-      const magicToken = url.searchParams.get("token");
+      // Handle both ?token= and ?/token= (Xano sometimes prepends a slash)
+      const magicToken = url.searchParams.get("token") ?? url.searchParams.get("/token");
 
       if (magicToken) {
         try {
@@ -1494,10 +1710,17 @@ const [trialSuccess, setTrialSuccess] = useState(false);
             writeExternalUserId(external_user_id);
           }
 
+          // Magic link clicked → the account is verified. Clear the pending
+          // state and dismiss the wizard/gate so they never show again.
+          writeOnboardingPending(null);
+          setIsOnboarding(false);
+          setVerifyGateOpen(false);
+
           // Preserve the latest documented behavior: remove the token from the URL
           // immediately after a successful exchange.
           url.searchParams.delete("token");
           window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+          setLoginSuccessSheetOpen(true);
 
           if (
             previousExternalUserId &&
@@ -1511,6 +1734,45 @@ const [trialSuccess, setTrialSuccess] = useState(false);
             offersLoadedRef.current = false;
             profileLoadedRef.current = false;
             await mergeGuestProfile(external_user_id).catch(() => {});
+          }
+
+          // Sync onboarding role selections to genie_user now that the
+          // account row exists (magic link click creates it).
+          const savedRoles = readSelectedRoles();
+          if (savedRoles.length > 0) {
+            setUserRoles(savedRoles).catch(() => {});
+          }
+          try {
+            const rawDetails = window.localStorage.getItem(
+              "genie_onboarding_role_details_v1"
+            );
+            if (rawDetails) {
+              const details = JSON.parse(rawDetails) as {
+                brandName?: string;
+                producerHandle?: string;
+                influencerHandle?: string;
+              };
+              if (
+                (details.brandName || details.producerHandle) &&
+                savedRoles.includes("producer")
+              ) {
+                saveProducerDetails({
+                  brand_name: details.brandName,
+                  producer_handle: details.producerHandle,
+                }).catch(() => {});
+              }
+              if (
+                details.influencerHandle &&
+                savedRoles.includes("influencer")
+              ) {
+                saveInfluencerDetails({
+                  influencer_handle: details.influencerHandle,
+                }).catch(() => {});
+              }
+              window.localStorage.removeItem("genie_onboarding_role_details_v1");
+            }
+          } catch {
+            // best-effort
           }
         } catch (error) {
           console.error("Failed to exchange magic token", error);
@@ -1608,6 +1870,33 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     };
   }, [activeScreen, selectedVenueId, venueMap]);
 
+  // Load this venue's check-in state whenever the detail screen opens for it.
+  useEffect(() => {
+    if (activeScreen !== "detail" || !selectedVenue || !account || !readAuthToken()) {
+      return;
+    }
+
+    let cancelled = false;
+    const venueId = Number(selectedVenue.id);
+
+    void fetchVenueCheckins(venueId)
+      .then((result) => {
+        if (cancelled) return;
+        setVenueActiveCheckins(result.active_checkins ?? 0);
+        setCheckedInVenueIds((prev) => {
+          const withoutThis = prev.filter((id) => id !== venueId);
+          return result.user_is_checked_in ? [...withoutThis, venueId] : withoutThis;
+        });
+      })
+      .catch((error) => {
+        console.error("Failed to load check-in state", error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeScreen, selectedVenue, account]);
+
   useEffect(() => {
     if (
       activeScreen !== "detail" ||
@@ -1664,16 +1953,20 @@ const [trialSuccess, setTrialSuccess] = useState(false);
   }, []);
 
   // ── Geolocation permission ──
-  // Show a friendly in-app banner before triggering the browser prompt so the
-  // user understands why we need their location ("near me" queries depend on
-  // it). Once dismissed or granted, we don't pester them again on this device.
+  // On mount, find out whether the browser already has a real answer
+  // ("granted"/"denied") via the Permissions API. Safari doesn't support
+  // that API, so there we can only tell "prompt" (never asked) apart from
+  // "granted" once we've actually fetched a position — a real prior denial
+  // looks the same as never-asked on Safari, which is an accepted gap.
+  // A separate effect (below, keyed on geoPermissionState + account) decides
+  // whether/which location-prompt banner to show from this result.
   useEffect(() => {
     if (typeof window === "undefined" || !("geolocation" in navigator)) {
+      setGeoPermissionState("denied");
       return;
     }
 
     const dismissedKey = "genie_location_prompt_dismissed_v1";
-    const dismissed = window.localStorage.getItem(dismissedKey) === "1";
 
     type PermissionStatusLike = {
       state: "granted" | "denied" | "prompt";
@@ -1688,26 +1981,30 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     const onGranted = (latitude: number, longitude: number) => {
       setLocationGranted(true);
       setUserCoords({ latitude, longitude });
-      setLocationPromptDismissed(true);
+      setGeoPermissionState("granted");
       window.localStorage.setItem(dismissedKey, "1");
     };
 
     const askNow = () => {
       navigator.geolocation.getCurrentPosition(
         (pos) => onGranted(pos.coords.latitude, pos.coords.longitude),
-        () => {
+        (err) => {
           // User denied or error - mark dismissed so we don't keep asking.
-          setLocationPromptDismissed(true);
+          // A real PERMISSION_DENIED means the browser won't show its native
+          // prompt again on this device/browser until the user changes site
+          // settings themselves — remember that so we stop offering a dead
+          // "Allow" button on every future visit (works the same on Safari,
+          // since this is our own request, not the Permissions API).
+          if (err.code === err.PERMISSION_DENIED) {
+            window.localStorage.setItem("genie_geo_hard_denied_v1", "1");
+          }
+          setGeoPermissionState("denied");
           window.localStorage.setItem(dismissedKey, "1");
         },
         { enableHighAccuracy: true, timeout: 8000, maximumAge: 60_000 }
       );
     };
 
-    // Do NOT auto-show the location banner. The ask is only surfaced after
-    // the user signals a near-me intent (taps a smart prompt chip or types
-    // "near me"). If permission was previously granted, silently fetch the
-    // coords so they're ready for the next query.
     if (permissionsApi?.query) {
       permissionsApi
         .query({ name: "geolocation" })
@@ -1717,14 +2014,22 @@ const [trialSuccess, setTrialSuccess] = useState(false);
               (pos) => onGranted(pos.coords.latitude, pos.coords.longitude),
               () => {
                 setLocationGranted(true);
-                setLocationPromptDismissed(true);
+                setGeoPermissionState("granted");
               }
             );
+          } else {
+            if (status.state === "denied") {
+              window.localStorage.setItem("genie_geo_hard_denied_v1", "1");
+            }
+            setGeoPermissionState(status.state);
           }
         })
-        .catch(() => {});
+        .catch(() => setGeoPermissionState("prompt"));
+    } else {
+      // No Permissions API (Safari) — treat as "prompt" so the banner logic
+      // below still offers to ask; requesting will resolve the real state.
+      setGeoPermissionState("prompt");
     }
-    void dismissed;
 
     // Expose askNow on the ref so the banner can call it
     (window as Window & { __genieAskLocation?: () => void }).__genieAskLocation =
@@ -1735,6 +2040,49 @@ const [trialSuccess, setTrialSuccess] = useState(false);
         .__genieAskLocation;
     };
   }, []);
+
+  // ── Location-prompt banner variant ──
+  // Decides whether to show the location-ask banner, and which copy, once
+  // both the permission check and the account load have settled.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (geoPermissionState === "unknown" || geoPermissionState === "granted") {
+      setLocationPromptVariant(null);
+      return;
+    }
+
+    const hardDenied =
+      window.localStorage.getItem("genie_geo_hard_denied_v1") === "1";
+    if (hardDenied) {
+      // We know for certain the browser will never show its native prompt
+      // again — showing "Allow" every session (guest or registered) would
+      // just be a dead button. Surface a one-time notice pointing at browser
+      // settings instead, then leave it alone for good.
+      const noticeDismissed =
+        window.localStorage.getItem(
+          "genie_geo_hard_denied_notice_dismissed_v1"
+        ) === "1";
+      setLocationPromptVariant(noticeDismissed ? null : "blocked");
+      return;
+    }
+
+    if (account) {
+      // Registered users: re-ask each new browser session until granted —
+      // dismissing only silences it for the current tab session.
+      const sessionDismissed =
+        window.sessionStorage.getItem(
+          "genie_location_prompt_session_dismissed_v1"
+        ) === "1";
+      setLocationPromptVariant(sessionDismissed ? null : "registered");
+    } else {
+      // Guests: ask once ever. If they've already dismissed/denied, don't
+      // nag again — they'll be asked for a city by name instead.
+      const dismissed =
+        window.localStorage.getItem("genie_location_prompt_dismissed_v1") ===
+        "1";
+      setLocationPromptVariant(dismissed ? null : "guest");
+    }
+  }, [geoPermissionState, account]);
 
   const requestLocationPermission = useCallback(() => {
     if (typeof window === "undefined" || !("geolocation" in navigator)) {
@@ -1750,52 +2098,96 @@ const [trialSuccess, setTrialSuccess] = useState(false);
           longitude: pos.coords.longitude,
         });
         setLocationGranted(true);
-        setLocationPromptDismissed(true);
+        setGeoPermissionState("granted");
+        setLocationPromptVariant(null);
         window.localStorage.setItem("genie_location_prompt_dismissed_v1", "1");
       },
       (err) => {
-        // Permission denied or unavailable. If denied, the browser won't
-        // show another prompt — user has to re-enable in site settings.
+        // Permission denied or unavailable. A real PERMISSION_DENIED means
+        // the browser won't show its native prompt again — remember that
+        // permanently so we stop offering a dead "Allow" button on future
+        // visits, instead of just silencing this one session/device pair.
         if (err.code === err.PERMISSION_DENIED) {
+          window.localStorage.setItem("genie_geo_hard_denied_v1", "1");
           alert(
             "Location is blocked for this site. Enable it in your browser settings, then try again."
           );
         }
-        setLocationPromptDismissed(true);
-        window.localStorage.setItem("genie_location_prompt_dismissed_v1", "1");
+        setGeoPermissionState("denied");
+        // Guests are asked once ever (localStorage); registered users are
+        // only silenced for this tab session so they get re-asked later.
+        if (account) {
+          window.sessionStorage.setItem(
+            "genie_location_prompt_session_dismissed_v1",
+            "1"
+          );
+        } else {
+          window.localStorage.setItem("genie_location_prompt_dismissed_v1", "1");
+        }
+        setLocationPromptVariant(null);
       },
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 60_000 }
     );
-  }, []);
+  }, [account]);
 
   const dismissLocationPrompt = useCallback(() => {
-    setLocationPromptDismissed(true);
     if (typeof window !== "undefined") {
-      window.localStorage.setItem("genie_location_prompt_dismissed_v1", "1");
+      if (locationPromptVariant === "blocked") {
+        // One-time notice — once acknowledged, never show it again for
+        // either guest or registered users on this device/browser.
+        window.localStorage.setItem(
+          "genie_geo_hard_denied_notice_dismissed_v1",
+          "1"
+        );
+      } else if (account) {
+        window.sessionStorage.setItem(
+          "genie_location_prompt_session_dismissed_v1",
+          "1"
+        );
+      } else {
+        window.localStorage.setItem("genie_location_prompt_dismissed_v1", "1");
+      }
     }
-  }, []);
+    setLocationPromptVariant(null);
+  }, [account, locationPromptVariant]);
 
   // Surface the location ask when a query has a near-me intent (chip tap or
-  // the phrase "near me" in typed/voice input). No-op if already granted or
-  // permanently dismissed on this device.
+  // the phrase "near me" in typed/voice input). No-op if already granted.
+  // Guests who already dismissed permanently aren't re-asked (they'll be
+  // asked for a city by name instead); registered users are re-surfaced even
+  // if silenced for the session, since an explicit "near me" ask warrants it.
+  // If we already know the browser hard-denied, don't offer a dead "Allow"
+  // button here either — respect the one-time "blocked" notice dismissal.
   const maybeAskLocationForIntent = useCallback(
     (text: string, source: "chip" | "typed" | "voice") => {
       if (typeof window === "undefined" || !("geolocation" in navigator)) return;
       if (locationGranted) return;
-      const dismissed =
-        window.localStorage.getItem("genie_location_prompt_dismissed_v1") === "1";
-      if (dismissed) return;
       const isNearMeIntent =
         source === "chip" || /\bnear me\b/i.test(text ?? "");
       if (!isNearMeIntent) return;
-      setLocationPromptDismissed(false);
+      const hardDenied =
+        window.localStorage.getItem("genie_geo_hard_denied_v1") === "1";
+      if (hardDenied) {
+        const noticeDismissed =
+          window.localStorage.getItem(
+            "genie_geo_hard_denied_notice_dismissed_v1"
+          ) === "1";
+        if (noticeDismissed) return;
+        setLocationPromptVariant("blocked");
+        return;
+      }
+      if (account) {
+        setLocationPromptVariant("registered");
+      } else {
+        const dismissed =
+          window.localStorage.getItem("genie_location_prompt_dismissed_v1") ===
+          "1";
+        if (dismissed) return;
+        setLocationPromptVariant("guest");
+      }
     },
-    [locationGranted]
+    [locationGranted, account]
   );
-
-  // Silence unused variable warning — locationGranted is reserved for future
-  // UI states (e.g. showing a "using your location" indicator).
-  void locationGranted;
 
   // Deep-link: `?screen=offers|redemptions|dashboard|saved|vendor|profile|membership`
   useEffect(() => {
@@ -1812,11 +2204,103 @@ const [trialSuccess, setTrialSuccess] = useState(false);
       "membership",
       "preferences",
       "event-survey",
+      "role-identifier",
+      "role-setup",
+      "onboarding-complete",
+      "messages",
     ];
-    if (allowed.includes(screen as FlowAnchor)) {
+    if (screen === "conversation") {
+      const threadType = url.searchParams.get("thread_type");
+      const producerId = url.searchParams.get("producer_id");
+      const threadIdParam = url.searchParams.get("thread_id");
+      const counterpartName = url.searchParams.get("counterpart_name");
+      if (threadType === "producer" && producerId && !isNaN(Number(producerId))) {
+        setActiveConversation({
+          threadId: null,
+          threadType: "producer",
+          counterpartId: Number(producerId),
+          counterpartName: counterpartName ?? undefined,
+        });
+        navigateTo("conversation");
+      } else if (
+        threadType === "user" &&
+        threadIdParam &&
+        !isNaN(Number(threadIdParam))
+      ) {
+        // Notification tap into a 1:1 DM: we only have thread_id. Open the chat
+        // immediately (history loads by thread_id + clears unread), then resolve
+        // the counterpart (name/avatar/id, needed for the header and replies)
+        // from the thread list. Use the stored account id so this is correct
+        // even before React state hydrates on a cold notification open.
+        const tid = Number(threadIdParam);
+        setActiveConversation({
+          threadId: tid,
+          threadType: "user",
+          counterpartId: 0,
+          counterpartName: counterpartName ?? undefined,
+        });
+        navigateTo("conversation");
+        const selfId = readConsumerAccount()?.id;
+        void fetchMessageThreads("user", 1, 100)
+          .then((raw) => {
+            const conv = mergeThreadsToConversations(raw, selfId).find(
+              (c) => c.threadType === "user" && c.threadId === tid
+            );
+            if (!conv) return;
+            setActiveConversation((prev) =>
+              prev && prev.threadId === tid
+                ? {
+                    ...prev,
+                    counterpartId: conv.counterpartId,
+                    counterpartName: conv.counterpartName ?? prev.counterpartName,
+                    counterpartAvatarUrl: conv.counterpartAvatarUrl,
+                    viewerRole: conv.viewerRole,
+                  }
+                : prev
+            );
+          })
+          .catch(() => {});
+      }
+    } else if (screen === "login") {
+      // Public pages outside the SPA (event/venue/producer/post microsites)
+      // send logged-out visitors here as `/?screen=login&redirect=<path>`
+      // when they tap a gated action. `redirect` previously went nowhere —
+      // "login" isn't a FlowAnchor, so it silently no-opped below, and even
+      // when it did resolve nothing ever read `redirect` back. Stash the
+      // target (same-origin relative paths only, to avoid an open redirect)
+      // and open the login screen; the post-login effect below forwards them.
+      const redirectTarget = url.searchParams.get("redirect");
+      if (
+        redirectTarget &&
+        redirectTarget.startsWith("/") &&
+        !redirectTarget.startsWith("//") &&
+        !redirectTarget.includes("://")
+      ) {
+        window.sessionStorage.setItem("genie_post_login_redirect", redirectTarget);
+      }
+      navigateTo("account");
+    } else if (screen === "event") {
+      // Standalone pages outside the SPA (producer profile, notifications, etc.)
+      // link here as `/?screen=event&event_id=<id>` since there's no public
+      // per-id event route. Seed minimal initialData — EventDetailSection
+      // fetches the full record itself via its own eventId effect.
+      const eventIdParam = url.searchParams.get("event_id");
+      const eventId = eventIdParam ? Number(eventIdParam) : NaN;
+      if (Number.isFinite(eventId) && eventId > 0) {
+        setSelectedEventId(eventId);
+        setSelectedEvent({ id: eventId });
+        navigateTo("event-detail");
+      }
+    } else if (allowed.includes(screen as FlowAnchor)) {
       navigateTo(screen as FlowAnchor);
     }
     url.searchParams.delete("screen");
+    url.searchParams.delete("redirect");
+    url.searchParams.delete("thread_type");
+    url.searchParams.delete("producer_id");
+    url.searchParams.delete("thread_id");
+    url.searchParams.delete("counterpart_name");
+    url.searchParams.delete("event_id");
     window.history.replaceState(
       {},
       "",
@@ -1934,6 +2418,19 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     navigateTo("vendor");
   }, [account, navigateTo]);
 
+  // Post-login redirect for public microsites (event/venue/producer/post
+  // detail pages): those pages send a logged-out visitor to
+  // `/?screen=login&redirect=<path>` (stashed into sessionStorage by the
+  // `screen === "login"` branch above) when a gated action is tapped. Once
+  // the session hydrates, forward them back to that exact page.
+  useEffect(() => {
+    if (!account || typeof window === "undefined") return;
+    const target = window.sessionStorage.getItem("genie_post_login_redirect");
+    if (!target) return;
+    window.sessionStorage.removeItem("genie_post_login_redirect");
+    router.push(target);
+  }, [account, router]);
+
   useEffect(() => {
     if (!response || response.response_mode !== "structured_results") {
       return;
@@ -1959,20 +2456,17 @@ const [trialSuccess, setTrialSuccess] = useState(false);
       });
     });
 
-    if (!hasPromptedForPushRef.current) {
-      hasPromptedForPushRef.current = true;
-      void (async () => {
-        const playerId = await requestPushPermission();
-        if (!playerId) {
-          return;
-        }
+    void syncPushRegistration();
+  }, [response, syncPushRegistration]);
 
-        await registerPushToken(playerId).catch((error) => {
-          console.error("Failed to register push token", error);
-        });
-      })();
-    }
-  }, [response]);
+  // Register (or re-register) this device for push as soon as we have a
+  // logged-in account, so message pushes reach users who go straight to
+  // messaging — not just those who run a Genie search. Re-runs on login when
+  // account.id becomes available (or changes from guest to real user).
+  useEffect(() => {
+    if (!account?.id) return;
+    void syncPushRegistration();
+  }, [account?.id, syncPushRegistration]);
 
   useEffect(() => {
     if (
@@ -2035,6 +2529,11 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     "Help Genie learn your vibe so recommendations get more personal.";
   const mapPreviewUrl = selectedVenue ? buildStaticMapUrl(selectedVenue) : null;
   const nativeMapsUrl = selectedVenue ? buildNativeMapsUrl(selectedVenue) : null;
+  // Uber deeplink — same construction as the standalone venue page (VenueDetailClient.tsx).
+  const uberUrl =
+    selectedVenue && selectedVenue.latitude != null && selectedVenue.longitude != null
+      ? `uber://?dropoff[lat]=${selectedVenue.latitude}&dropoff[lng]=${selectedVenue.longitude}&dropoff[nickname]=${encodeURIComponent(selectedVenue.venue_name)}`
+      : null;
   const detailActions: Array<{
     id: string;
     label: string;
@@ -2042,6 +2541,40 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     onClick: () => void;
   }> = selectedVenue
     ? [
+        ...(uberUrl
+          ? [
+              {
+                id: "ride",
+                label: "Get a Ride",
+                variant: "secondary" as const,
+                onClick: () => {
+                  logVendorInteraction("ride_click", Number(selectedVenue.id));
+                  logVenueInteraction("ride", Number(selectedVenue.id), "detail");
+                  window.open(uberUrl, "_blank", "noopener,noreferrer");
+                },
+              },
+            ]
+          : []),
+        ...(nativeMapsUrl
+          ? [
+              {
+                id: "directions",
+                label: "Directions",
+                variant: "secondary" as const,
+                onClick: () => {
+                  trackEvent(analyticsEvents.mapOpen, {
+                    venueId: getVenueId(selectedVenue),
+                  });
+                  trackEvent(analyticsEvents.vendorMapTap, {
+                    venueId: getVenueId(selectedVenue),
+                  });
+                  logVendorInteraction("map_click", Number(selectedVenue.id));
+                  logVenueInteraction("map", Number(selectedVenue.id), "detail");
+                  window.open(nativeMapsUrl, "_blank", "noopener,noreferrer");
+                },
+              },
+            ]
+          : []),
         ...(selectedVenue.phone
           ? [
               {
@@ -2170,6 +2703,9 @@ const [trialSuccess, setTrialSuccess] = useState(false);
         case "saved":
           navigateTo("saved");
           break;
+        case "messages":
+          navigateTo("messages");
+          break;
         case "membership":
           navigateTo("membership");
           break;
@@ -2229,6 +2765,10 @@ const [trialSuccess, setTrialSuccess] = useState(false);
             "_blank",
             "noopener,noreferrer"
           );
+          break;
+        case "switch-role":
+          setIsDrawerOpen(false);
+          setIsRoleSwitcherOpen(true);
           break;
       }
     },
@@ -2304,6 +2844,15 @@ case "vibbee-trial":
   setTrialSuccess(false);
   goBack("account");
   break;
+      case "producer-dashboard":
+        goBack("home");
+        break;
+      case "influencer-dashboard":
+        goBack("home");
+        break;
+      case "role-unlock":
+        goBack("home");
+        break;
       default:
         goBack("home");
     }
@@ -2318,6 +2867,7 @@ case "vibbee-trial":
 
   const shouldShowTopBar =
     activeScreen !== "home" &&
+    activeScreen !== "homescreen" &&
     activeScreen !== "vendor" &&
     activeScreen !== "account" &&
     activeScreen !== "profile" &&
@@ -2325,6 +2875,7 @@ case "vibbee-trial":
     activeScreen !== "contact" &&
     activeScreen !== "membership" &&
     activeScreen !== "offers" &&
+    activeScreen !== "events-tab" &&
     activeScreen !== "offer-activated" &&
     activeScreen !== "offer-detail" &&
     activeScreen !== "redemptions" &&
@@ -2332,6 +2883,14 @@ case "vibbee-trial":
     activeScreen !== "event-detail" &&
 activeScreen !== "event-survey" &&
 activeScreen !== "vibbee-trial" &&
+    activeScreen !== "role-identifier" &&
+    activeScreen !== "role-setup" &&
+    activeScreen !== "onboarding-complete" &&
+    activeScreen !== "role-unlock" &&
+    activeScreen !== "producer-dashboard" &&
+    activeScreen !== "notifications" &&
+    activeScreen !== "messages" &&
+    activeScreen !== "conversation" &&
     activeScreen !== "detail";
 
   const isAiFallbackLayout =
@@ -2345,28 +2904,33 @@ activeScreen !== "vibbee-trial" &&
   // landing screen, so users always have a consistent way to get back home or
   // jump into profile/account.
   const shouldShowFooter =
+    activeScreen === "homescreen" ||
     activeScreen === "decision" ||
     activeScreen === "more" ||
     activeScreen === "detail" ||
     activeScreen === "saved" ||
     activeScreen === "dashboard" ||
     activeScreen === "offers" ||
+    activeScreen === "events-tab" ||
     activeScreen === "offer-detail" ||
     activeScreen === "offer-activated" ||
     activeScreen === "redemptions" ||
     activeScreen === "profile" ||
+    activeScreen === "notification-settings" ||
     activeScreen === "account" ||
     activeScreen === "membership" ||
     activeScreen === "contact" ||
     activeScreen === "preferences" ||
     activeScreen === "vendor" ||
+    activeScreen === "producer-dashboard" ||
+    activeScreen === "influencer-dashboard" ||
     activeScreen === "event-detail" ||
 activeScreen === "event-survey" ||
 activeScreen === "vibbee-trial" ||
     (activeScreen === "thinking" && isAiFallbackLayout);
 
   return (
-    <main className={`relative flex h-dvh flex-col overflow-x-hidden ${activeScreen === "home" || activeScreen === "listening" || activeScreen === "thinking" ? "overflow-y-hidden" : "overflow-y-auto"} bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat px-4 pb-3 pt-3 dark:bg-[url('/bg.png')] dark:bg-cover dark:bg-center sm:px-6 sm:pb-4 sm:pt-5`}>
+    <main className={`relative flex h-dvh flex-col overflow-x-hidden ${activeScreen === "home" || activeScreen === "homescreen" || activeScreen === "listening" || activeScreen === "thinking" ? "overflow-y-hidden" : "overflow-y-auto"} bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat px-4 pb-3 pt-3 dark:bg-[url('/bg.png')] dark:bg-cover dark:bg-center sm:px-6 sm:pb-4 sm:pt-5`}>
       <div className="pointer-events-none fixed inset-0 z-0 hidden bg-black/50 dark:block" />
       <DrawerMenu
         visible={isDrawerOpen}
@@ -2381,8 +2945,32 @@ activeScreen === "vibbee-trial" ||
         onToggleNotifications={() => setNotificationsEnabled((prev) => !prev)}
       />
 
-      <div className={`relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col gap-3 ${activeScreen === "home" || activeScreen === "listening" || activeScreen === "thinking" ? "min-h-0" : ""}`}>
-        {!locationPromptDismissed && activeScreen === "home" ? (
+      <LoginSuccessDialog
+        visible={loginSuccessSheetOpen}
+        onClose={() => setLoginSuccessSheetOpen(false)}
+      />
+
+      <RoleSwitcherDialog
+        visible={isRoleSwitcherOpen}
+        onClose={() => setIsRoleSwitcherOpen(false)}
+        onNavigateToRole={(role) => {
+          setIsRoleSwitcherOpen(false);
+          const targets: Record<OnboardingRole, FlowAnchor> = {
+            consumer: "dashboard",
+            vendor: "vendor",
+            producer: "producer-dashboard",
+            influencer: "influencer-dashboard",
+          };
+          navigateTo(targets[role]);
+        }}
+        onUnlockNew={() => {
+          setIsRoleSwitcherOpen(false);
+          navigateTo("role-unlock");
+        }}
+      />
+
+      <div className={`relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col gap-3 ${activeScreen === "home" || activeScreen === "homescreen" || activeScreen === "listening" || activeScreen === "thinking" ? "min-h-0" : ""}`}>
+        {locationPromptVariant && activeScreen === "home" ? (
           <div className="flex items-start gap-3 rounded-[18px] border border-[#E7070380] bg-transparent px-3 py-2.5 shadow-sm dark:border-white/15 dark:bg-black/30">
             <span className="mt-0.5 text-red-500 dark:text-[#ff9d7d]" aria-hidden="true">
               <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -2392,26 +2980,46 @@ activeScreen === "vibbee-trial" ||
             </span>
             <div className="min-w-0 flex-1">
               <p className="text-[0.82rem] font-semibold text-gray-900 dark:text-white">
-                Use your location?
+                {locationPromptVariant === "blocked"
+                  ? "Location is off for Genie"
+                  : locationPromptVariant === "registered"
+                  ? "Let Genie see what you see ✨"
+                  : "Use your location?"}
               </p>
               <p className="mt-0.5 text-[0.72rem] leading-4 text-gray-500 dark:text-white/65">
-                Genie can pick spots that are actually near you.
+                {locationPromptVariant === "blocked"
+                  ? "Location is blocked for this site in your browser settings, so I can't ask again — flip it back on there for spot-on nearby picks."
+                  : locationPromptVariant === "registered"
+                  ? "You're already in the club — turn on location and I'll actually know what's near you, not just guess."
+                  : "Genie can pick spots that are actually near you."}
               </p>
               <div className="mt-2 flex gap-2">
-                <button
-                  type="button"
-                  onClick={requestLocationPermission}
-                  className="rounded-full border border-red-500 bg-red-600 px-3 py-1 text-[0.72rem] font-semibold text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
-                >
-                  Allow
-                </button>
-                <button
-                  type="button"
-                  onClick={dismissLocationPrompt}
-                  className="rounded-full border border-gray-300 px-3 py-1 text-[0.72rem] font-semibold text-gray-700 dark:border-white/25 dark:text-white/85"
-                >
-                  Not now
-                </button>
+                {locationPromptVariant === "blocked" ? (
+                  <button
+                    type="button"
+                    onClick={dismissLocationPrompt}
+                    className="rounded-full border border-gray-300 px-3 py-1 text-[0.72rem] font-semibold text-gray-700 dark:border-white/25 dark:text-white/85"
+                  >
+                    Got it
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={requestLocationPermission}
+                      className="rounded-full border border-red-500 bg-red-600 px-3 py-1 text-[0.72rem] font-semibold text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                    >
+                      Allow
+                    </button>
+                    <button
+                      type="button"
+                      onClick={dismissLocationPrompt}
+                      className="rounded-full border border-gray-300 px-3 py-1 text-[0.72rem] font-semibold text-gray-700 dark:border-white/25 dark:text-white/85"
+                    >
+                      Not now
+                    </button>
+                  </>
+                )}
               </div>
             </div>
             <button
@@ -3234,6 +3842,25 @@ activeScreen === "vibbee-trial" ||
                 </span>
               </div>
 
+              <button
+                type="button"
+                disabled={checkinBusy}
+                onClick={() => void handleToggleCheckin(selectedVenue)}
+                className={`flex items-center gap-1.5 self-start rounded-full px-3.5 py-2 text-[0.78rem] font-semibold transition disabled:pointer-events-none disabled:opacity-60 ${
+                  checkedInVenueIds.includes(Number(selectedVenue.id))
+                    ? "bg-red-600 text-white dark:bg-white dark:text-gray-900"
+                    : "border border-red-300 text-red-600 dark:border-[#E7070380] dark:text-white/85"
+                }`}
+              >
+                <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 1 1 18 0z" /><circle cx="12" cy="10" r="3" />
+                </svg>
+                {checkedInVenueIds.includes(Number(selectedVenue.id)) ? "Checked In" : "Check In"}
+                {venueActiveCheckins != null && venueActiveCheckins > 0 ? (
+                  <span className="opacity-70">· {venueActiveCheckins} here</span>
+                ) : null}
+              </button>
+
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.82rem] text-gray-700 dark:text-white/80">
                 <span className="flex items-center gap-1">
                   {[1, 2, 3, 4, 5].map((n) => (
@@ -3310,49 +3937,74 @@ activeScreen === "vibbee-trial" ||
 
               <div className="grid grid-cols-[1fr_1.45fr_1fr] gap-1">
                 {detailActions.slice(0, 3).map((action, index) => {
-                  const isCall =
-                    action.id.includes("call") ||
-                    action.label.toLowerCase().includes("call");
-                  const isReserve = index === 1;
-                  const label = isCall ? "Call" : isReserve ? "Reservations" : "Share";
-                  const lightIconSrc = isCall
-                    ? "/icons/phone-red.png"
-                    : isReserve
-                      ? "/icons/calendarIcon.png"
-                      : "/icons/share-red.png";
-                  const darkIconSrc = isCall
-                    ? "/icons/phoneIcon.png"
-                    : isReserve
-                      ? "/icons/calendarIcon.png"
-                      : "/icons/shareIcon.png";
+                  // Middle button keeps the filled-red emphasis; sides stay outlined.
+                  const isPrimary = index === 1;
+                  const iconSize = isPrimary ? "h-[15px] w-[15px]" : "h-[14px] w-[14px]";
+                  // Icon is chosen by the action's identity — not its position —
+                  // so reordering the actions can never mislabel a button.
+                  let icon: React.ReactNode;
+                  if (action.id === "ride") {
+                    icon = (
+                      <svg viewBox="0 0 24 24" className={`${iconSize} flex-none`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="1" y="3" width="15" height="13" rx="2" />
+                        <polygon points="16 8 20 8 23 11 23 16 16 16 16 8" />
+                        <circle cx="5.5" cy="18.5" r="2.5" />
+                        <circle cx="18.5" cy="18.5" r="2.5" />
+                      </svg>
+                    );
+                  } else if (action.id === "directions") {
+                    icon = (
+                      <svg viewBox="0 0 24 24" className={`${iconSize} flex-none`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polygon points="3 11 22 2 13 21 11 13 3 11" />
+                      </svg>
+                    );
+                  } else {
+                    const lightIconSrc =
+                      action.id === "call"
+                        ? "/icons/phone-red.png"
+                        : action.id === "share"
+                          ? "/icons/share-red.png"
+                          : "/icons/calendarIcon.png";
+                    const darkIconSrc =
+                      action.id === "call"
+                        ? "/icons/phoneIcon.png"
+                        : action.id === "share"
+                          ? "/icons/shareIcon.png"
+                          : "/icons/calendarIcon.png";
+                    icon = (
+                      <>
+                        <Image
+                          src={lightIconSrc}
+                          alt=""
+                          aria-hidden="true"
+                          width={16}
+                          height={16}
+                          className={`${iconSize} object-contain dark:hidden`}
+                        />
+                        <Image
+                          src={darkIconSrc}
+                          alt=""
+                          aria-hidden="true"
+                          width={16}
+                          height={16}
+                          className={`hidden ${iconSize} object-contain dark:block`}
+                        />
+                      </>
+                    );
+                  }
                   return (
                     <button
                       key={action.id}
                       type="button"
                       onClick={gateDetailTap(action.onClick)}
                       className={`flex items-center justify-center gap-1 rounded-full border font-medium transition ${
-                        isReserve
+                        isPrimary
                           ? "border-red-500 bg-red-600 px-1.5 py-2 text-[0.76rem] text-white hover:bg-red-700 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
                           : "border-[#E7070380] bg-transparent px-1.5 py-1.5 text-[0.72rem] text-red-600 hover:bg-red-50 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
                       }`}
                     >
-                      <Image
-                        src={lightIconSrc}
-                        alt=""
-                        aria-hidden="true"
-                        width={16}
-                        height={16}
-                        className={`${isReserve ? "h-[15px] w-[15px]" : "h-[14px] w-[14px]"} object-contain dark:hidden`}
-                      />
-                      <Image
-                        src={darkIconSrc}
-                        alt=""
-                        aria-hidden="true"
-                        width={16}
-                        height={16}
-                        className={`hidden ${isReserve ? "h-[15px] w-[15px]" : "h-[14px] w-[14px]"} object-contain dark:block`}
-                      />
-                      {label}
+                      {icon}
+                      {action.label}
                     </button>
                   );
                 })}
@@ -3617,6 +4269,22 @@ activeScreen === "vibbee-trial" ||
           </section>
         ) : null}
 
+        {/* ── EVENTS ── */}
+        {activeScreen === "events-tab" ? (
+          <EventsPage
+            account={account}
+            userCoords={userCoordsLL}
+            onBack={() => goBack("homescreen")}
+            onSignIn={() => navigateTo("account")}
+            onSelectEvent={(evt: ManagedEvent) => {
+              setSelectedEventSlug(evt.public_slug ?? null);
+              setSelectedEventId(evt.id);
+              setSelectedEvent(evt as unknown as Record<string, unknown>);
+              navigateTo("event-detail");
+            }}
+          />
+        ) : null}
+
         {/* ── V.I.BEE OFFERS ── */}
         {activeScreen === "offers" ? (() => {
           const offerTypeLabels: Record<string, string> = {
@@ -3699,10 +4367,10 @@ activeScreen === "vibbee-trial" ||
                         key={opt.id}
                         type="button"
                         onClick={() => setOffersFilter(opt.id)}
-                        className={`whitespace-nowrap rounded-full border px-4 py-1.5 text-[0.82rem] font-semibold transition ${
+                        className={`whitespace-nowrap rounded-full px-4 py-1.5 text-[0.82rem] font-semibold transition ${
                           active
-                            ? "border-red-500 bg-red-600 text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
-                            : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-white/15 dark:bg-black/24 dark:text-white/72 dark:hover:bg-white/8"
+                            ? "border border-red-500 bg-red-600 text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                            : "border border-transparent bg-transparent text-gray-500 hover:text-gray-700 dark:text-white/55 dark:hover:text-white/80"
                         }`}
                       >
                         {opt.label}
@@ -3770,11 +4438,11 @@ activeScreen === "vibbee-trial" ||
                           <p className="truncate text-[1rem] font-semibold text-gray-900 dark:text-white">
                             {venueName}
                           </p>
-                          <span className="mt-1 inline-flex rounded-full bg-[#e8900a] px-2.5 py-0.5 text-[0.66rem] font-bold uppercase tracking-wide text-white">
+                          <span className="mt-1 inline-flex rounded-full bg-red-600 px-2.5 py-0.5 text-[0.66rem] font-bold uppercase tracking-wide text-white">
                             {label}
                           </span>
                           {offer.discount_value ? (
-                            <p className="mt-1 truncate text-[0.82rem] font-semibold text-red-500 dark:text-[#ff9d7d]">
+                            <p className="mt-1 truncate text-[0.82rem] font-semibold text-[#e8900a]">
                               {offer.discount_value}
                             </p>
                           ) : null}
@@ -4388,7 +5056,7 @@ activeScreen === "vibbee-trial" ||
 
         {activeScreen === "preferences" ? (
           <section ref={preferencesRef} className="relative flex flex-1 flex-col pb-4">
-            {!account ? (
+            {!account && !isOnboarding ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-4 pt-20 text-center">
                 <p className="text-[1.1rem] font-semibold text-gray-900 dark:text-white">
                   Sign in to set preferences
@@ -4546,12 +5214,70 @@ activeScreen === "vibbee-trial" ||
           onOpenVendor={() => navigateTo("vendor")}
           onOpenOffers={() => navigateTo("offers")}
           onOpenPreferences={() => navigateTo("preferences")}
+          onAdvanceOnboarding={(email) => {
+            setOnboardingEmail(email);
+            setIsOnboarding(true);
+            navigateTo("preferences");
+          }}
           onAccountChange={(nextAccount) => {
             setAccount(nextAccount);
             void hydrateAuthenticatedSession();
             setAccountScreenMode(null);
-            setActiveScreen("account");
+            const pending = pendingReturnRef.current;
+            if (pending) {
+              pendingReturnRef.current = null;
+              setSelectedEventId(pending.eventId);
+              setSelectedEvent(pending.event);
+              navigateTo(pending.screen);
+            } else {
+              setActiveScreen("account");
+            }
           }}
+        />
+
+        <RoleIdentifierSection
+          sectionRef={roleIdentifierRef}
+          visible={activeScreen === "role-identifier"}
+          onContinue={(roles) => {
+            setOnboardingRoles(roles);
+            const hasNonConsumerRole = roles.some((role) => role !== "consumer");
+            navigateTo(hasNonConsumerRole ? "role-setup" : "onboarding-complete");
+          }}
+        />
+
+        {activeScreen === "role-unlock" ? (
+          <RoleIdentifierSection
+            sectionRef={roleUnlockRef}
+            visible={true}
+            onContinue={() => {
+              // TODO: pending states (vendor claim, producer/influencer approval) come later
+              navigateTo("home", false);
+            }}
+          />
+        ) : null}
+
+        <RoleSetupSection
+          sectionRef={roleSetupRef}
+          visible={activeScreen === "role-setup"}
+          roles={onboardingRoles.length > 0 ? onboardingRoles : readSelectedRoles()}
+          onOpenVendor={() => navigateTo("vendor")}
+          onContinue={() => navigateTo("onboarding-complete")}
+        />
+
+        <OnboardingCompleteSection
+          sectionRef={onboardingCompleteRef}
+          visible={activeScreen === "onboarding-complete"}
+          email={onboardingEmail}
+          onOpenGenie={() => {
+            setIsOnboarding(false);
+            navigateTo("home", false);
+          }}
+        />
+
+        <VerifyEmailGate
+          visible={verifyGateOpen}
+          email={onboardingEmail}
+          onClose={() => setVerifyGateOpen(false)}
         />
 
         <VendorSection
@@ -4862,24 +5588,27 @@ activeScreen === "vibbee-trial" ||
                 onEditPreferences={() => navigateTo("preferences")}
                 onOpenMembership={() => navigateTo("membership")}
                 onUpgradeMembership={() => navigateTo("membership")}
+                onOpenNotifications={() => navigateTo("notification-settings")}
                 onBack={() => goBack("home")}
                 onSave={async (data) => {
                   if (!account) return;
-                  const { saveVendorContactInfo } = await import(
+                  const { updateUserProfile } = await import(
                     "@/app/lib/publicApiClient"
                   );
-                  await saveVendorContactInfo({
+                  await updateUserProfile({
                     first_name: data.firstName,
                     last_name: data.lastName,
-                    email: data.email,
                     phone: data.phone,
+                    display_name: data.displayName,
+                    avatar_url: data.avatarUrl,
                   });
                   const updated = {
                     ...account,
                     firstName: data.firstName,
                     lastName: data.lastName,
-                    email: data.email,
                     phone: data.phone,
+                    displayName: data.displayName,
+                    avatarUrl: data.avatarUrl,
                   };
                   setAccount(updated);
                   const { writeConsumerAccount } = await import(
@@ -4908,6 +5637,14 @@ activeScreen === "vibbee-trial" ||
               />
             )}
           </section>
+        ) : null}
+
+        {/* ── NOTIFICATION SETTINGS ── */}
+        {activeScreen === "notification-settings" ? (
+          <NotificationSettingsSection
+            visible
+            onBack={() => goBack("profile")}
+          />
         ) : null}
 
         {/* ── CONTACT ── */}
@@ -5176,259 +5913,112 @@ activeScreen === "vibbee-trial" ||
             </section>
           );
         })() : null}
-        {/* ── EVENT DETAIL (in-app) ─────────────────────────────────────
-          Renders when a user taps an event from within the app.
-          Uses the public event detail page via iframe embed OR
-          redirects to the standalone page at socialbevy.com/events/{slug}.
-          
-          V1.5 decision: redirect to public page so we don't duplicate
-          the full EventDetailClient logic inside SinglePageGenieApp.
-          The public page handles all CTAs, attribution logging, and
-          related events. Deep-link carries the slug.
-          
-          When Jitendra builds the native event screens this gets
-          replaced with an inline render using the same data shape.
-        ────────────────────────────────────────────────────────────── */}
         {activeScreen === "event-detail" && selectedEvent ? (
-  <section
-    className="-mx-4 -mt-3 pb-[calc(env(safe-area-inset-bottom,0px)+11rem)] sm:-mx-6 sm:-mt-5"
-  >
-    {/* ── Hero image ── */}
-    <div className="relative h-[14rem] w-full overflow-hidden">
-      <Image
-        src={(selectedEvent.cover_image_url as string) || "/sample-venue-1.jpeg"}
-        alt={(selectedEvent.title as string) || "Event"}
-        fill
-        className="object-cover"
-        priority
-        sizes="100vw"
-      />
-      <div className="absolute inset-x-0 top-0 flex items-center justify-between px-4 pt-4">
-        <button
-          type="button"
-          onClick={handleTopBack}
-          className="flex h-8 w-8 items-center justify-center text-red-600 dark:text-white"
-          aria-label="Go back"
-        >
-          <BackIcon size={24} className="h-6 w-6 object-contain" />
-        </button>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              const title = selectedEvent.title as string;
-              const url = selectedEvent.ticket_url as string | undefined;
-              if (navigator.share) {
-                void navigator.share({ title, url: url ?? window.location.href });
-              } else {
-                void navigator.clipboard.writeText(url ?? window.location.href);
-              }
+          <EventDetailSection
+            eventId={selectedEventId}
+            initialData={selectedEvent}
+            onBack={handleTopBack}
+            logInteraction={logEventInteraction}
+            onEventOpen={(evt) => {
+              setSelectedEventSlug((evt.public_slug as string) ?? null);
+              setSelectedEventId(evt.id as number);
+              setSelectedEvent(evt);
             }}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-red-600 shadow-sm dark:border dark:border-white/40 dark:bg-black/30 dark:text-white dark:backdrop-blur-sm"
-            aria-label="Share"
-          >
-            <Image src="/icons/share-red.png" alt="" aria-hidden="true" width={18} height={18} className="h-[18px] w-[18px] object-contain dark:hidden" />
-            <Image src="/icons/shareIcon.png" alt="" aria-hidden="true" width={18} height={18} className="hidden h-[18px] w-[18px] object-contain dark:block" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsDrawerOpen(true)}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-red-600 shadow-sm dark:border dark:border-white/40 dark:bg-black/30 dark:text-white dark:backdrop-blur-sm"
-            aria-label="Menu"
-          >
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M5 7.5h14" /><path d="M5 12h14" /><path d="M5 16.5h14" />
-            </svg>
-          </button>
-        </div>
-      </div>
-      <div className="absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,transparent,rgba(0,0,0,0.85))] px-5 pb-5 pt-16">
-        <h2 className="text-[2.1rem] font-bold leading-tight text-white">
-          {selectedEvent.title as string}
-        </h2>
-      </div>
-    </div>
-
-    <div className="space-y-4 px-5 pb-5 pt-4">
-
-      {/* ── Category + price badges ── */}
-      <div className="flex flex-wrap items-center gap-2">
-        {selectedEvent.category ? (
-          <span className="rounded-full bg-red-600 px-3 py-1 text-[0.72rem] font-semibold text-white dark:bg-white dark:text-gray-900">
-            {selectedEvent.category as string}
-          </span>
+            onAuthRequired={() => {
+              pendingReturnRef.current = {
+                screen: "event-detail",
+                eventId: selectedEventId,
+                event: selectedEvent,
+              };
+              navigateTo("account");
+            }}
+          />
         ) : null}
-        <span className="rounded-full border border-red-300 bg-transparent px-3 py-1 text-[0.72rem] font-medium text-red-500 dark:border-[#E7070380] dark:text-white/85">
-          {selectedEvent.is_free
-            ? "Free Entry"
-            : selectedEvent.ticket_price_min
-              ? `From $${selectedEvent.ticket_price_min as number}`
-              : "See ticket info"}
-        </span>
-      </div>
 
-      {/* ── Date + time ── */}
-      {selectedEvent.event_date ? (
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.82rem] text-gray-700 dark:text-white/80">
-          <span>
-            📅{" "}
-            {new Date(selectedEvent.event_date as string).toLocaleDateString("en-US", {
-              weekday: "long",
-              month: "long",
-              day: "numeric",
-            })}
-            {selectedEvent.start_time
-              ? ` · ${(selectedEvent.start_time as string).slice(0, 5)}`
-              : ""}
-          </span>
-        </div>
-      ) : null}
-
-      {/* ── Genie's Take ── */}
-      {selectedEvent.description ? (
-        <div className="flex items-start gap-3 rounded-[18px] border border-[#E7070380] bg-transparent px-4 py-3 dark:border-[#E7070380] dark:bg-black/25">
-          <div className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center overflow-hidden rounded-full">
-            <Image
-              src="/icons/Social-Genie-Home-Screen.png"
-              alt="Genie"
-              width={32}
-              height={32}
-              className="h-8 w-8 object-cover"
-            />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-red-500 dark:text-[#ff9d7d]">
-              Genie&apos;s Take
-            </p>
-            <p className="mt-1 text-[0.85rem] leading-5 text-gray-700 dark:text-white/80">
-              {selectedEvent.description as string}
-            </p>
-          </div>
-        </div>
-      ) : null}
-
-      {/* ── CTAs: Ride | Tickets | Share ── */}
-      <div className="grid grid-cols-[1fr_1.45fr_1fr] gap-1">
-        {/* Ride */}
-        <button
-          type="button"
-          onClick={() => {
-            const addr = (selectedEvent.venue_address as string) || "Houston, TX";
-            const uberUrl = `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[formatted_address]=${encodeURIComponent(addr)}`;
-            window.open(uberUrl, "_blank", "noopener,noreferrer");
-            logEventInteraction("ride_click", selectedEvent.id as number, "event-detail");
-          }}
-          className="flex items-center justify-center gap-1 rounded-full border border-[#E7070380] bg-transparent px-1.5 py-1.5 text-[0.72rem] font-medium text-red-600 hover:bg-red-50 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
-        >
-          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="10" /><path d="M12 8v4l3 3" />
-          </svg>
-          Ride
-        </button>
-
-        {/* Tickets — primary */}
-        <button
-          type="button"
-          onClick={() => {
-            if (selectedEvent.ticket_url) {
-              window.open(selectedEvent.ticket_url as string, "_blank", "noopener,noreferrer");
-            }
-            logEventInteraction("ticket_click", selectedEvent.id as number, "event-detail");
-          }}
-          className="flex items-center justify-center gap-1 rounded-full border border-red-500 bg-red-600 px-1.5 py-2 text-[0.76rem] font-medium text-white hover:bg-red-700 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
-        >
-          <svg viewBox="0 0 24 24" className="h-[15px] w-[15px] flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z" />
-          </svg>
-          Tickets
-        </button>
-
-        {/* Share */}
-        <button
-          type="button"
-          onClick={() => {
-            const title = selectedEvent.title as string;
-            const url = (selectedEvent.ticket_url as string) ?? window.location.href;
-            if (navigator.share) {
-              void navigator.share({ title, url });
-            } else {
-              void navigator.clipboard.writeText(url);
-            }
-            logEventInteraction("share", selectedEvent.id as number, "event-detail");
-          }}
-          className="flex items-center justify-center gap-1 rounded-full border border-[#E7070380] bg-transparent px-1.5 py-1.5 text-[0.72rem] font-medium text-red-600 hover:bg-red-50 dark:border-[#E7070380] dark:bg-black/30 dark:text-white"
-        >
-          <Image src="/icons/share-red.png" alt="" aria-hidden="true" width={14} height={14} className="h-[14px] w-[14px] object-contain dark:hidden" />
-          <Image src="/icons/shareIcon.png" alt="" aria-hidden="true" width={14} height={14} className="hidden h-[14px] w-[14px] object-contain dark:block" />
-          Share
-        </button>
-      </div>
-
-      {/* ── About ── */}
-      {selectedEvent.venue_name ? (
-        <div>
-          <h3 className="text-[1.1rem] font-semibold text-gray-900 dark:text-white">Venue</h3>
-          <p className="mt-1 text-[0.88rem] leading-6 text-gray-600 dark:text-white/75">
-            {selectedEvent.venue_name as string}
-          </p>
-        </div>
-      ) : null}
-
-      {/* ── Google Map ── */}
-      {(() => {
-        const addr = (selectedEvent.venue_address as string) || (selectedEvent.venue_name as string) || "Houston, TX";
-        const embedSrc = `https://www.google.com/maps?q=${encodeURIComponent(addr)}&output=embed`;
-        const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr)}`;
-        return (
-          <div className="relative h-44 w-full overflow-hidden rounded-[18px] border border-[#E7070380] dark:border-[#E7070380]">
-            <iframe
-              title={`Map for ${selectedEvent.title as string}`}
-              src={embedSrc}
-              loading="lazy"
-              referrerPolicy="no-referrer-when-downgrade"
-              className="absolute inset-0 h-full w-full border-0"
-              allowFullScreen
-            />
-            <button
-              type="button"
-              onClick={() => window.open(mapsUrl, "_blank", "noopener,noreferrer")}
-              className="absolute bottom-2 right-2 rounded-full bg-white/95 px-3 py-1 text-[0.72rem] font-semibold text-gray-800 shadow-sm hover:bg-white dark:bg-black/70 dark:text-white"
-            >
-              Open in Maps
-            </button>
-          </div>
-        );
-      })()}
-
-      {/* ── Address ── */}
-      {selectedEvent.venue_address ? (
-        <p className="text-center text-[0.95rem] font-medium text-gray-900 dark:text-white">
-          {selectedEvent.venue_address as string}
-        </p>
-      ) : null}
-
-      {/* ── Tags ── */}
-      <div className="flex flex-wrap gap-2">
-        {[
-          selectedEvent.category,
-          selectedEvent.is_free ? "Free Entry" : null,
-          selectedEvent.ticket_price_min ? `From $${selectedEvent.ticket_price_min}` : null,
-        ]
-          .filter(Boolean)
-          .map((tag) => (
-            <span
-              key={tag as string}
-              className="rounded-full border border-[#E7070380] bg-transparent px-3 py-1 text-[0.78rem] font-medium text-red-600 dark:border-[#E7070380] dark:text-white/85"
-            >
-              {tag as string}
-            </span>
-          ))}
-      </div>
-
-    </div>
-  </section>
+{activeScreen === "producer-dashboard" ? (
+  <ProducerSection
+    account={account}
+    onBack={() => goBack("homescreen")}
+  />
 ) : null}
+
+{activeScreen === "influencer-dashboard" ? (
+  <InfluencerSection account={account} onNavigate={navigateTo} />
+) : null}
+
+{activeScreen === "homescreen" ? (
+  <HomescreenSection
+    account={account}
+    navigateTo={navigateTo}
+    userCoords={userCoords}
+    onVenueOpen={(id) => {
+      setSharedVenueLoading(true);
+      setSelectedVenueId(String(id));
+      navigateTo("detail");
+    }}
+    onEventOpen={(evt) => {
+      setSelectedEventId(evt.id);
+      setSelectedEvent(evt as Record<string, unknown>);
+      navigateTo("event-detail");
+    }}
+    onMenuOpen={() => setIsDrawerOpen(true)}
+    onOrbTap={startListening}
+    onNotifications={() => navigateTo("notifications")}
+    unreadNotifCount={unreadNotifCount}
+    onMessages={() => navigateTo("messages")}
+    unreadMessageCount={unreadMessageCount}
+  />
+) : null}
+
+{activeScreen === "notifications" ? (
+  <NotificationsScreen
+    onBack={() => goBack("homescreen")}
+    onClearUnread={() => setUnreadNotifCount(0)}
+  />
+) : null}
+
+{activeScreen === "messages" ? (
+  <MessagesScreen
+    account={account}
+    onBack={() => goBack("homescreen")}
+    onOpenConversation={(conv) => {
+      setActiveConversation(conv);
+      navigateTo("conversation");
+    }}
+  />
+) : null}
+
+{activeScreen === "conversation" && activeConversation ? (
+  <ConversationScreen
+    account={account}
+    threadId={activeConversation.threadId}
+    threadType={activeConversation.threadType}
+    counterpartId={activeConversation.counterpartId}
+    counterpartName={activeConversation.counterpartName}
+    counterpartAvatarUrl={activeConversation.counterpartAvatarUrl}
+    viewerRole={activeConversation.viewerRole}
+    onBack={() => goBack("messages")}
+    onThreadCreated={(threadId, viewerRole) =>
+      setActiveConversation((prev) =>
+        prev ? { ...prev, threadId, viewerRole: viewerRole ?? prev.viewerRole } : prev
+      )
+    }
+  />
+) : null}
+
 </div>
+
+{shouldShowFooter ? (
+  <BottomDock
+    activeId={activeScreen}
+    onHome={() => navigateTo("homescreen")}
+    onCenter={() => navigateTo("home")}
+    onProfile={() => (account ? navigateTo("dashboard") : navigateTo("account"))}
+    onOffers={() => navigateTo("offers")}
+    onEvents={() => navigateTo("events-tab")}
+  />
+) : null}
+
 </main>
   );
 }

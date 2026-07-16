@@ -24,9 +24,16 @@
  *   using the same data shape.
  */
  
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
+import { fetchEventDetail } from "@/app/lib/publicApiClient";
+import { readAuthToken } from "@/app/lib/localState";
+import { useEventRsvp, type UserRsvpStatus } from "@/app/lib/useEventRsvp";
+import ImageGallery from "@/app/components/ImageGallery";
+import { mediaGalleryFor } from "@/app/lib/image";
+import FeaturedEventVideos from "@/app/components/FeaturedEventVideos";
  
 // ─── Types (mirror server types) ─────────────────────────────────────────────
  
@@ -77,9 +84,15 @@ interface SocialEvent {
   event_end_time?: string;
   event_category?: string;
   cover_image_url?: string;
+  image_urls?: string[];
+  /** Separate from image_urls; combined count is capped at 5 by Xano. */
+  video_urls?: { url: string; thumbnail_url: string }[];
   public_slug: string;
   status: string;
   rsvp_count?: number;
+  going_count?: number;
+  interested_count?: number;
+  user_rsvp_status?: "going" | "interested" | "saved" | null;
   view_count?: number;
   is_free?: boolean;
   is_sold_out?: boolean;
@@ -176,9 +189,32 @@ export function EventDetailClient({
   slug,
 }: EventDetailClientProps) {
   const { event, venue, ticket_cta, ride_cta, reservation_cta } = data;
- 
+  const router = useRouter();
+
   // Track whether the user has tapped "Get Tickets" (optimistic sold-out UX)
   const [ticketTapped, setTicketTapped] = useState(false);
+
+  // This page is server-rendered with no auth context (it's a public,
+  // shareable microsite), so `event.user_rsvp_status` is never populated by
+  // the SSR fetch. If the visitor happens to be logged in on this device,
+  // fetch the authenticated event-detail view once on mount to learn their
+  // own RSVP state — same event, same endpoint the in-app screen uses.
+  const [authRsvpStatus, setAuthRsvpStatus] = useState<UserRsvpStatus>(null);
+  useEffect(() => {
+    if (!readAuthToken()) return;
+    fetchEventDetail(event.id)
+      .then((d) => setAuthRsvpStatus(d.event?.user_rsvp_status ?? null))
+      .catch(() => {});
+  }, [event.id]);
+
+  const rsvp = useEventRsvp(
+    event.id,
+    authRsvpStatus,
+    event.going_count ?? 0,
+    event.interested_count ?? 0,
+    "event-microsite",
+    () => router.push(`/?screen=login&redirect=/events/${slug}`)
+  );
  
   // Share sheet
   const handleShare = useCallback(async () => {
@@ -217,27 +253,32 @@ export function EventDetailClient({
     window.open(mapsUrl, "_blank", "noopener,noreferrer");
   }, [event.id, venue]);
  
-  const heroImage =
+  const heroFallback =
     event.cover_image_url ||
     venue?.image_primary_url ||
     venue?.image_fallback_url ||
     "/sample-venue-1.jpeg";
- 
+
+  // Photos lead, video(s) follow — one carousel a visitor can swipe/tap through.
+  // Falls back to a single implicit image when the event has no cover, gallery,
+  // or video at all (mediaGalleryFor returns [] in that case).
+  const heroMediaRaw = mediaGalleryFor(event.cover_image_url, event.image_urls, event.video_urls);
+  const heroMedia = heroMediaRaw.length > 0 ? heroMediaRaw : [{ type: "image" as const, url: heroFallback }];
+
   return (
     <main className="min-h-screen bg-white">
- 
+
       {/* ── HERO IMAGE ─────────────────────────────────────────────────── */}
       <div className="relative h-[42vh] min-h-[260px] w-full overflow-hidden">
-        <Image
-          src={heroImage}
+        <ImageGallery
+          items={heroMedia}
           alt={event.title}
-          fill
-          className="object-cover"
-          priority
-          sizes="100vw"
+          className="absolute inset-0"
+          heightClass="h-full"
+          showThumbnails={false}
         />
-        {/* Gradient overlay */}
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.3)_0%,transparent_40%,rgba(0,0,0,0.75)_100%)]" />
+        {/* Gradient overlay — pointer-events-none so it doesn't swallow the carousel's arrow taps */}
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.3)_0%,transparent_40%,rgba(0,0,0,0.75)_100%)]" />
  
         {/* Top nav */}
         <div className="absolute inset-x-0 top-0 flex items-center justify-between px-4 pt-4">
@@ -267,7 +308,7 @@ export function EventDetailClient({
           </h1>
         </div>
       </div>
- 
+
       {/* ── CONTENT ────────────────────────────────────────────────────── */}
       <div className="mx-auto max-w-2xl space-y-6 px-5 pb-32 pt-5">
  
@@ -306,17 +347,45 @@ export function EventDetailClient({
           ) : null}
  
           {/* Social proof */}
-          {(event.rsvp_count ?? 0) > 0 ? (
+          {rsvp.goingCount > 0 ? (
             <div className="flex items-center gap-2 text-[0.85rem] text-gray-500">
               <svg viewBox="0 0 24 24" className="h-4 w-4 flex-none text-red-400" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
                 <path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
               </svg>
               <span>
-                <strong className="font-semibold text-gray-900">{event.rsvp_count}</strong> people going
+                <strong className="font-semibold text-gray-900">{rsvp.goingCount}</strong> people going
               </span>
             </div>
           ) : null}
+        </div>
+
+        {/* ── GOING / INTERESTED ─────────────────────────────────────── */}
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            disabled={rsvp.busy}
+            onClick={() => rsvp.setRsvp("going")}
+            className={`rounded-[16px] border px-4 py-3 text-center text-[0.85rem] font-semibold transition disabled:pointer-events-none disabled:opacity-60 ${
+              rsvp.status === "going"
+                ? "border-red-600 bg-red-600 text-white"
+                : "border-gray-200 bg-white text-gray-700 hover:border-red-300"
+            }`}
+          >
+            {rsvp.status === "going" ? "✓ Going" : "Going"}
+          </button>
+          <button
+            type="button"
+            disabled={rsvp.busy}
+            onClick={() => rsvp.setRsvp("interested")}
+            className={`rounded-[16px] border px-4 py-3 text-center text-[0.85rem] font-semibold transition disabled:pointer-events-none disabled:opacity-60 ${
+              rsvp.status === "interested"
+                ? "border-red-600 bg-red-600 text-white"
+                : "border-gray-200 bg-white text-gray-700 hover:border-red-300"
+            }`}
+          >
+            {rsvp.status === "interested" ? "✓ Interested" : "Interested"}
+          </button>
         </div>
  
         {/* ── TRANSACTION CTAs ─────────────────────────────────────────── */}
@@ -424,7 +493,14 @@ export function EventDetailClient({
             <p className="text-[0.9rem] leading-6 text-gray-600">{event.description}</p>
           </div>
         ) : null}
- 
+
+        {/* ── FEATURED VIDEOS ───────────────────────────────────────────── */}
+        <FeaturedEventVideos
+          videos={event.video_urls}
+          eventTitle={event.title}
+          headingClassName="text-gray-900"
+        />
+
         {/* ── EMBEDDED VENUE CARD ───────────────────────────────────────── */}
         {/*
           Surfaces the linked venue inline — no extra tap required.

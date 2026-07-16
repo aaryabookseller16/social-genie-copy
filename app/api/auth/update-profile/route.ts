@@ -5,15 +5,14 @@ import {
   XanoError,
 } from "@/app/lib/server/xanoProxy";
 
-function isEmailValid(email: string) {
-  return /\S+@\S+\.\S+/.test(email);
-}
-
 /**
  * POST /api/auth/update-profile
  *
  * Updates the authenticated CONSUMER user's profile
- * (first_name, last_name, email, phone).
+ * (first_name, last_name, phone, display_name, avatar_url).
+ *
+ * `email` is not editable: it is the identity the magic-link login resolves
+ * against, and changing it without re-verification would lock the user out.
  *
  * Proxies to Xano Auth base URL (api:dRDS80y8) → `auth/update_profile`.
  * Auth is via bearer token (JWT).
@@ -41,18 +40,14 @@ export async function POST(request: NextRequest) {
     if (body.last_name !== undefined) {
       payload.last_name = String(body.last_name).trim();
     }
-    if (body.email !== undefined) {
-      const email = String(body.email).trim().toLowerCase();
-      if (email && !isEmailValid(email)) {
-        return NextResponse.json(
-          { error: "Invalid email address" },
-          { status: 400 }
-        );
-      }
-      payload.email = email;
-    }
     if (body.phone !== undefined) {
       payload.phone = String(body.phone).trim();
+    }
+    if (body.display_name !== undefined) {
+      payload.display_name = String(body.display_name).trim();
+    }
+    if (body.avatar_url !== undefined) {
+      payload.avatar_url = String(body.avatar_url).trim();
     }
 
     if (Object.keys(payload).length === 0) {
@@ -68,6 +63,9 @@ export async function POST(request: NextRequest) {
       last_name: string;
       email: string;
       phone?: string;
+      display_name?: string;
+      avatar_url?: string;
+      verified?: boolean;
       membership_active?: boolean;
       vendor_id?: number | null;
     }>("auth/update_profile", {
@@ -83,9 +81,12 @@ export async function POST(request: NextRequest) {
         last_name: user.last_name,
         email: user.email,
         phone: user.phone ?? null,
+        display_name: user.display_name ?? null,
+        avatar_url: user.avatar_url ?? null,
         membership: user.membership_active ? "vibee" : "free",
         subscription_status: user.membership_active ? "active" : "inactive",
         vendor_id: user.vendor_id ?? null,
+        verified: user.verified ?? false,
       },
     });
   } catch (error) {

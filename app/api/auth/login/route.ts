@@ -50,6 +50,7 @@ export async function POST(request: NextRequest) {
         membership: result.membership_active ? "vibee" : "free",
         subscription_status: result.membership_active ? "active" : "inactive",
         vendor_id: null,
+        verified: result.verified ?? false,
       },
       external_user_id: result.external_user_id,
       is_new_user: result.is_new_user ?? false,

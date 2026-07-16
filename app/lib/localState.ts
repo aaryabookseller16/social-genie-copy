@@ -11,15 +11,32 @@ export type ConsumerAccount = {
   lastName: string;
   email: string;
   phone?: string;
+  displayName?: string;
+  avatarUrl?: string;
   membership: ConsumerMembership;
   subscriptionStatus?: ConsumerSubscriptionStatus;
   vendorId?: number | null;
+  verified?: boolean;
   createdAt: number;
+};
+
+// Additive onboarding roles. "consumer" (Discover & Go Out) is always implied.
+export type OnboardingRole = "consumer" | "vendor" | "producer" | "influencer";
+
+// Drives the magic-link verification gate: a user who completed the onboarding
+// wizard but has not yet clicked their magic link has no auth token, so we
+// remember the pending email and block gated actions until verified.
+export type OnboardingPendingState = {
+  email: string;
+  completedAt: number;
+  verified: boolean;
 };
 
 const SAVED_VENUES_STORAGE_KEY = "genie_saved_venues_v1";
 const CONSUMER_ACCOUNT_STORAGE_KEY = "genie_consumer_account_v1";
 const AUTH_TOKEN_STORAGE_KEY = "genie_auth_token_v1";
+const ONBOARDING_ROLES_STORAGE_KEY = "genie_onboarding_roles_v1";
+const ONBOARDING_PENDING_STORAGE_KEY = "genie_onboarding_pending_v1";
 
 export function readSavedVenueIds(): string[] {
   if (typeof window === "undefined") {
@@ -115,8 +132,63 @@ export function writeAuthToken(token: string | null) {
   window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
 }
 
+export function readSelectedRoles(): OnboardingRole[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  try {
+    const raw = window.localStorage.getItem(ONBOARDING_ROLES_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+    return Array.isArray(parsed) ? (parsed as OnboardingRole[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function writeSelectedRoles(roles: OnboardingRole[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(
+    ONBOARDING_ROLES_STORAGE_KEY,
+    JSON.stringify(Array.from(new Set(roles)))
+  );
+}
+
+export function readOnboardingPending(): OnboardingPendingState | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(ONBOARDING_PENDING_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as OnboardingPendingState) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeOnboardingPending(state: OnboardingPendingState | null) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (!state) {
+    window.localStorage.removeItem(ONBOARDING_PENDING_STORAGE_KEY);
+    return;
+  }
+
+  window.localStorage.setItem(
+    ONBOARDING_PENDING_STORAGE_KEY,
+    JSON.stringify(state)
+  );
+}
+
 export function clearConsumerSession() {
   writeAuthToken(null);
   writeConsumerAccount(null);
   clearSavedVenueIds();
+  writeOnboardingPending(null);
 }
