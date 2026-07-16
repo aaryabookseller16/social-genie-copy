@@ -4,7 +4,11 @@ import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 
-import { type ConsumerAccount } from "@/app/lib/localState";
+import {
+  readActiveRole,
+  type ConsumerAccount,
+  type OnboardingRole,
+} from "@/app/lib/localState";
 import {
   fetchFollowedProducers,
   fetchHomescreen,
@@ -672,6 +676,15 @@ function FeedCard({
 /*  Main component                                                      */
 /* ------------------------------------------------------------------ */
 
+// Top-bar labels. Deliberately not the RoleSwitcherDialog's ROLE_LABELS, which
+// renders consumer as the sheet's call-to-action copy ("Discover & Go Out").
+const ROLE_BAR_LABELS: Record<OnboardingRole, string> = {
+  consumer: "Consumer",
+  vendor: "Vendor",
+  producer: "Producer",
+  influencer: "Influencer",
+};
+
 type HomescreenSectionProps = {
   account: ConsumerAccount | null;
   navigateTo: (screen: FlowAnchor) => void;
@@ -679,6 +692,7 @@ type HomescreenSectionProps = {
   onEventOpen: (evt: UpcomingEvent) => void;
   onMenuOpen: () => void;
   onOrbTap: () => void;
+  onOpenRoleSwitcher?: () => void;
   onNotifications?: () => void;
   unreadNotifCount?: number;
   onMessages?: () => void;
@@ -692,6 +706,7 @@ export function HomescreenSection({
   onVenueOpen,
   onEventOpen,
   onMenuOpen,
+  onOpenRoleSwitcher,
   onNotifications,
   unreadNotifCount,
   onMessages,
@@ -710,6 +725,15 @@ export function HomescreenSection({
     (id: string | number) => (isLoggedIn ? onVenueOpen(id) : requireAuth()),
     [isLoggedIn, onVenueOpen, requireAuth]
   );
+
+  // Read on mount rather than during render: localStorage is client-only, and
+  // reading it inline would mismatch the server-rendered HTML. This component
+  // unmounts when the user switches into another role's dashboard, so a
+  // mount-time read is enough to stay current when they come back.
+  const [activeRole, setActiveRole] = useState<OnboardingRole>("consumer");
+  useEffect(() => {
+    setActiveRole(readActiveRole());
+  }, []);
 
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -968,23 +992,33 @@ export function HomescreenSection({
     <section className="flex flex-1 flex-col overflow-y-auto pb-28">
       {/* ── Header ─────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-1 py-3">
-        <div className="flex items-center gap-2">
-          <div className="relative h-9 w-9 overflow-hidden rounded-full">
-            <Image src="/icons/top_bar_genie.png" alt="Social Bevy" fill sizes="36px" className="object-contain" />
+        <div className="flex flex-col items-start gap-0.5">
+          {/* Speech-bubble mark — no rounded-full crop, it would clip the tail. */}
+          <div className="relative h-10 w-11">
+            <Image src="/icons/social-bevy-logo.png" alt="Social Bevy" fill sizes="44px" className="object-contain object-left" />
           </div>
-          <div>
-            <p className="text-[0.85rem] font-bold leading-none text-white">Social Bevy</p>
-            <p className="text-[0.65rem] text-white/50">
-              {account ? `${account.firstName} ${account.lastName}`.trim() || "Consumer" : "Consumer"}
-            </p>
-          </div>
+          <button
+            type="button"
+            onClick={onOpenRoleSwitcher}
+            aria-label={`Current role: ${ROLE_BAR_LABELS[activeRole]}. Switch profiles`}
+            className="flex items-center gap-0.5 text-[0.7rem] font-semibold leading-none text-white transition hover:text-white/80"
+          >
+            {ROLE_BAR_LABELS[activeRole]}
+            <svg viewBox="0 0 24 24" className="h-3 w-3 text-red-500" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
         </div>
         <div className="flex items-center gap-2">
-          {account?.firstName ? (
-            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-red-800 text-[0.65rem] font-bold text-white">
-              {account.firstName.slice(0, 1).toUpperCase()}
-            </div>
-          ) : null}
+          {/* Same target as the bottom dock's centre button — both open Genie. */}
+          <button
+            type="button"
+            aria-label="Open Genie"
+            onClick={() => navigateTo("home")}
+            className="relative h-9 w-9 flex-none transition hover:brightness-110 active:scale-95"
+          >
+            <Image src="/icons/top_bar_genie.png" alt="" aria-hidden="true" fill sizes="36px" className="object-contain" />
+          </button>
           <button type="button" aria-label="Messages" onClick={onMessages} className="relative flex h-9 w-9 items-center justify-center text-white/70 hover:text-white">
             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />

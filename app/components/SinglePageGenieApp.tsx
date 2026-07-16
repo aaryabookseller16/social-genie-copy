@@ -73,6 +73,7 @@ import {
   readOnboardingPending,
   writeOnboardingPending,
   readSelectedRoles,
+  writeActiveRole,
   type ConsumerAccount,
   type OnboardingRole,
 } from "@/app/lib/localState";
@@ -2899,6 +2900,7 @@ case "vibbee-trial":
     activeScreen !== "profile" &&
     activeScreen !== "dashboard" &&
     activeScreen !== "contact" &&
+    activeScreen !== "notification-settings" &&
     activeScreen !== "membership" &&
     activeScreen !== "offers" &&
     activeScreen !== "events-tab" &&
@@ -2981,6 +2983,7 @@ activeScreen === "vibbee-trial" ||
         onClose={() => setIsRoleSwitcherOpen(false)}
         onNavigateToRole={(role) => {
           setIsRoleSwitcherOpen(false);
+          writeActiveRole(role);
           const targets: Record<OnboardingRole, FlowAnchor> = {
             consumer: "dashboard",
             vendor: "vendor",
@@ -6001,6 +6004,7 @@ activeScreen === "vibbee-trial" ||
       navigateTo("event-detail");
     }}
     onMenuOpen={() => setIsDrawerOpen(true)}
+    onOpenRoleSwitcher={() => setIsRoleSwitcherOpen(true)}
     onOrbTap={startListening}
     onNotifications={() => navigateTo("notifications")}
     unreadNotifCount={unreadNotifCount}
