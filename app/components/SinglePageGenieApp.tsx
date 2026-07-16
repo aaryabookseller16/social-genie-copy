@@ -10,6 +10,7 @@ import {
 } from "@/app/components/single-page/AccountSection";
 import { DrawerMenu, type DrawerMenuActionId } from "@/app/components/single-page/DrawerMenu";
 import { RoleSwitcherDialog } from "@/app/components/single-page/RoleSwitcherDialog";
+import { LoginSuccessDialog } from "@/app/components/single-page/LoginSuccessDialog";
 import { ProfileSection } from "@/app/components/single-page/ProfileSection";
 import { NotificationSettingsSection } from "@/app/components/single-page/NotificationSettingsSection";
 import { VendorSection } from "@/app/components/single-page/VendorSection";
@@ -502,6 +503,7 @@ export function SinglePageGenieApp({
     viewerRole?: "consumer" | "producer";
   } | null>(null);
   const [isRoleSwitcherOpen, setIsRoleSwitcherOpen] = useState(false);
+  const [loginSuccessSheetOpen, setLoginSuccessSheetOpen] = useState(false);
   const [detailReturnScreen, setDetailReturnScreen] = useState<
     "decision" | "more" | "saved"
   >("decision");
@@ -1595,6 +1597,7 @@ setResponse(nextResponse);
           // immediately after a successful exchange.
           url.searchParams.delete("token");
           window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+          setLoginSuccessSheetOpen(true);
 
           if (
             previousExternalUserId &&
@@ -2818,6 +2821,11 @@ activeScreen === "vibbee-trial" ||
         isVendor={!!account?.vendorId}
         notificationsEnabled={notificationsEnabled}
         onToggleNotifications={() => setNotificationsEnabled((prev) => !prev)}
+      />
+
+      <LoginSuccessDialog
+        visible={loginSuccessSheetOpen}
+        onClose={() => setLoginSuccessSheetOpen(false)}
       />
 
       <RoleSwitcherDialog
