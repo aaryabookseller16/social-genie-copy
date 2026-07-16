@@ -99,7 +99,7 @@ export function AccountSection({
   onAccountChange: (account: ConsumerAccount, message: string) => void;
   onModeChange?: (mode: AccountScreenMode) => void;
 }) {
-  const [mode, setMode] = useState<AccountScreenMode>(null);
+  const [mode, setMode] = useState<AccountScreenMode>("login");
   const [form, setForm] = useState<ConsumerFormState>(createEmptyConsumerForm());
   const [message, setMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -110,7 +110,7 @@ export function AccountSection({
 
   useEffect(() => {
     if (!visible) {
-      setMode(null);
+      setMode("login");
       setMessage(null);
       setForm(createEmptyConsumerForm());
     }
