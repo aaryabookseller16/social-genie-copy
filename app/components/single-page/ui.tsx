@@ -22,6 +22,7 @@ export type FlowAnchor =
   | "redemptions"
   | "preferences"
   | "account"
+  | "choose-plan"
   | "role-identifier"
   | "role-setup"
   | "onboarding-complete"
@@ -40,6 +41,158 @@ export type FlowAnchor =
   | "notification-settings"
   | "messages"
   | "conversation";
+
+function normalizeBenefitLabel(value: string) {
+  return value.replace(" and ", " & ");
+}
+
+export function toMonthlyPriceLabel(value: string) {
+  if (value.includes("/mo")) {
+    return value.replace("/mo", " / month");
+  }
+
+  if (value.includes("/month")) {
+    return value.replace("/month", " / month");
+  }
+
+  return value;
+}
+
+export function BenefitList({ benefits }: { benefits: string[] }) {
+  return (
+    <ul className="mt-2.5 space-y-1 text-[13px] leading-relaxed text-gray-600 dark:text-white/75">
+      {benefits.map((benefit) => (
+        <li key={benefit} className="flex items-center gap-2.5">
+          <svg
+            viewBox="0 0 16 16"
+            className="h-3.5 w-3.5 flex-none text-red-500 dark:text-[#e8a45f]"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="m3.25 8.5 2.5 2.5 6-6" />
+          </svg>
+          <span>{normalizeBenefitLabel(benefit)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * Genie intro card + the Free / V.I.Bee plan cards. Shared by the logged-out
+ * pitch screen (marketing — both cards just open the signup form) and the
+ * post-verification plan chooser (where the tier is actually committed).
+ */
+export function PlanCards({
+  freeBenefits,
+  vibeeBenefits,
+  vibeeMonthlyPrice,
+  onSelectFree,
+  onSelectVibee,
+  disabled = false,
+}: {
+  freeBenefits: string[];
+  vibeeBenefits: string[];
+  vibeeMonthlyPrice: string;
+  onSelectFree: () => void;
+  onSelectVibee: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <>
+      <div className="rounded-[22px] border border-red-400 bg-transparent px-3 py-2.5 dark:border-white/20 dark:bg-black/25 dark:backdrop-blur-sm">
+        <div className="flex items-center gap-3">
+          <div className="relative h-[82px] w-[82px] flex-none overflow-hidden rounded-full border-2 border-red-400 shadow-[0_0_16px_rgba(220,38,38,0.35)]">
+            <Image
+              src="/genie-profile-pic.png"
+              alt="Genie"
+              width={82}
+              height={82}
+              className="h-full w-full object-cover"
+            />
+          </div>
+          <h2 className="text-[1.45rem] leading-tight text-gray-900 dark:text-white">
+            Hi, I&apos;m Genie,
+            <br />
+            your social concierge.
+          </h2>
+        </div>
+      </div>
+
+      <div className="mt-8 space-y-3.5">
+        <button
+          type="button"
+          onClick={onSelectFree}
+          disabled={disabled}
+          className="w-full rounded-[22px] border border-red-400 bg-transparent px-4 py-3.5 text-left transition hover:bg-white/30 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/20 dark:bg-black/25 dark:backdrop-blur-sm dark:hover:bg-black/35"
+        >
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 flex h-14 w-14 flex-none items-center justify-center rounded-xl border-2 border-red-500 dark:border-0 dark:bg-transparent dark:p-0">
+              <Image
+                src="/free (1) 1 (1).png"
+                alt="Free plan"
+                width={44}
+                height={44}
+                className="h-9 w-9 object-contain dark:hidden"
+              />
+              <Image
+                src="/free (1) 1.png"
+                alt="Free plan"
+                width={44}
+                height={44}
+                className="hidden h-11 w-11 object-contain dark:block"
+              />
+            </div>
+            <div>
+              <p className="text-[16px] font-semibold text-red-600 dark:text-[#ff7b7b]">
+                Get started for free
+              </p>
+              <BenefitList benefits={freeBenefits} />
+            </div>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          onClick={onSelectVibee}
+          disabled={disabled}
+          className="w-full rounded-[22px] border border-red-400 bg-transparent px-4 py-3.5 text-left transition hover:bg-white/30 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/20 dark:bg-black/25 dark:backdrop-blur-sm dark:hover:bg-black/35"
+        >
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 flex h-14 w-14 flex-none items-center justify-center rounded-xl border-2 border-red-500 dark:border-0 dark:bg-transparent dark:p-0">
+              <Image
+                src="/bee-red 1 (1).png"
+                alt="V.I. Bee"
+                width={44}
+                height={44}
+                className="h-9 w-9 object-contain dark:hidden"
+              />
+              <Image
+                src="/bee-red 1.png"
+                alt="V.I. Bee"
+                width={44}
+                height={44}
+                className="hidden h-11 w-11 object-contain dark:block"
+              />
+            </div>
+            <div>
+              <p className="text-[16px] font-semibold text-red-600 dark:text-[#ff7b7b]">
+                Become a V.I. Bee
+              </p>
+              <p className="mt-0.5 text-[16px]">
+                {toMonthlyPriceLabel(vibeeMonthlyPrice)}
+              </p>
+              <BenefitList benefits={vibeeBenefits} />
+            </div>
+          </div>
+        </button>
+      </div>
+    </>
+  );
+}
 
 export function BackIcon({
   size = 20,

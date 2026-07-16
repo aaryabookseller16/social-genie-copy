@@ -63,10 +63,20 @@ export function OnboardingCompleteSection({
       <h2 className="mt-6 text-[1.85rem] font-semibold leading-tight text-gray-900 dark:text-white">
         You&apos;re all set!
       </h2>
+      {/* Reached post-verification in the signup flow, so only the older
+          unverified path (no auth token) still needs the email nudge. */}
       <p className="mx-auto mt-3 max-w-[30ch] text-[15px] leading-relaxed text-gray-700 dark:text-white/70">
-        Check your email to verify your account
-        {email ? <> at <span className="font-semibold">{email}</span></> : null}
-        , then come meet Genie.
+        {readAuthToken() ? (
+          <>Your account is ready — come meet Genie.</>
+        ) : (
+          <>
+            Check your email to verify your account
+            {email ? (
+              <> at <span className="font-semibold">{email}</span></>
+            ) : null}
+            , then come meet Genie.
+          </>
+        )}
       </p>
 
       <div className="mt-10 w-full max-w-[22rem]">

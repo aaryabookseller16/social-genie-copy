@@ -18,6 +18,7 @@ import { ProducerSection } from "@/app/components/single-page/ProducerSection";
 import { RoleIdentifierSection } from "@/app/components/single-page/RoleIdentifierSection";
 import { RoleSetupSection } from "@/app/components/single-page/RoleSetupSection";
 import { OnboardingCompleteSection } from "@/app/components/single-page/OnboardingCompleteSection";
+import { PlanChoiceSection } from "@/app/components/single-page/PlanChoiceSection";
 import { VerifyEmailGate } from "@/app/components/single-page/VerifyEmailGate";
 import { InfluencerSection } from "@/app/components/single-page/InfluencerSection";
 import { NotificationsScreen } from "@/app/components/single-page/NotificationsScreen";
@@ -486,6 +487,7 @@ export function SinglePageGenieApp({
   const offersRef = useRef<HTMLElement | null>(null);
   const preferencesRef = useRef<HTMLElement | null>(null);
   const accountRef = useRef<HTMLElement | null>(null);
+  const planChoiceRef = useRef<HTMLElement | null>(null);
   const vendorRef = useRef<HTMLElement | null>(null);
   const profileRef = useRef<HTMLElement | null>(null);
   const roleIdentifierRef = useRef<HTMLElement | null>(null);
@@ -513,6 +515,7 @@ export function SinglePageGenieApp({
   const [lastQuery, setLastQuery] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [magicLinkError, setMagicLinkError] = useState<string | null>(null);
   const [response, setResponse] = useState<GenieResponseEnvelope | null>(null);
   const [queryMode, setQueryMode] = useState<"venue" | "event" | "both">("venue");
   const [savedVenueIds, setSavedVenueIds] = useState<string[]>([]);
@@ -1703,6 +1706,7 @@ const [trialSuccess, setTrialSuccess] = useState(false);
             token: authToken,
             user,
             external_user_id,
+            flow,
           } = await loginWithMagicToken(magicToken);
 
           persistAuthSession(authToken, user);
@@ -1713,14 +1717,24 @@ const [trialSuccess, setTrialSuccess] = useState(false);
           // Magic link clicked → the account is verified. Clear the pending
           // state and dismiss the wizard/gate so they never show again.
           writeOnboardingPending(null);
-          setIsOnboarding(false);
           setVerifyGateOpen(false);
 
           // Preserve the latest documented behavior: remove the token from the URL
           // immediately after a successful exchange.
           url.searchParams.delete("token");
           window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
-          setLoginSuccessSheetOpen(true);
+
+          // `flow` reflects the intent embedded when the link was issued
+          // (see app/api/auth/login/route.ts). A verified signup picks its
+          // tier next; returning logins go straight in.
+          if (flow === "signup") {
+            setOnboardingEmail(user.email ?? "");
+            setIsOnboarding(true);
+            navigateTo("choose-plan");
+          } else {
+            setIsOnboarding(false);
+            setLoginSuccessSheetOpen(true);
+          }
 
           if (
             previousExternalUserId &&
@@ -1776,11 +1790,13 @@ const [trialSuccess, setTrialSuccess] = useState(false);
           }
         } catch (error) {
           console.error("Failed to exchange magic token", error);
-          setStatusMessage(
+          const failureMessage =
             error instanceof Error
               ? error.message
-              : "This sign-in link could not be verified."
-          );
+              : "This sign-in link could not be verified.";
+          setStatusMessage(failureMessage);
+          setMagicLinkError(failureMessage);
+          navigateTo("account");
           url.searchParams.delete("token");
           window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
         }
@@ -1790,7 +1806,8 @@ const [trialSuccess, setTrialSuccess] = useState(false);
       await initGuestSession().catch(() => null);
       await initializeDeviceProfile();
     })();
-  }, [hydrateAuthenticatedSession, initializeDeviceProfile]);
+    // `navigateTo` is a stable useCallback([]) — listing it doesn't re-run this.
+  }, [hydrateAuthenticatedSession, initializeDeviceProfile, navigateTo]);
 
   useEffect(() => {
     if (
@@ -2312,6 +2329,9 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     const url = new URL(window.location.href);
     const checkoutState = url.searchParams.get("checkout");
     const sessionId = url.searchParams.get("session_id");
+    // Set by the plan chooser's success_url — this checkout happened mid-signup,
+    // so resume the wizard at preferences instead of landing on home.
+    const isOnboardingCheckout = url.searchParams.get("onboarding") === "1";
     if (!checkoutState && !sessionId) {
       return;
     }
@@ -2319,6 +2339,7 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     const clearCheckoutParams = () => {
       url.searchParams.delete("checkout");
       url.searchParams.delete("session_id");
+      url.searchParams.delete("onboarding");
       const nextUrl = `${url.pathname}${url.search}${url.hash}`;
       window.history.replaceState({}, "", nextUrl);
     };
@@ -2363,6 +2384,11 @@ const [trialSuccess, setTrialSuccess] = useState(false);
         }
 
         await hydrateAuthenticatedSession();
+
+        if (!cancelled && isOnboardingCheckout) {
+          setIsOnboarding(true);
+          navigateTo("preferences");
+        }
       } catch (error) {
         if (cancelled) {
           return;
@@ -2382,7 +2408,7 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     return () => {
       cancelled = true;
     };
-  }, [hydrateAuthenticatedSession]);
+  }, [hydrateAuthenticatedSession, navigateTo]);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -5216,9 +5242,10 @@ activeScreen === "vibbee-trial" ||
           onOpenPreferences={() => navigateTo("preferences")}
           onAdvanceOnboarding={(email) => {
             setOnboardingEmail(email);
-            setIsOnboarding(true);
-            navigateTo("preferences");
+            setVerifyGateOpen(true);
           }}
+          authError={magicLinkError}
+          onAuthErrorShown={() => setMagicLinkError(null)}
           onAccountChange={(nextAccount) => {
             setAccount(nextAccount);
             void hydrateAuthenticatedSession();
@@ -5235,13 +5262,23 @@ activeScreen === "vibbee-trial" ||
           }}
         />
 
+        <PlanChoiceSection
+          sectionRef={planChoiceRef}
+          visible={activeScreen === "choose-plan"}
+          config={config}
+          email={onboardingEmail || account?.email || ""}
+          onChooseFree={() => navigateTo("preferences")}
+        />
+
         <RoleIdentifierSection
           sectionRef={roleIdentifierRef}
           visible={activeScreen === "role-identifier"}
           onContinue={(roles) => {
             setOnboardingRoles(roles);
-            const hasNonConsumerRole = roles.some((role) => role !== "consumer");
-            navigateTo(hasNonConsumerRole ? "role-setup" : "onboarding-complete");
+            // Role setup (vendor claim / producer / influencer details) is
+            // deferred for now — roles are still saved, but every path goes
+            // straight to the success screen.
+            navigateTo("onboarding-complete");
           }}
         />
 
@@ -5270,7 +5307,9 @@ activeScreen === "vibbee-trial" ||
           email={onboardingEmail}
           onOpenGenie={() => {
             setIsOnboarding(false);
-            navigateTo("home", false);
+            // goHome() → "homescreen" (the feed), not "home" (the chat/ask
+            // screen). Also clears the wizard out of the back stack.
+            goHome();
           }}
         />
 

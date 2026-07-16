@@ -7,7 +7,9 @@ import { xanoAuthFetch, XanoError } from "@/app/lib/server/xanoProxy";
  * Uses Auth base URL (api:dRDS80y8) → auth/verify_email/magic_login
  *
  * Xano expects: { magic_token: "..." }
- * Xano returns flat: { authToken, user_id, external_user_id, email, verified, membership_active }
+ * Xano returns flat: { authToken, user_id, external_user_id, email, verified, membership_active, flow }
+ * `flow` ("signup" | "login") reflects the intent embedded in the magic-link
+ * JWT when it was issued — pending backend rollout, absent until then.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -34,7 +36,7 @@ export async function POST(request: NextRequest) {
       membership_active: boolean;
       first_name?: string;
       last_name?: string;
-      is_new_user?: boolean;
+      flow?: "signup" | "login";
     }>("auth/verify_email/magic_login", {
       method: "POST",
       body: { magic_token: magicToken },
@@ -53,7 +55,9 @@ export async function POST(request: NextRequest) {
         verified: result.verified ?? false,
       },
       external_user_id: result.external_user_id,
-      is_new_user: result.is_new_user ?? false,
+      // Defaults to "login" (the safer fallback) until the backend ships the
+      // `flow` field on auth/verify_email/magic_login — see plan doc.
+      flow: result.flow ?? "login",
     });
   } catch (error) {
     if (error instanceof XanoError) {

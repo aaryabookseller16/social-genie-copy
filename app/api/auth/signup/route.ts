@@ -20,6 +20,7 @@ export async function POST(request: NextRequest) {
     const firstName = String(body.first_name ?? "").trim();
     const lastName = String(body.last_name ?? "").trim();
     const email = String(body.email ?? "").trim().toLowerCase();
+    const intent = body.intent === "login" ? "login" : "signup";
 
     if (!email) {
       return NextResponse.json(
@@ -43,6 +44,7 @@ export async function POST(request: NextRequest) {
           email,
           first_name: firstName || undefined,
           last_name: lastName || undefined,
+          intent,
         },
       }
     );

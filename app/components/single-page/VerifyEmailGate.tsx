@@ -1,12 +1,5 @@
 "use client";
 
-import { useState } from "react";
-
-import { trackEvent } from "@/app/lib/analytics";
-import { analyticsEvents } from "@/app/lib/analyticsEvents";
-import { signUpUser } from "@/app/lib/publicApiClient";
-import { ActionButton } from "./ui";
-
 export function VerifyEmailGate({
   visible,
   email,
@@ -16,66 +9,30 @@ export function VerifyEmailGate({
   email: string;
   onClose: () => void;
 }) {
-  const [message, setMessage] = useState<string | null>(null);
-  const [isResending, setIsResending] = useState(false);
+  void email;
 
   if (!visible) {
     return null;
   }
 
-  const resend = async () => {
-    if (!email || isResending) {
-      return;
-    }
-    setIsResending(true);
-    setMessage(null);
-    trackEvent(analyticsEvents.verifyEmailResendTapped, { email });
-    try {
-      const result = await signUpUser({ email });
-      setMessage(
-        result.message || "We sent a fresh magic link — check your inbox."
-      );
-    } catch (error) {
-      setMessage(
-        error instanceof Error
-          ? error.message
-          : "Could not resend your link right now."
-      );
-    } finally {
-      setIsResending(false);
-    }
-  };
-
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 px-4 pb-6 pt-10 sm:items-center">
-      <div className="w-full max-w-md rounded-[24px] border border-gray-200 bg-white p-6 shadow-xl dark:border-white/15 dark:bg-[#1a0d0d]">
-        <h2 className="text-[1.4rem] font-semibold leading-tight text-gray-900 dark:text-white">
-          Verify your email to keep going
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-t-[24px] border-t border-red-500/30 bg-[radial-gradient(circle_at_top,rgba(140,15,15,0.55),rgba(20,4,4,0.98))] px-6 pb-[calc(env(safe-area-inset-bottom,0px)+2.5rem)] pt-3 shadow-xl sm:rounded-[24px] sm:border sm:pb-8"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="mx-auto h-1 w-14 rounded-full bg-white/25 sm:hidden" />
+
+        <h2 className="mt-6 text-center text-[1.4rem] font-semibold leading-tight text-white sm:mt-0 sm:text-left sm:text-[1.5rem]">
+          Verify your email
         </h2>
-        <p className="mt-3 text-[15px] leading-relaxed text-gray-700 dark:text-white/70">
-          Tap the magic link we sent
-          {email ? <> to <span className="font-semibold">{email}</span></> : null}{" "}
-          to unlock Genie. It only takes a second.
+        <p className="mt-4 text-center text-[15px] leading-relaxed text-white/75 sm:text-left">
+          A link has been sent to your email address! Please use that link to
+          login by confirming your email.
         </p>
-
-        {message ? (
-          <div className="mt-4 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
-            {message}
-          </div>
-        ) : null}
-
-        <div className="mt-6 space-y-3">
-          <ActionButton
-            className="w-full"
-            onClick={() => void resend()}
-            disabled={isResending}
-          >
-            {isResending ? "Sending..." : "Resend link"}
-          </ActionButton>
-          <ActionButton variant="secondary" className="w-full" onClick={onClose}>
-            Not now
-          </ActionButton>
-        </div>
       </div>
     </div>
   );
