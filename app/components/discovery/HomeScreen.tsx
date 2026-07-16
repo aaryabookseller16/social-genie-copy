@@ -4,6 +4,7 @@ import Image from "next/image";
 
 import { GenieOrb } from "@/app/components/shared/GenieOrb";
 import { QuickChips } from "@/app/components/shared/QuickChips";
+import { BackIcon } from "@/app/components/single-page/ui";
 import { type RuntimeConfig } from "@/app/lib/genieTypes";
 
 type HomeScreenProps = {
@@ -12,6 +13,7 @@ type HomeScreenProps = {
   isSubmitting: boolean;
   showBottomNav?: boolean;
   pendingTranscript?: boolean;
+  onBack: () => void;
   onMenuOpen: () => void;
   onShareApp: () => void;
   onInputChange: (value: string) => void;
@@ -28,6 +30,7 @@ export function HomeScreen({
   isSubmitting,
   showBottomNav = false,
   pendingTranscript = false,
+  onBack,
   onMenuOpen,
   onShareApp,
   onInputChange,
@@ -47,7 +50,19 @@ export function HomeScreen({
     >
 
       <div className="relative mx-auto flex w-full max-w-sm flex-1 flex-col items-center text-center">
-        <div className="flex w-full justify-end gap-2">
+        <div className="flex w-full items-center justify-between gap-2">
+          {/* This screen is excluded from the app-wide top bar and the bottom
+              dock, so without this there is no way off it. */}
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex h-10 w-10 items-center justify-center rounded-full text-red-600 dark:text-white/85"
+            aria-label="Go back"
+          >
+            <BackIcon size={20} />
+          </button>
+
+          <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={onShareApp}
@@ -81,6 +96,7 @@ export function HomeScreen({
             <span className="block h-[2.5px] w-6 rounded-full bg-red-600 dark:bg-white/80" />
             <span className="block h-[2.5px] w-6 rounded-full bg-red-600 dark:bg-white/80" />
           </button>
+          </div>
         </div>
 
         <h1 className="mt-4 whitespace-nowrap font-[family:var(--font-display)] text-[1.5rem] font-semibold leading-[1.1] text-black dark:text-white sm:text-[1.85rem]">

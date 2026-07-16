@@ -3128,6 +3128,7 @@ activeScreen === "vibbee-trial" ||
             isSubmitting={isThinking}
             showBottomNav={shouldShowFooter}
             pendingTranscript={pendingTranscript}
+            onBack={() => goBack("homescreen")}
             onMenuOpen={() => setIsDrawerOpen(true)}
             onShareApp={handleShareApp}
             onInputChange={(value) => {
