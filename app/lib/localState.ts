@@ -36,6 +36,7 @@ const SAVED_VENUES_STORAGE_KEY = "genie_saved_venues_v1";
 const CONSUMER_ACCOUNT_STORAGE_KEY = "genie_consumer_account_v1";
 const AUTH_TOKEN_STORAGE_KEY = "genie_auth_token_v1";
 const ONBOARDING_ROLES_STORAGE_KEY = "genie_onboarding_roles_v1";
+const ACTIVE_ROLE_STORAGE_KEY = "genie_active_role_v1";
 const ONBOARDING_PENDING_STORAGE_KEY = "genie_onboarding_pending_v1";
 
 export function readSavedVenueIds(): string[] {
@@ -155,6 +156,28 @@ export function writeSelectedRoles(roles: OnboardingRole[]) {
     ONBOARDING_ROLES_STORAGE_KEY,
     JSON.stringify(Array.from(new Set(roles)))
   );
+}
+
+// The role the user last switched into, used to label the homescreen top bar.
+// Unlike readSelectedRoles (which roles are *unlocked*), this is the one role
+// the user is currently acting as. Defaults to "consumer".
+export function readActiveRole(): OnboardingRole {
+  if (typeof window === "undefined") {
+    return "consumer";
+  }
+
+  const raw = window.localStorage.getItem(ACTIVE_ROLE_STORAGE_KEY);
+  return raw === "vendor" || raw === "producer" || raw === "influencer"
+    ? raw
+    : "consumer";
+}
+
+export function writeActiveRole(role: OnboardingRole) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(ACTIVE_ROLE_STORAGE_KEY, role);
 }
 
 export function readOnboardingPending(): OnboardingPendingState | null {

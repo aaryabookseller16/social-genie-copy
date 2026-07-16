@@ -376,18 +376,16 @@ export function ProfileSection({
 
         {/* Form */}
         <div className="space-y-4">
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-gray-600 dark:text-white/72">
-              Profile photo
-            </span>
+          <div className="pb-2">
             <ImageUploader
               mode="single"
+              shape="circle"
               folder="avatars"
               value={avatarUrls}
               onChange={setAvatarUrls}
               onUploadingChange={setAvatarUploading}
             />
-          </label>
+          </div>
           <StyledInput
             label="First Name"
             value={firstName}

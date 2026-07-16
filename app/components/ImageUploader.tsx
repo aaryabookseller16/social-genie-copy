@@ -25,6 +25,11 @@ type Slot = {
 
 export type ImageUploaderProps = {
   mode: "single" | "multi";
+  /**
+   * Single-mode presentation. "rect" is the default full-width tile; "circle"
+   * is the centred avatar puck with a pencil badge. Ignored in multi mode.
+   */
+  shape?: "rect" | "circle";
   /** Committed Cloudinary URLs. Single mode uses index 0. */
   value: string[];
   onChange: (urls: string[]) => void;
@@ -57,6 +62,7 @@ async function mapWithConcurrency<T>(
 
 export default function ImageUploader({
   mode,
+  shape = "rect",
   value,
   onChange,
   folder,
@@ -204,7 +210,15 @@ export default function ImageUploader({
         }}
       />
 
-      {isSingle ? (
+      {isSingle && shape === "circle" ? (
+        <AvatarTile
+          slot={slots[0]}
+          disabled={disabled}
+          onPick={openPicker}
+          onRemove={remove}
+          onRetry={retry}
+        />
+      ) : isSingle ? (
         <SingleTile
           slot={slots[0]}
           disabled={disabled}
@@ -413,6 +427,101 @@ function SingleTile({
       >
         ×
       </button>
+    </div>
+  );
+}
+
+/**
+ * Avatar variant: the whole puck is the picker, with a pencil badge as the
+ * visual affordance. Keeps the remove control from SingleTile — dropping it
+ * would leave no way to clear a photo once set.
+ */
+function AvatarTile({
+  slot,
+  disabled,
+  onPick,
+  onRemove,
+  onRetry,
+}: {
+  slot?: Slot;
+  disabled: boolean;
+  onPick: () => void;
+  onRemove: (id: string) => void;
+  onRetry: (id: string) => void;
+}) {
+  const src = slot?.url ?? slot?.previewUrl;
+
+  return (
+    <div className="relative mx-auto h-32 w-32">
+      <button
+        type="button"
+        onClick={onPick}
+        disabled={disabled}
+        aria-label={src ? "Change profile photo" : "Add profile photo"}
+        className={`h-32 w-32 overflow-hidden rounded-full border-2 transition disabled:cursor-not-allowed disabled:opacity-40 ${
+          slot?.status === "error"
+            ? "border-red-500 ring-2 ring-red-500/40"
+            : "border-white/20 hover:border-red-400"
+        }`}
+      >
+        {src ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={src}
+            alt=""
+            className={`h-full w-full object-cover ${
+              slot?.status !== "done" ? "opacity-50" : ""
+            }`}
+          />
+        ) : (
+          <span className="flex h-full w-full items-center justify-center bg-[#F890B4]">
+            <svg viewBox="0 0 24 24" className="h-full w-full text-white" fill="currentColor" aria-hidden="true">
+              <circle cx="12" cy="8.5" r="4" />
+              <path d="M12 14c-4.2 0-7.5 2.6-7.5 5.8V24h15v-4.2c0-3.2-3.3-5.8-7.5-5.8z" />
+            </svg>
+          </span>
+        )}
+      </button>
+
+      {slot?.status === "uploading" && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-full bg-black/40">
+          <Spinner />
+        </div>
+      )}
+
+      {slot?.status === "error" && (
+        <button
+          type="button"
+          onClick={() => onRetry(slot.id)}
+          title={slot.error}
+          className="absolute inset-0 flex items-center justify-center rounded-full bg-black/55 text-xs font-semibold text-white"
+        >
+          Retry
+        </button>
+      )}
+
+      {/* Badge is decorative — the puck behind it opens the picker. */}
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute bottom-0 right-1 flex h-9 w-9 items-center justify-center rounded-full border-2 border-black/20 bg-red-600 text-white shadow-[0_6px_18px_rgba(231,7,3,0.45)]"
+      >
+        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 20h9" />
+          <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
+        </svg>
+      </span>
+
+      {slot && slot.status !== "uploading" && (
+        <button
+          type="button"
+          onClick={() => onRemove(slot.id)}
+          disabled={disabled}
+          aria-label="Remove photo"
+          className="absolute right-0 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-sm leading-none text-white transition hover:bg-black/80"
+        >
+          ×
+        </button>
+      )}
     </div>
   );
 }
