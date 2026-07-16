@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import {
   fetchEventDetail,
@@ -75,12 +75,18 @@ function addHoursToStamp(stamp: string, hours: number): string {
   return `${dt.getFullYear()}${p(dt.getMonth() + 1)}${p(dt.getDate())}T${p(dt.getHours())}${p(dt.getMinutes())}${p(dt.getSeconds())}`;
 }
 
+// DTSTAMP must be expressed in UTC per RFC 5545 §3.8.7.2 (trailing "Z"); a bare
+// floating-time DTSTAMP is rejected outright by some clients (e.g. Windows Calendar/Outlook).
+function toIcsUtcStamp(d: Date): string {
+  return d.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+}
+
 // Escape reserved characters per RFC 5545.
 function escapeIcs(text: string): string {
   return text.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
 }
 
-function buildEventIcs(opts: {
+type CalendarEventOpts = {
   id?: number;
   title: string;
   dateStr: string;
@@ -88,16 +94,20 @@ function buildEventIcs(opts: {
   endTime: string;
   venueName: string;
   venueAddr: string;
-}): string {
+};
+
+function calendarEventFields(opts: CalendarEventOpts) {
   const dtStart = toIcsStamp(opts.dateStr, opts.startTime);
   const dtEnd = opts.endTime
     ? toIcsStamp(opts.dateStr, opts.endTime)
     : addHoursToStamp(dtStart, 2);
   const location = [opts.venueName, opts.venueAddr].filter(Boolean).join(", ");
-  const dtStamp = toIcsStamp(
-    new Date().toISOString().slice(0, 10),
-    new Date().toISOString().slice(11, 19)
-  );
+  return { dtStart, dtEnd, location };
+}
+
+function buildEventIcs(opts: CalendarEventOpts): string {
+  const { dtStart, dtEnd, location } = calendarEventFields(opts);
+  const dtStamp = toIcsUtcStamp(new Date());
   const uid = `${opts.id ?? "event"}-${Date.now()}@genie.socialbevy.com`;
   return [
     "BEGIN:VCALENDAR",
@@ -115,7 +125,36 @@ function buildEventIcs(opts: {
     "END:VCALENDAR",
   ]
     .filter(Boolean)
-    .join("\r\n");
+    .join("\r\n") + "\r\n";
+}
+
+// "YYYYMMDDTHHMMSS" -> "YYYY-MM-DDTHH:MM:SS" (Outlook's deeplink expects this form).
+function stampToIso(stamp: string): string {
+  return `${stamp.slice(0, 4)}-${stamp.slice(4, 6)}-${stamp.slice(6, 8)}T${stamp.slice(9, 11)}:${stamp.slice(11, 13)}:${stamp.slice(13, 15)}`;
+}
+
+function buildGoogleCalendarUrl(opts: CalendarEventOpts): string {
+  const { dtStart, dtEnd, location } = calendarEventFields(opts);
+  const params = new URLSearchParams({
+    action: "TEMPLATE",
+    text: opts.title,
+    dates: `${dtStart}/${dtEnd}`,
+  });
+  if (location) params.set("location", location);
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
+function buildOutlookCalendarUrl(opts: CalendarEventOpts): string {
+  const { dtStart, dtEnd, location } = calendarEventFields(opts);
+  const params = new URLSearchParams({
+    path: "/calendar/action/compose",
+    rru: "addevent",
+    subject: opts.title,
+    startdt: stampToIso(dtStart),
+    enddt: stampToIso(dtEnd),
+  });
+  if (location) params.set("location", location);
+  return `https://outlook.live.com/calendar/0/deeplink/compose?${params.toString()}`;
 }
 
 // Package the .ics text as a Blob and trigger a browser download.
@@ -298,6 +337,19 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
   const [isSaved, setIsSaved] = useState(false);
   const [vibbeeOffers, setVibbeeOffers] = useState<VibbeeEventOffer[]>([]);
   const [influencerOffers, setInfluencerOffers] = useState<InfluencerEventOffer[]>([]);
+  const [showCalendarMenu, setShowCalendarMenu] = useState(false);
+  const calendarMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showCalendarMenu) return;
+    const onOutsideClick = (e: MouseEvent) => {
+      if (calendarMenuRef.current && !calendarMenuRef.current.contains(e.target as Node)) {
+        setShowCalendarMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", onOutsideClick);
+    return () => document.removeEventListener("mousedown", onOutsideClick);
+  }, [showCalendarMenu]);
 
   // Real offers (V.I.Bee house + influencer-driven) for this event. Auth-required
   // endpoint, so skip the fetch entirely for guests rather than let it 401.
@@ -454,35 +506,77 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
               <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
             </svg>
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              const dateStr = (ev.event_date as string) || "";
-              if (!dateStr) return; // need a date for a valid calendar entry
-              const ics = buildEventIcs({
+          <div className="relative" ref={calendarMenuRef}>
+            <button
+              type="button"
+              onClick={() => {
+                const dateStr = (ev.event_date as string) || "";
+                if (!dateStr) return; // need a date for a valid calendar entry
+                setShowCalendarMenu((v) => !v);
+              }}
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/30 bg-black/30 text-white backdrop-blur-sm"
+              aria-label="Add to calendar"
+            >
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                <line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" />
+                <line x1="3" y1="10" x2="21" y2="10" />
+                <line x1="12" y1="14" x2="12" y2="18" /><line x1="10" y1="16" x2="14" y2="16" />
+              </svg>
+            </button>
+            {showCalendarMenu && (() => {
+              const calOpts = {
                 id: ev.id as number | undefined,
                 title: evTitle,
-                dateStr,
+                dateStr: (ev.event_date as string) || "",
                 startTime: (ev.start_time as string) || "",
                 endTime: (ev.end_time as string) || "",
                 venueName,
                 venueAddr,
-              });
-              const safeName =
-                evTitle.replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-") || "event";
-              downloadIcs(`${safeName}.ics`, ics);
-              logInteraction?.("add_to_calendar", ev.id as number, "event-detail");
-            }}
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/30 bg-black/30 text-white backdrop-blur-sm"
-            aria-label="Add to calendar"
-          >
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-              <line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" />
-              <line x1="3" y1="10" x2="21" y2="10" />
-              <line x1="12" y1="14" x2="12" y2="18" /><line x1="10" y1="16" x2="14" y2="16" />
-            </svg>
-          </button>
+              };
+              const finish = () => {
+                logInteraction?.("add_to_calendar", ev.id as number, "event-detail");
+                setShowCalendarMenu(false);
+              };
+              return (
+                <div className="absolute right-0 top-11 z-10 w-48 overflow-hidden rounded-xl border border-white/15 bg-black/80 text-sm text-white shadow-lg backdrop-blur-md">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      window.open(buildGoogleCalendarUrl(calOpts), "_blank", "noopener,noreferrer");
+                      finish();
+                    }}
+                    className="flex w-full items-center px-4 py-2.5 text-left hover:bg-white/10"
+                  >
+                    Google Calendar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      window.open(buildOutlookCalendarUrl(calOpts), "_blank", "noopener,noreferrer");
+                      finish();
+                    }}
+                    className="flex w-full items-center px-4 py-2.5 text-left hover:bg-white/10"
+                  >
+                    Outlook.com
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const ics = buildEventIcs(calOpts);
+                      const safeName =
+                        evTitle.replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-") || "event";
+                      downloadIcs(`${safeName}.ics`, ics);
+                      finish();
+                    }}
+                    className="flex w-full items-center px-4 py-2.5 text-left hover:bg-white/10"
+                  >
+                    Apple / Other (.ics)
+                  </button>
+                </div>
+              );
+            })()}
+          </div>
         </div>
       </div>
 
