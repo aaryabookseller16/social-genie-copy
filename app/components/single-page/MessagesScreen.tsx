@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { ScrollUnlock } from "@/app/p/[id]/ScrollUnlock";
 import {
@@ -11,7 +11,8 @@ import {
   type Conversation,
   type MessageThreadType,
 } from "@/app/lib/publicApiClient";
-import { type ConsumerAccount } from "@/app/lib/localState";
+import { readAuthToken, type ConsumerAccount } from "@/app/lib/localState";
+import { subscribeToGenieChannel } from "@/app/lib/realtimeMessaging";
 
 type OpenConversationInput = {
   threadId: number;
@@ -68,12 +69,23 @@ export function MessagesScreen({ account, onBack, onOpenConversation }: Props) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // This viewer's own `user/<id>` channel, as returned by the threads fetch —
+  // carries live unread counts for producer threads.
+  const [realtimeChannel, setRealtimeChannel] = useState<string | null>(null);
+  // Unread updates can name a thread we've never seen (a brand-new
+  // conversation). We re-fetch once to pick it up, but remember which ids we've
+  // already chased so a thread that stays absent can't drive a fetch per event.
+  const refetchedThreadIdsRef = useRef<Set<number>>(new Set());
+  // Mirrors `conversations` so the realtime handler can test whether a thread is
+  // already known without depending on (and resubscribing for) every list change.
+  const conversationsRef = useRef<Conversation[]>([]);
 
   const loadConversations = useCallback(async () => {
     try {
       const raw = await fetchMessageThreads("all");
       const merged = mergeThreadsToConversations(raw, account?.id);
       setConversations(merged);
+      setRealtimeChannel(raw.realtime_channel ?? null);
 
       // The threads list doesn't include the producer's display name/photo —
       // look those up separately for producer conversations so the inbox
@@ -161,8 +173,56 @@ export function MessagesScreen({ account, onBack, onOpenConversation }: Props) {
   }, [account?.id]);
 
   useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
+
+  useEffect(() => {
     loadConversations().finally(() => setLoading(false));
   }, [loadConversations]);
+
+  // Live unread badges for producer threads. User DMs aren't on realtime yet —
+  // their counts still come from the fetch above (and the refresh button).
+  useEffect(() => {
+    if (!realtimeChannel) return;
+
+    const unsubscribe = subscribeToGenieChannel(realtimeChannel, readAuthToken(), {
+      onEvent: (event) => {
+        if (event.event !== "unread_update") return;
+
+        // producer_threads and genie_user_threads are separate tables whose ids
+        // can collide, so the type has to be checked too — otherwise a producer
+        // event could rewrite an unrelated DM's badge.
+        const known = conversationsRef.current.some(
+          (c) => c.threadType === "producer" && c.threadId === event.thread_id
+        );
+
+        if (!known) {
+          // A thread we haven't seen yet (brand-new conversation) — pull the
+          // list once so it shows up, rather than patching nothing.
+          if (!refetchedThreadIdsRef.current.has(event.thread_id)) {
+            refetchedThreadIdsRef.current.add(event.thread_id);
+            void loadConversations();
+          }
+          return;
+        }
+
+        setConversations((prev) =>
+          prev.map((c) => {
+            if (c.threadType !== "producer" || c.threadId !== event.thread_id) return c;
+            // Absolute new value, not an increment. 0 means cleared (e.g. the
+            // thread was opened on another device).
+            if (c.unreadCount === event.unread_count) return c;
+            return { ...c, unreadCount: event.unread_count };
+          })
+        );
+      },
+      // Counts drift while the socket is down and nothing is replayed on
+      // rejoin, so the list has to be rebuilt from REST.
+      onResync: () => void loadConversations(),
+    });
+
+    return unsubscribe ?? undefined;
+  }, [realtimeChannel, loadConversations]);
 
   async function handleRefresh() {
     if (refreshing) return;

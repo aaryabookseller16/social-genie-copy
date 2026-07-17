@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } f
 import Image from "next/image";
 import { ScrollUnlock } from "@/app/p/[id]/ScrollUnlock";
 import {
+  ApiError,
   blockUser,
   fetchBlockedUsers,
   fetchMessageThreads,
@@ -18,8 +19,10 @@ import {
   type MessageThreadType,
   type RawMessage,
 } from "@/app/lib/publicApiClient";
-import { type ConsumerAccount } from "@/app/lib/localState";
+import { readAuthToken, type ConsumerAccount } from "@/app/lib/localState";
+import { subscribeToGenieChannel } from "@/app/lib/realtimeMessaging";
 
+/** Only user-to-user DMs still poll — producer threads are realtime. */
 const POLL_INTERVAL_MS = 4000;
 const PER_PAGE = 30;
 /** How close to the bottom (px) still counts as "at the bottom" for auto-scroll. */
@@ -70,6 +73,21 @@ function dayLabel(ms: number): string {
   });
 }
 
+/**
+ * Whether a failed thread load means "you aren't a participant".
+ *
+ * ep_get_messages_dev returns a real 403 for this, so the status is the primary
+ * signal. The message-text check is belt-and-braces: most other Genie endpoints
+ * still reject with a bare XanoScript `throw`, which has no HTTP meaning and
+ * reaches us as whatever xanoProxy.inferThrowStatus guesses from the text. If
+ * this check is ever reused against one of those, the status alone won't do.
+ */
+function isAccessDenied(err: unknown): boolean {
+  if (err instanceof ApiError && err.status === 403) return true;
+  if (!(err instanceof Error)) return false;
+  return err.message.toLowerCase().replace(/[\s_-]/g, "").includes("accessdenied");
+}
+
 type ViewerRole = "consumer" | "producer";
 
 type Props = {
@@ -118,6 +136,19 @@ export function ConversationScreen({
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  // The thread/<key> channel for this conversation, straight from the API
+  // response. Producer threads only — user DMs have no realtime backend yet and
+  // keep polling. Empty until the first fetch resolves.
+  const [realtimeChannel, setRealtimeChannel] = useState<string | null>(null);
+  // A 403 means we're not a participant — distinct from a transient load
+  // failure, and no amount of retrying will fix it.
+  const [accessDenied, setAccessDenied] = useState(false);
+  // Set when a producer thread can't use realtime after all (no channel from the
+  // backend, missing client config). Falls the thread back to polling instead of
+  // leaving it frozen.
+  const [realtimeUnavailable, setRealtimeUnavailable] = useState(false);
+
+  const usesRealtime = threadType === "producer";
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
@@ -172,6 +203,11 @@ export function ConversationScreen({
           lastPage === 1 ? first : await fetchThreadMessages(threadType, threadId, lastPage, PER_PAGE);
         const incoming = raw.messages ?? [];
 
+        // Never construct this from the thread id — the key half is a secret the
+        // backend only hands to verified participants.
+        const channel = raw.realtime_channel ?? first.realtime_channel ?? null;
+        setRealtimeChannel((prev) => (prev === channel ? prev : channel));
+
         if (isInitial) {
           oldestPageRef.current = lastPage;
           setHasMore(lastPage > 1);
@@ -196,7 +232,16 @@ export function ConversationScreen({
             return merged;
           });
         }
-      } catch {
+      } catch (err) {
+        // ep_get_messages_dev returns 403 to non-participants. Surface it as a
+        // dead end rather than a retryable error, and drop any channel we were
+        // subscribed to.
+        if (isAccessDenied(err)) {
+          setAccessDenied(true);
+          setRealtimeChannel(null);
+          setError(null);
+          return;
+        }
         if (isInitial) setError("This conversation could not be loaded.");
       } finally {
         if (isInitial) setLoading(false);
@@ -272,16 +317,90 @@ export function ConversationScreen({
     };
   }, [threadId, threadType, counterpartId, account?.id]);
 
+  /**
+   * Applies a message delivered over the thread channel.
+   *
+   * De-duped by id, because the sender receives their OWN message back (so
+   * their other tabs stay in sync) — it can land alongside the POST response.
+   */
+  const applyRealtimeMessage = useCallback(
+    (message: RawMessage) => {
+      setMessages((prev) => {
+        const isMine = message.sender_id === account?.id;
+        // Our own send is already on screen as an optimistic bubble under a
+        // temporary negative id, so id de-duping alone can't catch it. If the
+        // socket beats the POST response, drop the placeholder now or it
+        // double-renders until the response lands.
+        const base = isMine
+          ? prev.filter(
+              (m) => !(m.pending && m.id < 0 && m.message_text === message.message_text)
+            )
+          : prev;
+        const merged = mergeMessages(base, [message]);
+        if (!isMine) {
+          // Same rule the poll had: only mark read when the tab is actually
+          // visible, or a backgrounded thread silently eats the unread badge.
+          if (typeof document === "undefined" || document.visibilityState === "visible") {
+            markReadSafe();
+          }
+        }
+        if (nearBottomRef.current) shouldScrollBottomRef.current = true;
+        return merged;
+      });
+    },
+    [account?.id, markReadSafe]
+  );
+
+  /**
+   * Re-reads the thread over REST to close a gap the socket couldn't cover.
+   *
+   * Deferred while the tab is hidden, because ep_get_messages_dev clears the
+   * thread's unread as a SIDE EFFECT of reading it (it emits unread_update: 0 to
+   * our own user channel). A reconnect landing in a background tab would
+   * otherwise silently mark the conversation read for a user who never saw it —
+   * the same hazard the visibility-gated poll was written to avoid. Realtime
+   * keeps appending in the meantime; only the gap-fill waits.
+   */
+  const pendingResyncRef = useRef(false);
+  const resync = useCallback(() => {
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+      pendingResyncRef.current = true;
+      return;
+    }
+    loadMessages(false);
+  }, [loadMessages]);
+
+  // Initial history load — REST is the source of truth for both transports.
   useEffect(() => {
-    if (threadId === null) return;
+    if (threadId === null || accessDenied) return;
+    loadMessages(true);
+  }, [threadId, accessDenied, loadMessages]);
+
+  // Flush a resync that was deferred while the tab was hidden.
+  useEffect(() => {
+    if (threadId === null || accessDenied) return;
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      if (!pendingResyncRef.current) return;
+      pendingResyncRef.current = false;
+      loadMessages(false);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [threadId, accessDenied, loadMessages]);
+
+  // User-to-user DMs have no realtime backend yet, so they still poll. Producer
+  // threads are driven by the subscription below and never reach this.
+  useEffect(() => {
+    if (threadId === null || accessDenied) return;
+    if (usesRealtime && !realtimeUnavailable) return;
     const isVisible = () =>
       typeof document === "undefined" || document.visibilityState === "visible";
-    // Opening a chat always loads it. But the repeated poll is gated on tab
-    // visibility: reading a thread (ep_get_messages_dev) marks its messages read
-    // as a side effect, so a backgrounded/unfocused conversation tab must NOT
-    // keep polling — otherwise it silently "reads" incoming messages and the
-    // recipient never sees an unread badge elsewhere.
-    loadMessages(true);
+    // The repeated poll is gated on tab visibility: reading a thread
+    // (ep_get_messages_dev) marks its messages read as a side effect, so a
+    // backgrounded/unfocused conversation tab must NOT keep polling — otherwise
+    // it silently "reads" incoming messages and the recipient never sees an
+    // unread badge elsewhere.
     const interval = setInterval(() => {
       if (isVisible()) loadMessages(false);
     }, POLL_INTERVAL_MS);
@@ -295,7 +414,39 @@ export function ConversationScreen({
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [threadId, loadMessages]);
+  }, [threadId, accessDenied, usesRealtime, realtimeUnavailable, loadMessages]);
+
+  // Live updates for producer threads. The channel name only exists once the
+  // initial fetch has returned it, so this necessarily runs after that load.
+  useEffect(() => {
+    if (!usesRealtime || accessDenied || loading) return;
+
+    if (!realtimeChannel) {
+      // Backend didn't hand us a channel — fall back to polling rather than
+      // leaving the thread frozen.
+      setRealtimeUnavailable(true);
+      return;
+    }
+
+    const unsubscribe = subscribeToGenieChannel(realtimeChannel, readAuthToken(), {
+      onEvent: (event) => {
+        if (event.event === "new_message") applyRealtimeMessage(event.message);
+      },
+      // Nothing sent while the socket was down is replayed on rejoin, so the
+      // gap can only be closed over REST.
+      onResync: resync,
+      // The channel is dead (rejected join, auth failure) — no messages are
+      // coming, so go back to polling instead of a silently frozen thread.
+      onError: () => setRealtimeUnavailable(true),
+    });
+
+    if (!unsubscribe) {
+      setRealtimeUnavailable(true);
+      return;
+    }
+    setRealtimeUnavailable(false);
+    return unsubscribe;
+  }, [usesRealtime, accessDenied, loading, realtimeChannel, applyRealtimeMessage, resync]);
 
   useEffect(() => {
     fetchBlockedUsers()
@@ -311,6 +462,15 @@ export function ConversationScreen({
   useEffect(() => {
     setBlockedByOther(false);
   }, [counterpartId]);
+
+  // Same reuse hazard for the per-thread realtime state: without this, a denied
+  // or channel-less thread would poison the next conversation opened in this
+  // same component instance, and we'd subscribe to a stale thread's channel.
+  useEffect(() => {
+    setAccessDenied(false);
+    setRealtimeUnavailable(false);
+    setRealtimeChannel(null);
+  }, [threadId, threadType]);
 
   // Auto-dismiss the transient action banner ("Blocked", "Report submitted", …).
   useEffect(() => {
@@ -453,6 +613,32 @@ export function ConversationScreen({
         <ScrollUnlock />
         <div className="pointer-events-none fixed inset-0 bg-black/60" />
         <div className="relative z-10 h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+      </main>
+    );
+  }
+
+  // The backend rejected us as a non-participant. There's nothing to retry and
+  // no messages to show, so offer the way out instead of an empty thread.
+  if (accessDenied) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[url('/bg.png')] bg-cover bg-center">
+        <ScrollUnlock />
+        <div className="pointer-events-none fixed inset-0 bg-black/60" />
+        <div className="relative z-10 mx-auto flex max-w-xs flex-col items-center gap-4 px-6 text-center">
+          <p className="text-[0.9rem] font-semibold text-white">
+            This conversation isn&apos;t available
+          </p>
+          <p className="text-[0.8rem] text-white/50">
+            You don&apos;t have access to it.
+          </p>
+          <button
+            type="button"
+            onClick={onBack}
+            className="rounded-full bg-red-600 px-5 py-2.5 text-sm font-semibold text-white"
+          >
+            Back to messages
+          </button>
+        </div>
       </main>
     );
   }
