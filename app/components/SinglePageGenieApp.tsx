@@ -3047,6 +3047,15 @@ activeScreen === "vibbee-trial" ||
         onClose={() => setLoginSuccessSheetOpen(false)}
       />
 
+      {/* Must stay outside the `relative z-10` content wrapper below: that
+          wrapper creates a stacking context, so any overlay inside it is
+          painted under the z-[80] BottomDock regardless of its own z-index. */}
+      <VerifyEmailGate
+        visible={verifyGateOpen}
+        email={onboardingEmail}
+        onClose={() => setVerifyGateOpen(false)}
+      />
+
       <RoleSwitcherDialog
         visible={isRoleSwitcherOpen}
         onClose={() => setIsRoleSwitcherOpen(false)}
@@ -5384,12 +5393,6 @@ activeScreen === "vibbee-trial" ||
             // screen). Also clears the wizard out of the back stack.
             goHome();
           }}
-        />
-
-        <VerifyEmailGate
-          visible={verifyGateOpen}
-          email={onboardingEmail}
-          onClose={() => setVerifyGateOpen(false)}
         />
 
         <VendorSection

@@ -296,12 +296,12 @@ export function AccountSection({
     return (
       <section
         ref={sectionRef}
-        className="relative flex min-h-[calc(100dvh-1.5rem)] flex-col overflow-hidden bg-transparent px-1 pb-6 pt-10"
+        className="relative flex min-h-[calc(100dvh-1.5rem)] flex-col bg-transparent px-1 pb-[calc(env(safe-area-inset-bottom,0px)+5.75rem)] pt-6"
       >
         <button
           type="button"
           onClick={() => setMode(null)}
-          className="absolute left-1 top-10 text-gray-600 dark:text-white/82"
+          className="-ml-1 flex h-9 w-9 flex-none items-center justify-center text-gray-600 dark:text-white/82"
           aria-label="Go back"
         >
           <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2">
@@ -363,12 +363,12 @@ export function AccountSection({
     return (
       <section
         ref={sectionRef}
-        className="relative flex min-h-[calc(100dvh-1.5rem)] flex-col overflow-hidden bg-transparent px-1 pb-6 pt-10"
+        className="relative flex min-h-[calc(100dvh-1.5rem)] flex-col bg-transparent px-1 pb-[calc(env(safe-area-inset-bottom,0px)+5.75rem)] pt-6"
       >
         <button
           type="button"
           onClick={() => setMode(null)}
-          className="absolute left-1 top-10 text-gray-600 dark:text-white/82"
+          className="-ml-1 flex h-9 w-9 flex-none items-center justify-center text-gray-600 dark:text-white/82"
           aria-label="Go back"
         >
           <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2">
@@ -479,7 +479,7 @@ export function AccountSection({
   return (
     <section
       ref={sectionRef}
-      className="relative min-h-[calc(100dvh-1.5rem)] overflow-hidden bg-transparent px-1 pb-6 pt-4 sm:px-2"
+      className="relative min-h-[calc(100dvh-1.5rem)] bg-transparent px-1 pb-[calc(env(safe-area-inset-bottom,0px)+5.75rem)] pt-4 sm:px-2"
     >
       {!account ? (
         <>
