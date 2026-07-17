@@ -75,9 +75,23 @@ function isXanoThrowError(payload: unknown): payload is { statement: string; pay
   return record.statement === "Throw Error" && typeof record.payload === "string";
 }
 
+/**
+ * Only ever applied to the 200-with-an-error-body shape above, never to a real
+ * HTTP status. Endpoints that use XanoScript's `precondition` (which sets a
+ * genuine response code) never reach this — ep_get_messages_dev, for one, now
+ * returns a real 403/404. This is for the majority that still use bare `throw`.
+ *
+ * Necessarily a guess: the throw's `name` isn't in the response body, so the
+ * message text is all there is. It's wrong where an authorization failure is
+ * phrased like something else — ep_producer_reply_dev's "Producer profile not
+ * found or inactive" infers 404 for what is really an auth rejection.
+ */
 function inferThrowStatus(message: string): number {
   const lower = message.toLowerCase();
   if (lower.includes("already")) return 409;
+  // Matched before "not found": bare `throw { name = "accessdenied" }` carries no
+  // HTTP meaning, so without this an auth rejection would land as a generic 400.
+  if (lower.replace(/[\s_-]/g, "").includes("accessdenied")) return 403;
   if (lower.includes("not found") || lower.includes("no active")) return 404;
   return 400;
 }

@@ -144,6 +144,21 @@ async function readErrorMessage(response: Response) {
   }
 }
 
+/**
+ * A failed API response. Carries the HTTP status so callers can branch on it
+ * (e.g. a 403 from a thread the user isn't a participant in) instead of
+ * pattern-matching the message text.
+ */
+export class ApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 export async function apiJson<T>(path: string, init: JsonInit = {}) {
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json");
@@ -164,7 +179,9 @@ export async function apiJson<T>(path: string, init: JsonInit = {}) {
     if (response.status === 401 && init.auth !== false && token) {
       clearStoredSession();
     }
-    throw new Error(await readErrorMessage(response));
+    // ApiError extends Error, so existing `instanceof Error` / err.message
+    // callers are unaffected.
+    throw new ApiError(response.status, await readErrorMessage(response));
   }
 
   return (await response.json()) as T;
@@ -2370,6 +2387,12 @@ export async function fetchMessageThreads(
     success?: boolean;
     producer_threads?: RawProducerThread[];
     user_threads?: RawUserThread[];
+    /**
+     * The caller's own `user/<id>` realtime channel — subscribe to this for live
+     * unread-badge updates. Always use the value as given; never build it from
+     * an id. Absent on older backends, in which case callers fall back to polling.
+     */
+    realtime_channel?: string;
   }>(
     `/api/messages/threads?page=${page}&per_page=${perPage}&thread_type=${threadType}`
   );
@@ -2415,11 +2438,36 @@ export function mergeThreadsToConversations(
   return [...fromProducer, ...fromUser].sort((a, b) => b.lastMessageAt - a.lastMessageAt);
 }
 
-/** No dedicated unread-count endpoint exists; derive it from the inbox fetch. */
-export async function fetchUnreadMessageCount(currentUserId?: number) {
-  const raw = await fetchMessageThreads("all", 1, 100);
+/**
+ * No dedicated unread-count endpoint exists; derive it from the inbox fetch.
+ *
+ * `threadType` narrows which half is counted. Producer threads get their counts
+ * live over realtime, so the badge only needs to poll the "user" half — see
+ * SinglePageGenieApp.
+ */
+export async function fetchUnreadMessageCount(
+  currentUserId?: number,
+  threadType: "all" | MessageThreadType = "all"
+) {
+  const raw = await fetchMessageThreads(threadType, 1, 100);
   const conversations = mergeThreadsToConversations(raw, currentUserId);
   return conversations.reduce((sum, c) => sum + c.unreadCount, 0);
+}
+
+/**
+ * Per-thread unread counts for producer threads, plus this viewer's `user/<id>`
+ * realtime channel. The badge seeds itself from this once, then keeps it current
+ * from `unread_update` events instead of re-fetching on a timer.
+ */
+export async function fetchProducerUnreadState(currentUserId?: number) {
+  const raw = await fetchMessageThreads("producer", 1, 100);
+  const unreadByThreadId: Record<number, number> = {};
+  for (const conversation of mergeThreadsToConversations(raw, currentUserId)) {
+    if (conversation.threadType === "producer") {
+      unreadByThreadId[conversation.threadId] = conversation.unreadCount;
+    }
+  }
+  return { unreadByThreadId, realtimeChannel: raw.realtime_channel ?? null };
 }
 
 /** Generic dispatcher so future entry points (vendor/consumer profiles) are a one-line wire-up. */
@@ -2478,6 +2526,20 @@ export async function markThreadRead(threadType: MessageThreadType, threadId: nu
   });
 }
 
+/**
+ * Reads one page of a thread.
+ *
+ * ⚠ NOT a side-effect-free read. Any call to this CLEARS that thread's unread
+ * count server-side and emits `unread_update: 0` to the caller's own realtime
+ * channel — on every page, in the foreground, regardless of intent. Pagination
+ * counts; so does a call made only to discover the last page.
+ *
+ * So only ever call this for a thread the user is actually looking at. Never
+ * prefetch, warm, or background-refresh a thread on their behalf: it silently
+ * marks it read and clears the badge on all their devices for a message they
+ * never saw. ConversationScreen defers its reconnect resync while the tab is
+ * hidden for this reason.
+ */
 export async function fetchThreadMessages(
   threadType: MessageThreadType,
   threadId: number,
@@ -2492,6 +2554,13 @@ export async function fetchThreadMessages(
     page?: number;
     per_page?: number;
     messages?: RawMessage[];
+    /**
+     * This conversation's `thread/<key>` realtime channel (producer threads
+     * only). The key is a per-conversation secret the backend returns only to
+     * verified participants — it IS the subscribe capability, so never log it,
+     * put it in a URL, or share it across users.
+     */
+    realtime_channel?: string;
   }>(`${path}?thread_id=${threadId}&page=${page}&per_page=${perPage}`);
 }
 

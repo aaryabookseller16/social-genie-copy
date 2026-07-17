@@ -118,10 +118,12 @@ import {
   saveInfluencerDetails,
   fetchUnreadNotifCount,
   fetchUnreadMessageCount,
+  fetchProducerUnreadState,
   fetchMessageThreads,
   mergeThreadsToConversations,
   type MessageThreadType,
 } from "@/app/lib/publicApiClient";
+import { subscribeToGenieChannel } from "@/app/lib/realtimeMessaging";
 import { getRuntimeConfig } from "@/app/lib/runtimeConfig";
 import { extractCityFromMessage, mentionsNearMe } from "@/app/lib/cityExtractor";
 import {
@@ -497,7 +499,15 @@ export function SinglePageGenieApp({
   const roleUnlockRef = useRef<HTMLElement | null>(null);
   const [activeScreen, setActiveScreen] = useState<FlowAnchor>(initialScreen);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
-  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
+  // The message badge is the sum of two halves with different transports:
+  // producer threads arrive live over realtime (seeded once from REST), while
+  // user-to-user DMs have no realtime backend yet and still poll.
+  const [producerUnreadByThread, setProducerUnreadByThread] = useState<Record<number, number>>({});
+  const [userUnreadCount, setUserUnreadCount] = useState(0);
+  // Set when producer realtime can't be used (no channel from the backend,
+  // missing client config) — falls that half back to polling.
+  const [producerRealtimeUnavailable, setProducerRealtimeUnavailable] = useState(false);
+  const [producerUnreadChannel, setProducerUnreadChannel] = useState<string | null>(null);
   const [activeConversation, setActiveConversation] = useState<{
     threadId: number | null;
     threadType: MessageThreadType;
@@ -1007,18 +1017,77 @@ const [trialSuccess, setTrialSuccess] = useState(false);
       .catch(() => {});
   }, [account]);
 
-  // Keep the homescreen message badge live: fetch on load, poll while the app
-  // is open, and refetch on every screen change (so a recipient sees a new
-  // message's badge, and it clears right after reading a thread + navigating
-  // back). The unread count has no dedicated endpoint — it's derived from the
-  // thread list — so this is intentionally lightweight, not per-second.
+  const unreadMessageCount =
+    userUnreadCount +
+    Object.values(producerUnreadByThread).reduce((sum, count) => sum + count, 0);
+
+  /** Seeds the producer half of the badge (and its channel name) from REST. */
+  const loadProducerUnread = useCallback(async () => {
+    if (!account) return;
+    try {
+      const { unreadByThreadId, realtimeChannel } = await fetchProducerUnreadState(account.id);
+      setProducerUnreadByThread(unreadByThreadId);
+      setProducerUnreadChannel(realtimeChannel);
+      // An older backend that doesn't hand out a channel can't push updates —
+      // that half has to keep polling or the badge would freeze.
+      if (!realtimeChannel) setProducerRealtimeUnavailable(true);
+    } catch {
+      // Leave the last known counts up; a failed refresh shouldn't zero the badge.
+    }
+  }, [account]);
+
+  // Producer badge: one REST fetch to seed, then live deltas. No timer.
+  useEffect(() => {
+    void loadProducerUnread();
+  }, [loadProducerUnread]);
+
+  useEffect(() => {
+    if (!producerUnreadChannel) return;
+
+    const unsubscribe = subscribeToGenieChannel(producerUnreadChannel, readAuthToken(), {
+      onEvent: (event) => {
+        if (event.event !== "unread_update") return;
+        setProducerUnreadByThread((prev) => {
+          // Absolute new value, not an increment. 0 clears the thread's badge
+          // (e.g. it was opened on another device).
+          if (prev[event.thread_id] === event.unread_count) return prev;
+          return { ...prev, [event.thread_id]: event.unread_count };
+        });
+      },
+      // Counts drift while the socket is down and nothing is replayed on
+      // rejoin, so the badge has to be rebuilt from REST.
+      onResync: () => void loadProducerUnread(),
+      // Channel is dead — no deltas are coming, so poll this half instead.
+      onError: () => setProducerRealtimeUnavailable(true),
+    });
+
+    if (!unsubscribe) {
+      setProducerRealtimeUnavailable(true);
+      return;
+    }
+    setProducerRealtimeUnavailable(false);
+    return unsubscribe;
+  }, [producerUnreadChannel, loadProducerUnread]);
+
+  // Fallback only: keeps the producer badge fresh when realtime isn't usable.
+  useEffect(() => {
+    if (!account || !producerRealtimeUnavailable) return;
+    const interval = setInterval(() => void loadProducerUnread(), 15000);
+    return () => clearInterval(interval);
+  }, [account, producerRealtimeUnavailable, loadProducerUnread]);
+
+  // User-to-user DMs are not on realtime yet, so this half still polls: fetch on
+  // load, poll while the app is open, and refetch on every screen change (so the
+  // badge clears right after reading a thread + navigating back). The unread
+  // count has no dedicated endpoint — it's derived from the thread list — so
+  // this is intentionally lightweight, not per-second.
   useEffect(() => {
     if (!account) return;
     let cancelled = false;
     const refresh = () => {
-      fetchUnreadMessageCount(account.id)
+      fetchUnreadMessageCount(account.id, "user")
         .then((count) => {
-          if (!cancelled) setUnreadMessageCount(count);
+          if (!cancelled) setUserUnreadCount(count);
         })
         .catch(() => {});
     };
