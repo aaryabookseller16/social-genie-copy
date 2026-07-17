@@ -2781,6 +2781,16 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     goHome();
   }, [goHome]);
 
+  // Roles hang off the signed-in account, so a guest has nothing to switch
+  // between — send them to sign in instead of opening an empty switcher.
+  const openRoleSwitcher = useCallback(() => {
+    if (!account) {
+      navigateTo("account");
+      return;
+    }
+    setIsRoleSwitcherOpen(true);
+  }, [account, navigateTo]);
+
   const handleDrawerNavigate = useCallback(
     (target: DrawerMenuActionId) => {
       switch (target) {
@@ -2864,11 +2874,11 @@ const [trialSuccess, setTrialSuccess] = useState(false);
           break;
         case "switch-role":
           setIsDrawerOpen(false);
-          setIsRoleSwitcherOpen(true);
+          openRoleSwitcher();
           break;
       }
     },
-    [goHome, isVibeeMember, navigateTo]
+    [goHome, isVibeeMember, navigateTo, openRoleSwitcher]
   );
 
   const handleTopBack = useCallback(() => {
@@ -5370,7 +5380,9 @@ activeScreen === "vibbee-trial" ||
             visible={true}
             onContinue={() => {
               // TODO: pending states (vendor claim, producer/influencer approval) come later
-              navigateTo("home", false);
+              // goHome() → "homescreen" (the genie home feed), not "home" (the
+              // chat/ask screen), and clears the unlock flow off the back stack.
+              goHome();
             }}
           />
         ) : null}
@@ -6077,7 +6089,7 @@ activeScreen === "vibbee-trial" ||
       navigateTo("event-detail");
     }}
     onMenuOpen={() => setIsDrawerOpen(true)}
-    onOpenRoleSwitcher={() => setIsRoleSwitcherOpen(true)}
+    onOpenRoleSwitcher={openRoleSwitcher}
     onOrbTap={startListening}
     onNotifications={() => navigateTo("notifications")}
     unreadNotifCount={unreadNotifCount}

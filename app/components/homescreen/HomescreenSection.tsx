@@ -730,10 +730,19 @@ export function HomescreenSection({
   // reading it inline would mismatch the server-rendered HTML. This component
   // unmounts when the user switches into another role's dashboard, so a
   // mount-time read is enough to stay current when they come back.
+  //
+  // The stored role deliberately outlives logout (so it comes back on sign-in),
+  // which means it cannot be trusted on its own — only read it back for a
+  // signed-in user. A guest always renders as "consumer"; re-running on
+  // isLoggedIn picks the stored role up again once they sign in.
   const [activeRole, setActiveRole] = useState<OnboardingRole>("consumer");
   useEffect(() => {
+    if (!isLoggedIn) {
+      setActiveRole("consumer");
+      return;
+    }
     setActiveRole(readActiveRole());
-  }, []);
+  }, [isLoggedIn]);
 
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
