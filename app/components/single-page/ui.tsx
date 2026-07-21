@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { type ReactNode, type RefObject } from "react";
+import { useState, type ReactNode, type RefObject } from "react";
 
 import { type GenieVenue } from "@/app/lib/genieClient";
 import { getDistanceLabel } from "@/app/lib/geo";
@@ -17,6 +17,7 @@ export type FlowAnchor =
   | "saved"
   | "offers"
   | "events-tab"
+  | "venues-tab"
   | "offer-detail"
   | "offer-activated"
   | "redemptions"
@@ -378,27 +379,48 @@ function EventsDockIcon({ className }: { className?: string }) {
   );
 }
 
+/** Two-tower building outline — the dock's Venues slot. */
+function VenuesDockIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path d="M4 21V8.5a1 1 0 0 1 .6-.92l6-2.5A1 1 0 0 1 12 6v15" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M12 21V11h6.5a1 1 0 0 1 1 1v9" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <line x1="2.5" y1="21" x2="21.5" y2="21" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <line x1="7" y1="10.5" x2="9" y2="10.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <line x1="7" y1="14" x2="9" y2="14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <line x1="7" y1="17.5" x2="9" y2="17.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <line x1="15" y1="14.5" x2="16.5" y2="14.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <line x1="15" y1="17.5" x2="16.5" y2="17.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function BottomDock({
   activeId,
   onHome,
-  onProfile,
+  onVenues,
   onCenter,
   onOffers,
   onEvents,
 }: {
   activeId?: FlowAnchor;
   onHome: () => void;
-  onProfile: () => void;
+  onVenues: () => void;
   onCenter: () => void;
   onOffers: () => void;
   onEvents: () => void;
 }) {
-  const isProfileActive =
+  const isVenuesActive = activeId === "venues-tab";
+  // Account/profile/vendor no longer have a dock slot (they live in the drawer),
+  // but they must still suppress the home highlight — otherwise the home icon
+  // reads as active while the user is sitting on their profile.
+  const isAccountScreen =
     activeId === "account" ||
     activeId === "profile" ||
     activeId === "preferences" ||
     activeId === "membership" ||
     activeId === "contact" ||
+    activeId === "dashboard" ||
     activeId === "vendor";
   const isOffersActive =
     activeId === "offers" ||
@@ -407,7 +429,8 @@ export function BottomDock({
     activeId === "redemptions";
   const isEventsActive = activeId === "events-tab";
   const isHomeActive =
-    !isProfileActive &&
+    !isAccountScreen &&
+    !isVenuesActive &&
     !isOffersActive &&
     !isEventsActive &&
     (activeId === "homescreen" || activeId === "home" || !activeId);
@@ -492,29 +515,14 @@ export function BottomDock({
 
         <button
           type="button"
-          onClick={onProfile}
-          className={`relative z-10 flex h-12 w-12 touch-manipulation items-center justify-center ${
-            isProfileActive ? "opacity-100" : "opacity-75 dark:opacity-70"
+          onClick={onVenues}
+          className={`relative z-10 flex h-12 w-12 touch-manipulation items-center justify-center text-red-600 dark:text-white ${
+            isVenuesActive ? "opacity-100" : "opacity-40 dark:opacity-45"
           }`}
-          aria-label="Open account"
-          aria-current={isProfileActive ? "page" : undefined}
+          aria-label="Open venues"
+          aria-current={isVenuesActive ? "page" : undefined}
         >
-          <Image
-            src="/accountIcon-red.png"
-            alt=""
-            aria-hidden="true"
-            width={22}
-            height={22}
-            className="pointer-events-none h-[22px] w-[22px] object-contain dark:hidden"
-          />
-          <Image
-            src="/accountIcon.png"
-            alt=""
-            aria-hidden="true"
-            width={22}
-            height={22}
-            className="pointer-events-none hidden h-[22px] w-[22px] object-contain dark:block"
-          />
+          <VenuesDockIcon className="h-7 w-7" />
         </button>
       </div>
     </div>
@@ -682,14 +690,45 @@ export function ResultCard({
   onOpen,
   onSave,
   userCoords,
+  tagline,
+  description,
+  status,
+  fallbackImage,
 }: {
   venue: GenieVenue;
   index: number;
   onOpen: () => void;
   onSave?: () => void;
   userCoords?: { lat: number; lng: number } | null;
+  /**
+   * Overrides the derived energy tagline. Pass `null` to drop the line
+   * entirely — sources with no energy data would otherwise render the same
+   * "Lively spot" placeholder on every card.
+   */
+  tagline?: string | null;
+  /** Optional blurb under the tagline; omitted when absent. */
+  description?: string | null;
+  /**
+   * Overrides the derived status line. Pass `null` to drop it — for sources
+   * with no `is_open_now` / `social_energy_state`, getVenueStatus invents one
+   * from the list index, which is worse than showing nothing.
+   */
+  status?: string | null;
+  /**
+   * Image shown when the venue has no usable photo. Defaults to the stock
+   * photo; pass `null` for an empty placeholder instead of a stand-in that
+   * isn't this venue.
+   */
+  fallbackImage?: string | null;
 }) {
   void onSave;
+  // Many venue photos are dead Google Places URLs (403). Without this the card
+  // renders a broken-image glyph and its alt text.
+  const [imageFailed, setImageFailed] = useState(false);
+  const taglineText = tagline === undefined ? getVenueTagline(venue) : tagline;
+  const resolvedFallback =
+    fallbackImage === undefined ? "/sample-venue-1.jpeg" : fallbackImage;
+  const imageSrc = !imageFailed && venue.image ? venue.image : resolvedFallback;
   const tone = getVenueStatusTone(venue, index);
   const statusColor =
     tone === "busy"
@@ -697,7 +736,7 @@ export function ResultCard({
       : tone === "good" || tone === "open"
         ? "bg-green-500"
         : "bg-amber-400";
-  const statusText = getVenueStatus(venue, index);
+  const statusText = status === undefined ? getVenueStatus(venue, index) : status;
 
   return (
     <button
@@ -706,14 +745,17 @@ export function ResultCard({
       className="w-full overflow-hidden rounded-[20px] border border-red-200 bg-white text-left shadow-[0_8px_24px_rgba(0,0,0,0.06)] transition hover:shadow-[0_10px_26px_rgba(0,0,0,0.1)] dark:border-[#6a1d1d] dark:bg-black/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.4)] dark:hover:border-[#ff7b7b]"
     >
       <div className="flex gap-3 p-3">
-        <div className="relative h-28 w-28 flex-none overflow-hidden rounded-2xl">
-          <Image
-            src={venue.image || "/sample-venue-1.jpeg"}
-            alt={venue.venue_name || "Venue"}
-            fill
-            className="object-cover"
-            sizes="112px"
-          />
+        <div className="relative h-28 w-28 flex-none overflow-hidden rounded-2xl bg-gray-100 dark:bg-white/5">
+          {imageSrc ? (
+            <Image
+              src={imageSrc}
+              alt={venue.venue_name || "Venue"}
+              fill
+              className="object-cover"
+              sizes="112px"
+              onError={() => setImageFailed(true)}
+            />
+          ) : null}
         </div>
 
         <div className="min-w-0 flex-1 py-1">
@@ -728,14 +770,24 @@ export function ResultCard({
             })()}
           </p>
 
-          <p className="mt-1.5 truncate text-[0.88rem] font-medium text-red-500 dark:text-[#ff9d7d]">
-            {getVenueTagline(venue)}
-          </p>
+          {taglineText ? (
+            <p className="mt-1.5 truncate text-[0.88rem] font-medium text-red-500 dark:text-[#ff9d7d]">
+              {taglineText}
+            </p>
+          ) : null}
 
-          <p className="mt-1.5 flex items-center gap-1.5 text-[0.82rem] font-medium text-amber-500 dark:text-amber-300">
-            <span className={`inline-block h-2 w-2 rounded-full ${statusColor}`} />
-            {statusText}
-          </p>
+          {description ? (
+            <p className="mt-1.5 line-clamp-2 text-[0.8rem] leading-4 text-gray-500 dark:text-white/55">
+              {description}
+            </p>
+          ) : null}
+
+          {statusText ? (
+            <p className="mt-1.5 flex items-center gap-1.5 text-[0.82rem] font-medium text-amber-500 dark:text-amber-300">
+              <span className={`inline-block h-2 w-2 rounded-full ${statusColor}`} />
+              {statusText}
+            </p>
+          ) : null}
         </div>
       </div>
     </button>

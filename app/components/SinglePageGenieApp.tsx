@@ -27,6 +27,7 @@ import { ConversationScreen } from "@/app/components/single-page/ConversationScr
 import { HomescreenSection } from "@/app/components/homescreen/HomescreenSection";
 import { EventDetailSection } from "@/app/components/event-detail/EventDetailSection";
 import EventsPage from "@/app/components/events/EventsPage";
+import NearbyVenuesPage from "@/app/components/venues/NearbyVenuesPage";
 import { type ManagedEvent } from "@/app/lib/publicApiClient";
 import {
   BottomDock,
@@ -2326,6 +2327,7 @@ const [trialSuccess, setTrialSuccess] = useState(false);
       "offers",
       "redemptions",
       "dashboard",
+      "venues-tab",
       "saved",
       "vendor",
       "profile",
@@ -3024,6 +3026,7 @@ case "vibbee-trial":
     activeScreen !== "membership" &&
     activeScreen !== "offers" &&
     activeScreen !== "events-tab" &&
+    activeScreen !== "venues-tab" &&
     activeScreen !== "offer-activated" &&
     activeScreen !== "offer-detail" &&
     activeScreen !== "redemptions" &&
@@ -3060,6 +3063,7 @@ activeScreen !== "vibbee-trial" &&
     activeScreen === "dashboard" ||
     activeScreen === "offers" ||
     activeScreen === "events-tab" ||
+    activeScreen === "venues-tab" ||
     activeScreen === "offer-detail" ||
     activeScreen === "offer-activated" ||
     activeScreen === "redemptions" ||
@@ -4440,6 +4444,22 @@ activeScreen === "vibbee-trial" ||
               setSelectedEventId(evt.id);
               setSelectedEvent(evt as unknown as Record<string, unknown>);
               navigateTo("event-detail");
+            }}
+          />
+        ) : null}
+
+        {/* ── VENUES ── */}
+        {activeScreen === "venues-tab" ? (
+          <NearbyVenuesPage
+            userCoords={userCoordsLL}
+            onBack={() => goBack("homescreen")}
+            onAllowLocation={requestLocationPermission}
+            isLoggedIn={!!account}
+            onRequireAuth={() => navigateTo("account")}
+            onSelectVenue={(venueId) => {
+              setSharedVenueLoading(true);
+              setSelectedVenueId(String(venueId));
+              navigateTo("detail");
             }}
           />
         ) : null}
@@ -6187,7 +6207,7 @@ activeScreen === "vibbee-trial" ||
     activeId={activeScreen}
     onHome={() => navigateTo("homescreen")}
     onCenter={() => navigateTo("home")}
-    onProfile={() => (account ? navigateTo("dashboard") : navigateTo("account"))}
+    onVenues={() => navigateTo("venues-tab")}
     onOffers={() => navigateTo("offers")}
     onEvents={() => navigateTo("events-tab")}
   />

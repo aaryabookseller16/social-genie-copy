@@ -6,6 +6,9 @@ import {
   type RawHandleMessageResponse,
 } from "./genieTypes";
 import { toImageList } from "./image";
+// Type-only: keeps this module importable from server components, which
+// publicApiClient's browser-side helpers are not.
+import type { NearbyVenue } from "./publicApiClient";
 
 export function getVenueImage(rawVenue: RawGenieVenue): string | null {
   const candidates = [
@@ -48,6 +51,46 @@ export function mapVenue(rawVenue: RawGenieVenue): GenieVenue {
     image_urls: toImageList(rawVenue.image_urls),
     latitude: normalizeCoordinate(rawVenue.latitude),
     longitude: normalizeCoordinate(rawVenue.longitude),
+  };
+}
+
+/**
+ * Adapts a card from ep_get_nearby_venues_dev onto the GenieVenue shape so the
+ * shared venue card and its helpers (getVenueHeadlineShort, getVenueStatus, ...)
+ * can render it unchanged.
+ *
+ * `social_energy_state` is deliberately not carried over: the nearby payload
+ * sends lowercase `"quiet"` while SOCIAL_ENERGY_STATUS is keyed on `"Quiet"` /
+ * `"Buzzing"` / ..., and the field is inert anyway. Leaving it undefined lets
+ * the status helpers fall through to their own copy.
+ *
+ * Empty strings are normalized to null — `price_band` and `reservation_url` come
+ * back as `""` rather than null on some rows.
+ */
+export function nearbyVenueToGenieVenue(venue: NearbyVenue): GenieVenue {
+  const blankToNull = (value: string | null) => {
+    const trimmed = value?.trim();
+    return trimmed ? trimmed : null;
+  };
+  const image = blankToNull(venue.image_url);
+
+  return {
+    id: venue.id,
+    venue_name: venue.name,
+    address: blankToNull(venue.address),
+    area_neighborhood: blankToNull(venue.neighborhood),
+    vibe_notes: blankToNull(venue.short_description),
+    image,
+    image_url: image,
+    latitude: venue.latitude,
+    longitude: venue.longitude,
+    price_band: blankToNull(venue.price_band),
+    // 0 means "unrated" here, not a one-star venue — drop it so the card hides
+    // the rating instead of rendering an empty row of stars.
+    google_rating: venue.google_rating || null,
+    google_user_ratings_total: venue.google_user_ratings_total || null,
+    google_maps_url: blankToNull(venue.google_maps_url),
+    reservation_url: blankToNull(venue.reservation_url),
   };
 }
 
