@@ -2,23 +2,44 @@
 
 Next.js 16 (App Router) + React 19 + TypeScript + Tailwind v4 frontend. The backend is Xano (see below) — this repo contains **no backend source code**.
 
-## Backend: Xano (external — you cannot read it)
+## Backend: Xano — the source is on disk, read it
 
-The backend lives entirely in the **Xano dashboard**. This repo only contains the frontend and the Next.js route handlers that proxy to Xano.
+This repo contains only the frontend and the Next.js route handlers that proxy to Xano.
 
-### Read `database.xs` — do not wait on another agent
+### Read the backend repo — do not wait on another agent
 
-The repo root contains **`database.xs`**, a direct export of the Xano workspace. **This is your source of truth for the backend.** When you need an endpoint path, input parameters, behavior, response shape, or auth requirement, **read `database.xs` first.** Do not ask another agent, and do not block waiting on one.
+The full Xano workspace source lives at **`D:\social-genie-project\social-genie-backend`** —
+~753 `.xs` files under `api/`, `table/`, `function/`, tracking branch `v1.5-dev`. **This is your
+source of truth for the backend.** When you need an endpoint path, input parameters, behavior,
+response shape, or auth requirement, **read the endpoint's `.xs` file first.** Do not ask another
+agent, and do not block waiting on one.
+
+Useful paths:
+
+- `api/genie_dev/genie/<name>_<VERB>.xs` — one file per endpoint, e.g. `vendor_create_offer_POST.xs`
+- `table/<table>.xs` — column definitions and comments, e.g. `genie_offers.xs`
+- `database.xs` — table schemas only. It does **not** contain endpoint logic; prefer the
+  per-endpoint `.xs` files for anything behavioral.
+
+Refresh it with `xano workspace pull -d . -w 1 -b v1.5-dev -p idrees`.
 
 Order of resolution when you need to know something about the backend:
 
-1. **`database.xs`** — the exported Xano workspace.
+1. **The endpoint's `.xs` file** in the backend repo.
 2. **Existing calls** in `app/api/**/route.ts` and `app/lib/genieClient.ts` — endpoints already wired up.
-3. **Ask the user** — only if `database.xs` is missing, does not cover the endpoint, or looks stale relative to the code.
+3. **Ask the user** — only if the backend repo is missing or does not cover the endpoint.
 
-**Never assume or invent anything about a Xano endpoint.** No guessed field names, no "it probably returns," no speculative types. If steps 1 and 2 don't answer it, stop and ask — then implement.
+**Never assume or invent anything about a Xano endpoint.** No guessed field names, no "it probably
+returns," no speculative types. If steps 1 and 2 don't answer it, stop and ask — then implement.
 
-If `database.xs` and the code disagree, say so rather than silently picking one; the export may predate a backend change.
+Two traps worth knowing before you trust a read:
+
+- **Live vs. branch skew.** The deployed v1 group is ~139 objects behind `v1.5-dev`. An endpoint
+  present in the source may still 404 in the running app. Probe before assuming it ships.
+- **Inverted preconditions.** XanoScript `precondition` aborts when its expression is *false*, so
+  `precondition ($x == null)` throws exactly when `$x` exists. This bug is present in several
+  endpoints (e.g. `vendor_onboarding_complete`), meaning a "Vendor not found" error can mean the
+  vendor *was* found. Read the precondition's polarity before concluding a record is missing.
 
 ### Xano base URLs (env vars)
 

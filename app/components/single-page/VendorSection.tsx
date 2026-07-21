@@ -17,6 +17,7 @@ import { type ConsumerAccount, readConsumerAccount, writeConsumerAccount } from 
 import {
   createSubscriptionCheckout,
   createVendorBusiness,
+  createVendorOffer,
   fetchMyVendorProfile,
   fetchVendorAnalytics,
   fetchVendorDashboard,
@@ -28,7 +29,6 @@ import {
   reviewInfluencerOffer,
   saveVenueImages,
   searchVendorBusinesses,
-  toggleVendorOffer,
   updateVendorNotifPrefs,
   updateVendorProfile,
   updateVendorVenue,
@@ -54,6 +54,25 @@ import { ActionButton } from "./ui";
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
+/** The offer_type enum Xano's genie_offers table accepts. */
+type VendorOfferType = Parameters<typeof createVendorOffer>[0]["offer_type"];
+
+const VENDOR_OFFER_TYPES: VendorOfferType[] = [
+  "happy_hour",
+  "brunch",
+  "perk",
+  "weekly_special",
+  "drink_special",
+  "food_special",
+  "event_access",
+  "vip_only",
+  "limited_time",
+  "experience",
+  "group_offer",
+  "late_night",
+  "other",
+];
+
 type VendorStep =
   | "loading"
   | "claim"
@@ -73,6 +92,7 @@ type VendorStep =
   | "profile"
   | "analytics"
   | "offers"
+  | "create-offer"
   | "boost"
   | "influencer-codes"
   | "settings";
@@ -144,16 +164,20 @@ type FullDashboardData = {
   address?: string | null;
   logo_url?: string;
   is_claimed?: boolean;
-  // Basic-tier stats (shown in both Free and Paid dashboards)
-  genie_appearances?: number;
-  profile_views?: number;
-  total_customer_actions?: number;
-  // Pro-only micro stats (second row)
-  call_clicks?: number;
-  map_clicks?: number;
-  reservation_clicks?: number;
-  user_saved?: number;
-  // Pro-only performance graph points (ordered left→right)
+  // Stat totals. These names are exactly what vendor_dashboard_v1 returns — they
+  // are NOT free to rename. They previously read genie_appearances / profile_views /
+  // total_customer_actions / call_clicks / map_clicks / reservation_clicks /
+  // user_saved, none of which Xano sends, so every stat silently rendered 0.
+  total_genie_appearances: number;
+  total_profile_views: number;
+  total_actions: number;
+  total_call_clicks: number;
+  total_map_clicks: number;
+  total_reservation_clicks: number;
+  total_saves: number;
+  engagement_rate?: number;
+  // Not returned by vendor_dashboard_v1 — the chart falls back to placeholder
+  // data when absent. See the Analytics step for the real per-day series.
   performance_points?: Array<{ label?: string; value: number }>;
   performance_min?: number;
   // Business details
@@ -669,6 +693,19 @@ export function VendorSection({
   // Offers screen
   const [offerMessage, setOfferMessage] = useState<string | null>(null);
 
+  // Create-offer form
+  const [offerForm, setOfferForm] = useState({
+    title: "",
+    description: "",
+    offer_type: "happy_hour" as VendorOfferType,
+    discount_value: "",
+    redeem_instructions: "",
+    link_url: "",
+    redemption_limit: "",
+    vibee_only: false,
+  });
+  const [isSavingOffer, setIsSavingOffer] = useState(false);
+
   // Influencer offer review queue (venue owner)
   const [influencerOffers, setInfluencerOffers] = useState<InfluencerOffer[]>([]);
   const [isLoadingPending, setIsLoadingPending] = useState(false);
@@ -722,6 +759,7 @@ export function VendorSection({
     profile: 4,
     analytics: 4,
     offers: 4,
+    "create-offer": 4,
     boost: 4,
     "influencer-codes": 4,
     settings: 4,
@@ -934,9 +972,10 @@ export function VendorSection({
       if (vendor) {
         if (vendor.is_claimed != null) merged.is_claimed = vendor.is_claimed;
         if (vendor.is_live != null) merged.is_live = vendor.is_live;
-        if (vendor.plan_selected) {
-          merged.is_pro = vendor.plan_selected === "pro";
-        }
+        // is_pro is deliberately not re-derived here: vendor_dashboard_v1 already
+        // computes it from plan_selected, and duplicating that rule client-side is
+        // what previously broke it (it compared against "pro", a plan-picker id
+        // that Xano never stores — the real value is "founding_partner").
         if (vendor.monthly_boost_active != null) {
           merged.boost_active = vendor.monthly_boost_active;
         }
@@ -1176,10 +1215,14 @@ export function VendorSection({
   const goBack = () => {
     setStatusMessage(null);
     setProfileMessage(null);
+    setOfferMessage(null);
     switch (step) {
       case "claim":
       case "dashboard":
         onContinueHome();
+        break;
+      case "create-offer":
+        setStep("offers");
         break;
       case "profile":
       case "analytics":
@@ -1497,6 +1540,79 @@ export function VendorSection({
     }
   };
 
+  const handleCreateOffer = async () => {
+    const vid = vendorId ?? account?.vendorId;
+    if (!vid) {
+      setOfferMessage("Could not find your vendor account. Try reloading.");
+      return;
+    }
+    if (!offerForm.title.trim()) {
+      setOfferMessage("An offer title is required.");
+      return;
+    }
+    if (!offerForm.description.trim()) {
+      setOfferMessage("An offer description is required.");
+      return;
+    }
+
+    const limit = Number(offerForm.redemption_limit);
+    if (
+      offerForm.redemption_limit.trim() &&
+      (!Number.isFinite(limit) || limit <= 0)
+    ) {
+      setOfferMessage("Redemption limit must be a positive number.");
+      return;
+    }
+
+    setIsSavingOffer(true);
+    setOfferMessage(null);
+
+    try {
+      const payload: Parameters<typeof createVendorOffer>[0] = {
+        vendor_id: vid,
+        title: offerForm.title.trim(),
+        description: offerForm.description.trim(),
+        offer_type: offerForm.offer_type,
+        vibee_only: offerForm.vibee_only,
+      };
+      if (offerForm.discount_value.trim())
+        payload.discount_value = offerForm.discount_value.trim();
+      if (offerForm.redeem_instructions.trim())
+        payload.redeem_instructions = offerForm.redeem_instructions.trim();
+      if (offerForm.link_url.trim()) payload.link_url = offerForm.link_url.trim();
+      // redeem_offer gates on `redemption_limit == 0 || redemption_count < limit`,
+      // so 0 means unlimited. A null limit satisfies neither branch and would make
+      // the offer permanently unredeemable — send an explicit 0 when left blank.
+      payload.redemption_limit = offerForm.redemption_limit.trim() ? limit : 0;
+
+      await createVendorOffer(payload);
+
+      setOfferForm({
+        title: "",
+        description: "",
+        offer_type: "happy_hour",
+        discount_value: "",
+        redeem_instructions: "",
+        link_url: "",
+        redemption_limit: "",
+        vibee_only: false,
+      });
+      await loadDashboard();
+      setStep("offers");
+      setOfferMessage("Offer created.");
+    } catch (error) {
+      // Xano's create gates share one error code but return distinct, already
+      // user-readable messages ("Vendor must be active to create offers.",
+      // "Vendor must be a Pro Genie Vendor to create offers."), so pass them
+      // through rather than flattening them into one vague line.
+      setOfferMessage(
+        error instanceof Error ? error.message : "Could not create offer."
+      );
+    } finally {
+      setIsSavingOffer(false);
+    }
+  };
+
   const stepTitle: Record<VendorStep, string> = {
     loading: "",
     claim:
@@ -1519,6 +1635,7 @@ export function VendorSection({
     profile: "Edit Profile",
     analytics: "Analytics",
     offers: "Manage Offers",
+    "create-offer": "Create Offer",
     boost: "Boost Your Listing",
     "influencer-codes": "Influencer Codes",
     settings: "Settings",
@@ -1583,11 +1700,13 @@ export function VendorSection({
             <path d="M19 12H6m0 0 5-5m-5 5 5 5" />
           </svg>
         </button>
-        {step !== "dashboard" && step !== "profile" && (
-          <div className="flex-1">
-            <ProgressBar step={progressStep[step]} />
-          </div>
-        )}
+        {step !== "dashboard" &&
+          step !== "profile" &&
+          step !== "create-offer" && (
+            <div className="flex-1">
+              <ProgressBar step={progressStep[step]} />
+            </div>
+          )}
       </div>
 
       {stepTitle[step] ? (
@@ -2058,13 +2177,13 @@ export function VendorSection({
               const rating = typeof d.rating === "number" ? d.rating : 4.0;
               const address = d.address || "";
               const isClaimed = d.is_claimed ?? d.is_live;
-              const genieAppearances = d.genie_appearances ?? 0;
-              const profileViews = d.profile_views ?? 0;
-              const totalActions = d.total_customer_actions ?? 0;
-              const callClicks = d.call_clicks ?? 0;
-              const mapClicks = d.map_clicks ?? 0;
-              const reservationClicks = d.reservation_clicks ?? 0;
-              const userSaved = d.user_saved ?? 0;
+              const genieAppearances = d.total_genie_appearances ?? 0;
+              const profileViews = d.total_profile_views ?? 0;
+              const totalActions = d.total_actions ?? 0;
+              const callClicks = d.total_call_clicks ?? 0;
+              const mapClicks = d.total_map_clicks ?? 0;
+              const reservationClicks = d.total_reservation_clicks ?? 0;
+              const userSaved = d.total_saves ?? 0;
               const performancePoints =
                 d.performance_points && d.performance_points.length > 0
                   ? d.performance_points
@@ -2561,8 +2680,45 @@ export function VendorSection({
       {/* ======== STEP: OFFERS ======== */}
       {step === "offers" && (() => {
         const offers = dashboardData?.offers ?? [];
+        // Mirror Xano's gates on genie/vendor_create_offer: the vendor must be
+        // live and on the founding-partner plan, or the create call comes back
+        // as an indistinguishable `unauthorized`.
+        const isLive = Boolean(dashboardData?.is_live);
         return (
           <div className="mt-2 space-y-4 pb-24">
+            {/* Create an offer — Pro + live vendors only */}
+            {isPro ? (
+              <div className="space-y-2">
+                <ActionButton
+                  onClick={() => setStep("create-offer")}
+                  className="w-full"
+                  disabled={!isLive}
+                >
+                  + Create an Offer
+                </ActionButton>
+                {!isLive && (
+                  <p className="px-1 text-[0.78rem] text-gray-500 dark:text-white/50">
+                    Your listing needs to be active before you can publish offers.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2 rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 dark:bg-black/20">
+                <p className="text-[0.88rem] font-semibold text-gray-900 dark:text-white">
+                  Create your own offers
+                </p>
+                <p className="text-[0.8rem] text-gray-500 dark:text-white/55">
+                  Publishing offers is a Pro Genie Vendor feature.
+                </p>
+                <ActionButton
+                  onClick={() => setStep("plan")}
+                  className="w-full"
+                >
+                  Upgrade to Pro
+                </ActionButton>
+              </div>
+            )}
+
             {/* Influencer offers — Active / Pending / Rejected */}
             {(() => {
               const statusOf = (o: InfluencerOffer) =>
@@ -2854,19 +3010,6 @@ export function VendorSection({
                         <p className="mt-1.5 text-[0.78rem] text-gray-500 dark:text-white/50">{offer.redeem_instructions}</p>
                       )}
                     </div>
-                    <div className="flex flex-col gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void toggleVendorOffer(offer.id, !offer.active)
-                            .then(() => void loadDashboard())
-                            .catch(() => setOfferMessage("Could not update offer."));
-                        }}
-                        className="rounded-lg border border-[#E7070380] px-2.5 py-1 text-[0.72rem] font-medium text-gray-600 dark:text-white/70 hover:bg-red-50 dark:hover:bg-white/5"
-                      >
-                        {offer.active ? "Deactivate" : "Reactivate"}
-                      </button>
-                    </div>
                   </div>
                 </div>
               ))}
@@ -2878,6 +3021,122 @@ export function VendorSection({
           </div>
         );
       })()}
+
+      {/* ======== STEP: CREATE OFFER ======== */}
+      {step === "create-offer" && (
+        <form
+          className="mt-6 space-y-4 pb-24"
+          onSubmit={(e: FormEvent<HTMLFormElement>) => {
+            e.preventDefault();
+            void handleCreateOffer();
+          }}
+        >
+          <VendorInput
+            label="Offer Title"
+            value={offerForm.title}
+            placeholder="Half-price cocktails, 4-7pm"
+            onChange={(v) => setOfferForm((c) => ({ ...c, title: v }))}
+          />
+
+          <div>
+            <label className="mb-1.5 block text-[13px] font-medium text-gray-500 dark:text-white/55">
+              Description
+            </label>
+            <textarea
+              value={offerForm.description}
+              onChange={(e) =>
+                setOfferForm((c) => ({ ...c, description: e.target.value }))
+              }
+              placeholder="Tell Vibees what they get and when it's available..."
+              rows={3}
+              className="w-full resize-none rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-[15px] text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-[13px] font-medium text-gray-500 dark:text-white/55">
+              Offer Type
+            </label>
+            <select
+              value={offerForm.offer_type}
+              onChange={(e) =>
+                setOfferForm((c) => ({
+                  ...c,
+                  offer_type: e.target.value as VendorOfferType,
+                }))
+              }
+              className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3.5 text-[15px] capitalize text-gray-900 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:focus:border-[#ff6a6a]"
+            >
+              {VENDOR_OFFER_TYPES.map((t) => (
+                <option key={t} value={t} className="capitalize">
+                  {t.replace(/_/g, " ")}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <VendorInput
+            label="Discount (optional)"
+            value={offerForm.discount_value}
+            placeholder="e.g. 50% off, or $10"
+            onChange={(v) => setOfferForm((c) => ({ ...c, discount_value: v }))}
+          />
+
+          <VendorInput
+            label="How to Redeem (optional)"
+            value={offerForm.redeem_instructions}
+            placeholder="Show this offer to your server"
+            onChange={(v) =>
+              setOfferForm((c) => ({ ...c, redeem_instructions: v }))
+            }
+          />
+
+          <VendorInput
+            label="Link (optional)"
+            value={offerForm.link_url}
+            placeholder="https://..."
+            onChange={(v) => setOfferForm((c) => ({ ...c, link_url: v }))}
+          />
+
+          <VendorInput
+            label="Redemption Limit (optional)"
+            value={offerForm.redemption_limit}
+            placeholder="Leave blank for unlimited"
+            type="number"
+            onChange={(v) =>
+              setOfferForm((c) => ({ ...c, redemption_limit: v }))
+            }
+          />
+
+          <label className="flex items-center gap-3 px-1">
+            <input
+              type="checkbox"
+              checked={offerForm.vibee_only}
+              onChange={(e) =>
+                setOfferForm((c) => ({ ...c, vibee_only: e.target.checked }))
+              }
+              className="h-4 w-4 flex-none accent-red-600"
+            />
+            <span className="text-[0.85rem] text-gray-600 dark:text-white/70">
+              Members only — restrict this offer to Vibees
+            </span>
+          </label>
+
+          <ActionButton
+            type="submit"
+            className="w-full"
+            disabled={isSavingOffer}
+          >
+            {isSavingOffer ? "Creating..." : "Create Offer"}
+          </ActionButton>
+
+          {offerMessage && (
+            <div className="rounded-2xl border border-[#E7070380] bg-gray-50 px-4 py-3 text-sm text-gray-500 dark:bg-black/20 dark:text-white/60">
+              {offerMessage}
+            </div>
+          )}
+        </form>
+      )}
 
       {/* ======== STEP: BOOST ======== */}
       {step === "boost" && (() => {
