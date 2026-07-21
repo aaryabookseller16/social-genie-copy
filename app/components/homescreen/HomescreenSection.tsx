@@ -12,11 +12,17 @@ import {
 import {
   fetchFollowedProducers,
   fetchHomescreen,
+  fetchHomescreenEvents,
   fetchHomescreenPosts,
   fetchSuggestedProducers,
+  fetchTrendingVenues,
   followProducer,
+  rsvpToEvent,
   type EventFeedItem,
   type FollowedProducerItem,
+  type HomescreenLocation,
+  type HomescreenNeighborhood,
+  type HomescreenPlacement,
   type OnFireVenueItem,
   type PublicPost,
   type PublicPostAuthor,
@@ -57,6 +63,18 @@ function formatShortRelativeTime(timestamp?: number): string {
   return `${diffDay}d`;
 }
 
+/**
+ * The rail's `event_date` is a plain YYYY-MM-DD already localized to the
+ * city, so compare it as a string against the local date rather than
+ * constructing a Date (which would reinterpret it as UTC and slip a day).
+ */
+function isToday(eventDate?: string): boolean {
+  if (!eventDate) return false;
+  const now = new Date();
+  const local = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  return eventDate.slice(0, 10) === local;
+}
+
 function formatEventTime(raw?: string): string {
   if (!raw) return "";
   const [h, m] = raw.split(":");
@@ -67,17 +85,16 @@ function formatEventTime(raw?: string): string {
   return `${hr12}:${m ?? "00"} ${period}`;
 }
 
-function upcomingEventToFeedItem(evt: UpcomingEvent, index: number): EventFeedItem {
-  // Producer is embedded in each event by ep_get_homescreen_dev. Read the
-  // fields defensively so we tolerate the exact Xano naming.
+function upcomingEventToFeedItem(evt: UpcomingEvent): EventFeedItem {
+  // Producer is embedded in each event by the events rail, already projected to
+  // {id, name, image_url, event_count, is_verified, is_following}.
   const p = evt.producer;
-  const name = p?.name ?? p?.display_name;
-  const producer = p && name
+  const producer = p?.name
     ? {
-        name,
-        image_url: p.image_url ?? p.profile_photo_url,
-        event_count: p.event_count ?? p.total_events_live,
-        producer_id: p.id ?? evt.producer_id,
+        name: p.name,
+        image_url: p.image_url,
+        event_count: p.event_count,
+        producer_id: p.id,
         is_verified: p.is_verified,
         is_following: p.is_following,
       }
@@ -86,17 +103,21 @@ function upcomingEventToFeedItem(evt: UpcomingEvent, index: number): EventFeedIt
     feed_type: "event",
     id: evt.id,
     title: evt.title,
-    venue_name: evt.venue_name,
+    // The rail carries no venue name — only the address (see the file header).
+    venue_address: evt.venue_address,
     start_time: evt.start_time,
     event_date: formatEventDate(evt.event_date),
     cover_image_url: evt.cover_image_url,
-    going_count: evt.going_count ?? evt.rsvp_count,
-    people_you_know: evt.people_you_know as number | undefined,
-    is_on_fire: evt.is_on_fire ?? index === 0,
-    badge: index === 0 ? "Happening Tonight" : undefined,
-    producer_id: evt.producer_id,
+    going_count: evt.going_count,
+    // Energy and live status are separate signals: an event can be upcoming
+    // and on_fire at once, so neither implies the other.
+    is_on_fire: evt.social_energy_state === "on_fire",
+    is_live: evt.is_live === true,
+    // Earned by the date, not by position in the list — a card that isn't
+    // actually today must never claim "tonight".
+    badge: !evt.is_live && isToday(evt.event_date) ? "Happening Tonight" : undefined,
+    producer_id: p?.id,
     producer,
-    reason: "Based on your social preferences",
     raw: evt,
   };
 }
@@ -104,14 +125,19 @@ function upcomingEventToFeedItem(evt: UpcomingEvent, index: number): EventFeedIt
 function trendingVenueToFeedItem(v: TrendingVenue): OnFireVenueItem {
   return {
     feed_type: "on_fire_venue",
-    id: typeof v.id === "number" ? v.id : Number(v.id),
-    venue_name: v.venue_name,
-    venue_address: v.address,
+    id: v.id,
+    venue_name: v.name,
     venue_latitude: v.latitude,
     venue_longitude: v.longitude,
-    neighborhood: v.neighborhood_text ?? v.area_neighborhood ?? v.neighborhood,
-    category: v.venue_type,
-    going_count: v.sb_going_count ?? v.going_count,
+    neighborhood: v.neighborhood || undefined,
+    // Empty until venue enrichment runs — undefined so the card drops the
+    // "Midtown · Bar & Grill" separator rather than rendering a dangling one.
+    category: v.category || undefined,
+    description: v.description || undefined,
+    image_url: v.image_url || undefined,
+    going_count: v.going_count || v.checkin_count,
+    is_on_fire: v.social_energy_state === "on_fire",
+    uber_deeplink: v.uber_deeplink || undefined,
   };
 }
 
@@ -127,11 +153,25 @@ type SocialPostFeedItem = {
   post: PublicPost;
   author: PublicPostAuthor | null;
 };
+type NeighborhoodPulseFeedItem = {
+  feed_type: "neighborhood_pulse";
+  id: number;
+  neighborhood: HomescreenNeighborhood;
+  spikingCount: number;
+  topVenueId?: number;
+};
+type OffersFeedItem = {
+  feed_type: "offers";
+  id: string;
+  placements: HomescreenPlacement[];
+};
 type HomeFeedItem =
   | EventFeedItem
   | SocialPostFeedItem
   | OnFireVenueItem
-  | SuggestedProducersFeedItem;
+  | SuggestedProducersFeedItem
+  | NeighborhoodPulseFeedItem
+  | OffersFeedItem;
 
 /* ------------------------------------------------------------------ */
 /*  Story bar                                                           */
@@ -253,7 +293,12 @@ function EventFeedCard({
   isLoggedIn: boolean;
   onRequireAuth: () => void;
 }) {
+  // Persisted as a "saved" RSVP — the same record the Liked tab reads back
+  // (/api/events/saved). The rail doesn't return the viewer's existing rsvp
+  // status, so this starts unset each load and only reflects taps made here;
+  // see the backend follow-ups.
   const [saved, setSaved] = useState(false);
+  const [saveBusy, setSaveBusy] = useState(false);
   const producer = item.producer;
   const follow = useFollow(
     producer?.producer_id ?? item.id,
@@ -266,9 +311,19 @@ function EventFeedCard({
     if (!isLoggedIn) return onRequireAuth();
     void follow.toggle();
   };
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!isLoggedIn) return onRequireAuth();
-    setSaved((v) => !v);
+    if (saveBusy) return;
+    setSaveBusy(true);
+    const optimistic = !saved;
+    setSaved(optimistic);
+    try {
+      await rsvpToEvent(item.id, optimistic ? "saved" : "removed", "homescreen");
+    } catch {
+      setSaved(!optimistic);
+    } finally {
+      setSaveBusy(false);
+    }
   };
 
   return (
@@ -292,7 +347,12 @@ function EventFeedCard({
           </div>
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
-        {item.badge ? (
+        {item.is_live ? (
+          <span className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-red-600 px-2.5 py-1 text-[0.62rem] font-bold uppercase tracking-wide text-white">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />
+            Live
+          </span>
+        ) : item.badge ? (
           <span className="absolute left-3 top-3 rounded-full bg-black/55 px-2.5 py-1 text-[0.62rem] font-medium text-white backdrop-blur-sm">
             {item.badge}
           </span>
@@ -314,7 +374,8 @@ function EventFeedCard({
             type="button"
             aria-label={saved ? "Unsave" : "Save"}
             onClick={handleSave}
-            className="flex h-8 w-8 flex-none items-center justify-center rounded-full border border-white/25"
+            disabled={saveBusy}
+            className="flex h-8 w-8 flex-none items-center justify-center rounded-full border border-white/25 disabled:opacity-50"
           >
             <svg
               viewBox="0 0 24 24"
@@ -332,12 +393,12 @@ function EventFeedCard({
 
         <button type="button" onClick={onOpen} className="mt-1.5 block w-full text-left">
           <div className="space-y-1">
-            {item.venue_name ? (
+            {item.venue_address ? (
               <div className="flex items-center gap-1.5">
                 <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 flex-none text-red-400" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 1 1 18 0z" /><circle cx="12" cy="10" r="3" />
                 </svg>
-                <span className="text-[0.78rem] text-white/70">{item.venue_name}</span>
+                <span className="truncate text-[0.78rem] text-white/70">{item.venue_address}</span>
               </div>
             ) : null}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -362,15 +423,7 @@ function EventFeedCard({
 
           {item.going_count ? (
             <div className="mt-2 flex items-center gap-2">
-              <div className="flex -space-x-1.5">
-                {[0, 1, 2].map((i) => (
-                  <div key={i} className="h-5 w-5 rounded-full border border-black/40 bg-gradient-to-br from-red-400 to-red-700" />
-                ))}
-              </div>
-              <span className="text-[0.72rem] text-white/65">
-                {item.going_count} Going
-                {item.people_you_know ? ` · ${item.people_you_know} people you may know` : ""}
-              </span>
+              <span className="text-[0.72rem] text-white/65">{item.going_count} Going</span>
             </div>
           ) : null}
         </button>
@@ -388,21 +441,28 @@ function EventFeedCard({
               }}
               className="flex min-w-0 items-center gap-2"
             >
-              <ProducerAvatar name={producer.name} />
+              {producer.image_url ? (
+                <span className="relative h-7 w-7 flex-none overflow-hidden rounded-full">
+                  <Image src={producer.image_url} alt={producer.name} fill sizes="28px" className="object-cover" unoptimized />
+                </span>
+              ) : (
+                <ProducerAvatar name={producer.name} />
+              )}
               <div className="min-w-0">
                 <p className="truncate text-[0.78rem] font-semibold text-white">{producer.name}</p>
-                <p className="text-[0.62rem] text-white/50">
-                  Suggested{producer.event_count ? ` · ${producer.event_count} events this month` : ""}
-                </p>
+                {/* event_count is the producer's live event total — not a
+                    monthly figure, and nothing here is "suggested". */}
+                {producer.event_count ? (
+                  <p className="text-[0.62rem] text-white/50">
+                    {producer.event_count} live {producer.event_count === 1 ? "event" : "events"}
+                  </p>
+                ) : null}
               </div>
             </a>
             <FollowButton isFollowing={follow.isFollowing} followBusy={follow.followBusy} onClick={handleFollow} />
           </div>
         ) : null}
 
-        {item.reason ? (
-          <p className="mt-2.5 text-center text-[0.65rem] text-white/40">{item.reason}</p>
-        ) : null}
       </div>
     </div>
   );
@@ -497,43 +557,75 @@ function SocialPostCard({
 
 function OnFireVenueCard({ item, onViewVenue }: { item: OnFireVenueItem; onViewVenue: () => void }) {
   function handleGetRide() {
-    const addr = item.venue_address || item.venue_name;
+    // Prefer the venue's own prebuilt link; it's empty for most venues in dev
+    // data, so fall back to a coordinate-built one rather than hiding the CTA.
     const hasCoords = item.venue_latitude != null && item.venue_longitude != null;
     const coordParams = hasCoords
       ? `&dropoff[latitude]=${item.venue_latitude}&dropoff[longitude]=${item.venue_longitude}`
       : "";
-    window.open(
-      `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[nickname]=${encodeURIComponent(item.venue_name)}${coordParams}&dropoff[formatted_address]=${encodeURIComponent(addr)}`,
-      "_blank",
-      "noopener,noreferrer"
-    );
+    // uber_deeplink is backend/enrichment data, so it is not trusted to be a
+    // web URL — window.open would happily run a `javascript:` value. Only an
+    // http(s) link is used; anything else falls back to the built one.
+    const isWebUrl = (value?: string) => {
+      if (!value) return false;
+      try {
+        return ["http:", "https:"].includes(new URL(value).protocol);
+      } catch {
+        return false;
+      }
+    };
+    const url = isWebUrl(item.uber_deeplink)
+      ? (item.uber_deeplink as string)
+      : `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[nickname]=${encodeURIComponent(item.venue_name)}${coordParams}&dropoff[formatted_address]=${encodeURIComponent(item.venue_name)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
   }
   return (
-    <div className="overflow-hidden rounded-[18px] bg-gradient-to-br from-red-950/70 to-black/50 px-4 py-4">
-      <div className="flex items-center justify-between">
-        <span className="flex items-center gap-1.5 text-[0.65rem] font-bold uppercase tracking-wide text-yellow-400">
-          <span className="h-1.5 w-1.5 rounded-full bg-yellow-400" />ON FIRE
-        </span>
+    <div className="relative overflow-hidden rounded-[18px] bg-gradient-to-br from-red-950/70 to-black/50 px-4 py-4">
+      {item.image_url ? (
+        <>
+          <Image
+            src={item.image_url}
+            alt=""
+            aria-hidden="true"
+            fill
+            sizes="(max-width: 448px) 100vw, 448px"
+            className="object-cover"
+            unoptimized
+          />
+          {/* Venue photos are often bright signage that competes with the card
+              copy, so the scrim is deliberately heavy — the image reads as
+              texture, not as content. */}
+          <div className="absolute inset-0 bg-black/70" />
+          <div className="absolute inset-0 bg-gradient-to-br from-red-950/85 via-black/70 to-black/85" />
+        </>
+      ) : null}
+      <div className="relative">
+      <div className="flex items-center justify-between gap-2">
+        {item.is_on_fire ? (
+          <span className="flex flex-none items-center gap-1.5 text-[0.65rem] font-bold uppercase tracking-wide text-yellow-400">
+            <span className="h-1.5 w-1.5 rounded-full bg-yellow-400" />ON FIRE
+          </span>
+        ) : <span />}
         {(item.neighborhood || item.category) ? (
-          <span className="text-[0.65rem] text-white/50">{[item.neighborhood, item.category].filter(Boolean).join(" · ")}</span>
+          // Neighborhood names run long ("Washington Avenue Coalition /
+          // Memorial Park"), so truncate rather than let them push the
+          // ON FIRE pill off the card on narrow screens.
+          <span className="min-w-0 truncate text-right text-[0.65rem] text-white/50">
+            {[item.neighborhood, item.category].filter(Boolean).join(" · ")}
+          </span>
         ) : null}
       </div>
-      <div className="mt-1.5 flex items-start justify-between">
-        <div>
-          <h3 className="text-[1.1rem] font-bold text-white">{item.venue_name}</h3>
-          {item.badge ? (
-            <span className="mt-1 inline-block rounded-full bg-black/40 px-2 py-0.5 text-[0.6rem] font-medium text-white/80">
-              {item.badge}
-            </span>
-          ) : null}
-        </div>
+      <div className="mt-1.5 flex items-start justify-between gap-3">
+        <h3 className="min-w-0 flex-1 text-[1.1rem] font-bold leading-tight text-white">{item.venue_name}</h3>
         {item.going_count ? (
-          <div className="text-right">
+          <div className="flex-none text-right">
             <p className="text-[1.1rem] font-bold leading-none text-white">{item.going_count}</p>
             <p className="text-[0.6rem] text-white/50">Going</p>
-            <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-[0.55rem] font-bold text-white">
-              🔥 ON FIRE
-            </span>
+            {item.is_on_fire ? (
+              <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-[0.55rem] font-bold text-white">
+                🔥 ON FIRE
+              </span>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -551,6 +643,7 @@ function OnFireVenueCard({ item, onViewVenue }: { item: OnFireVenueItem; onViewV
           </svg>
           View Venue
         </button>
+      </div>
       </div>
     </div>
   );
@@ -593,12 +686,20 @@ function SuggestedProducerCard({
           }}
           className="flex min-w-0 items-center gap-2.5"
         >
-          <ProducerAvatar name={item.name} size={36} />
+          {item.image_url ? (
+            <span className="relative h-9 w-9 flex-none overflow-hidden rounded-full">
+              <Image src={item.image_url} alt={item.name} fill sizes="36px" className="object-cover" unoptimized />
+            </span>
+          ) : (
+            <ProducerAvatar name={item.name} size={36} />
+          )}
           <div className="min-w-0">
             <p className="truncate text-[0.82rem] font-semibold text-white">{item.name}</p>
-            <p className="text-[0.65rem] text-white/50">
-              Suggested{item.event_count ? ` · ${item.event_count} events this month` : ""}
-            </p>
+            {item.event_count ? (
+              <p className="text-[0.65rem] text-white/50">
+                {item.event_count} live {item.event_count === 1 ? "event" : "events"}
+              </p>
+            ) : null}
           </div>
         </a>
         <FollowButton isFollowing={follow.isFollowing} followBusy={follow.followBusy} onClick={handleFollow} />
@@ -629,6 +730,255 @@ function SuggestedProducersRow({
 }
 
 /* ------------------------------------------------------------------ */
+/*  Featured rail — DISABLED until the client supplies videos.          */
+/*                                                                      */
+/*  The mockup's Featured cards are video, but the events rail's lean   */
+/*  projection in fn_genie_get_homescreen_events_dev drops video_urls   */
+/*  (the column exists on genie_social_events). Rather than ship a row  */
+/*  of stills pretending to be the video rail, the whole section stays  */
+/*  commented out.                                                      */
+/*                                                                      */
+/*  To re-enable: add image_urls/video_urls back to that projection and *
+/*  to UpcomingEvent, uncomment this component and its <FeaturedRow />  */
+/*  render site below, then swap cover_image_url for the video poster   */
+/*  and wire the play badge to VideoPlayerModal (see                    */
+/*  FeaturedEventVideos.tsx, which already does exactly this).          */
+/* ------------------------------------------------------------------ */
+
+/*
+function FeaturedRow({
+  events,
+  onOpen,
+}: {
+  events: UpcomingEvent[];
+  onOpen: (evt: UpcomingEvent) => void;
+}) {
+  const withCover = events.filter((e) => e.cover_image_url).slice(0, 4);
+  if (!withCover.length) return null;
+  return (
+    <div>
+      <h2 className="mb-3 font-[family:var(--font-display)] text-[1.4rem] text-white">Featured</h2>
+      <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {withCover.map((evt) => (
+          <button
+            key={evt.id}
+            type="button"
+            onClick={() => onOpen(evt)}
+            aria-label={evt.title}
+            className="relative h-56 w-44 flex-none overflow-hidden rounded-[16px] bg-zinc-900"
+          >
+            <Image
+              src={evt.cover_image_url as string}
+              alt={evt.title}
+              fill
+              sizes="176px"
+              className="object-cover"
+              unoptimized
+            />
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent" />
+            {evt.is_live ? (
+              <span className="absolute left-2.5 top-2.5 flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-[0.55rem] font-bold uppercase tracking-wide text-white">
+                <span className="h-1 w-1 animate-pulse rounded-full bg-white" />
+                Live
+              </span>
+            ) : null}
+            <span className="absolute inset-x-2.5 bottom-2.5 line-clamp-2 text-left text-[0.72rem] font-semibold leading-4 text-white">
+              {evt.title}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+*/
+
+/* ------------------------------------------------------------------ */
+/*  Neighborhood pulse banner                                           */
+/* ------------------------------------------------------------------ */
+
+const SPIKING_STATES = new Set(["on_fire", "buzzing"]);
+
+function NeighborhoodPulse({
+  neighborhood,
+  spikingCount,
+  onOpen,
+}: {
+  neighborhood: HomescreenNeighborhood;
+  spikingCount: number;
+  onOpen?: () => void;
+}) {
+  const state = neighborhood.social_energy_state === "on_fire" ? "on fire" : "buzzing";
+  // venue_count on the table is the neighborhood's total venues, not how many
+  // are spiking, so the count is derived from the venues we actually loaded —
+  // and dropped entirely when we can't back it up.
+  const detail =
+    spikingCount > 1 ? ` — ${spikingCount} venues spiking right now.` : " right now.";
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      disabled={!onOpen}
+      className="flex w-full items-center gap-3 rounded-[18px] bg-gradient-to-r from-red-950/70 to-black/40 px-4 py-3 text-left disabled:cursor-default"
+    >
+      <span className="h-2 w-2 flex-none animate-pulse rounded-full bg-red-500" aria-hidden="true" />
+      <span className="min-w-0 flex-1 text-[0.82rem] leading-5 text-white/85">
+        {neighborhood.name} just hit <span className="font-semibold text-red-400">{state}</span>
+        {detail}
+      </span>
+      {onOpen ? (
+        <svg viewBox="0 0 24 24" className="h-4 w-4 flex-none text-white/40" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+      ) : null}
+    </button>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Offers rail                                                         */
+/* ------------------------------------------------------------------ */
+
+function OffersRow({
+  placements,
+  onSeeAll,
+  onOpen,
+}: {
+  placements: HomescreenPlacement[];
+  onSeeAll: () => void;
+  onOpen: (venueId: number) => void;
+}) {
+  if (!placements.length) return null;
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={onSeeAll}
+        className="mb-3 flex w-full items-center justify-between"
+      >
+        <span className="font-[family:var(--font-display)] text-[1.4rem] text-white">Offers</span>
+        <svg viewBox="0 0 24 24" className="h-5 w-5 text-white/50" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+      </button>
+      <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {placements.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => p.venue_id && onOpen(p.venue_id)}
+            className="w-40 flex-none overflow-hidden rounded-[16px] bg-black/40 text-left"
+          >
+            <span className="relative block h-24 w-full bg-zinc-900">
+              {p.creative_url ? (
+                <Image
+                  src={p.creative_url}
+                  alt=""
+                  aria-hidden="true"
+                  fill
+                  sizes="160px"
+                  className="object-cover"
+                  unoptimized
+                />
+              ) : null}
+            </span>
+            <span className="block px-2.5 py-2">
+              <span className="block truncate text-[0.78rem] font-semibold text-white">
+                {p.creative_title ?? "Offer"}
+              </span>
+              {p.creative_description ? (
+                <span className="mt-0.5 block line-clamp-2 text-[0.65rem] leading-4 text-white/60">
+                  {p.creative_description}
+                </span>
+              ) : null}
+              {p.placement_type ? (
+                <span className="mt-1.5 inline-block rounded-full bg-red-600 px-2 py-0.5 text-[0.55rem] font-bold text-white">
+                  {p.placement_type}
+                </span>
+              ) : null}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Location card                                                       */
+/*  The backend picks the city from lat/lng, so a visitor who never     */
+/*  grants permission silently gets Houston. This is where we ask, and  */
+/*  where we admit when we're showing a city that isn't theirs.         */
+/* ------------------------------------------------------------------ */
+
+function LocationCard({
+  variant,
+  cityName,
+  onAllow,
+  onDismiss,
+}: {
+  variant: "guest" | "registered" | "blocked" | "unsupported";
+  cityName: string;
+  onAllow: () => void;
+  onDismiss: () => void;
+}) {
+  const copy = {
+    guest: {
+      title: "Use your location?",
+      body: "We'll show what's actually happening near you instead of defaulting to Houston.",
+    },
+    registered: {
+      title: "See what's near you ✨",
+      body: "Turn on location and your Bevy follows you — real venues, real distance, right now.",
+    },
+    blocked: {
+      title: "Location is off for Social Bevy",
+      body: "Your browser is blocking location for this site, so we can't ask again. Turn it back on in site settings for nearby picks.",
+    },
+    unsupported: {
+      title: "We're not in your area yet",
+      body: `You're outside every city we cover so far — showing ${cityName} in the meantime.`,
+    },
+  }[variant];
+
+  const canAllow = variant === "guest" || variant === "registered";
+
+  return (
+    <div className="flex items-start gap-3 rounded-[18px] border border-white/15 bg-black/40 px-4 py-3">
+      <span className="mt-0.5 flex-none text-red-400" aria-hidden="true">
+        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 1 1 18 0z" />
+          <circle cx="12" cy="10" r="3" />
+        </svg>
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[0.82rem] font-semibold text-white">{copy.title}</p>
+        <p className="mt-0.5 text-[0.72rem] leading-4 text-white/65">{copy.body}</p>
+        <div className="mt-2 flex gap-2">
+          {canAllow ? (
+            <button
+              type="button"
+              onClick={onAllow}
+              className="rounded-full border border-red-500 bg-red-600 px-3 py-1 text-[0.72rem] font-semibold text-white"
+            >
+              Allow
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="rounded-full border border-white/25 px-3 py-1 text-[0.72rem] font-semibold text-white/85"
+          >
+            {canAllow ? "Not now" : "Got it"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Feed dispatcher                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -636,12 +986,14 @@ function FeedCard({
   item,
   onEventOpen,
   onVenueOpen,
+  onOffersOpen,
   isLoggedIn,
   onRequireAuth,
 }: {
   item: HomeFeedItem;
   onEventOpen: (evt: UpcomingEvent) => void;
   onVenueOpen: (id: string | number) => void;
+  onOffersOpen: () => void;
   isLoggedIn: boolean;
   onRequireAuth: () => void;
 }) {
@@ -665,6 +1017,22 @@ function FeedCard({
           producers={item.producers}
           isLoggedIn={isLoggedIn}
           onRequireAuth={onRequireAuth}
+        />
+      );
+    case "neighborhood_pulse":
+      return (
+        <NeighborhoodPulse
+          neighborhood={item.neighborhood}
+          spikingCount={item.spikingCount}
+          onOpen={item.topVenueId ? () => onVenueOpen(item.topVenueId as number) : undefined}
+        />
+      );
+    case "offers":
+      return (
+        <OffersRow
+          placements={item.placements}
+          onSeeAll={onOffersOpen}
+          onOpen={onVenueOpen}
         />
       );
     default:
@@ -698,6 +1066,13 @@ type HomescreenSectionProps = {
   onMessages?: () => void;
   unreadMessageCount?: number;
   userCoords?: { latitude: number; longitude: number } | null;
+  /**
+   * Which location ask to surface, decided by SinglePageGenieApp from the
+   * Permissions API plus the hard-denied flag. Null = nothing to ask.
+   */
+  locationPromptVariant?: "guest" | "registered" | "blocked" | null;
+  onAllowLocation?: () => void;
+  onDismissLocationPrompt?: () => void;
 };
 
 export function HomescreenSection({
@@ -712,6 +1087,9 @@ export function HomescreenSection({
   onMessages,
   unreadMessageCount,
   userCoords,
+  locationPromptVariant,
+  onAllowLocation,
+  onDismissLocationPrompt,
 }: HomescreenSectionProps) {
   const isLoggedIn = !!account;
   // Everything renders for everyone; interactions gate on auth. Guests are
@@ -730,10 +1108,19 @@ export function HomescreenSection({
   // reading it inline would mismatch the server-rendered HTML. This component
   // unmounts when the user switches into another role's dashboard, so a
   // mount-time read is enough to stay current when they come back.
+  //
+  // The stored role deliberately outlives logout (so it comes back on sign-in),
+  // which means it cannot be trusted on its own — only read it back for a
+  // signed-in user. A guest always renders as "consumer"; re-running on
+  // isLoggedIn picks the stored role up again once they sign in.
   const [activeRole, setActiveRole] = useState<OnboardingRole>("consumer");
   useEffect(() => {
+    if (!isLoggedIn) {
+      setActiveRole("consumer");
+      return;
+    }
     setActiveRole(readActiveRole());
-  }, []);
+  }, [isLoggedIn]);
 
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -783,7 +1170,9 @@ export function HomescreenSection({
     return () => { cancelled = true; };
   }, [account?.id]);
 
-  const POSTS_PER_LOAD = 2;
+  // Events arrive 10 at a time; posts have to keep roughly that pace or the
+  // weave below runs dry and the feed turns back into a wall of events.
+  const POSTS_PER_LOAD = 3;
 
   const [homescreenPosts, setHomescreenPosts] = useState<SocialPostFeedItem[]>([]);
   const [postsPage, setPostsPage] = useState(1);
@@ -800,12 +1189,14 @@ export function HomescreenSection({
     let cancelled = false;
     setPostsPage(1);
     setHasMorePosts(true);
-    fetchHomescreenPosts(1, 1)
+    // Guests only ever get the single curated post on page 1, so a short
+    // first page correctly ends their post feed here.
+    fetchHomescreenPosts(1, POSTS_PER_LOAD)
       .then((result) => {
         if (cancelled) return;
         const posts = result.posts ?? [];
         setHomescreenPosts(posts.map(toFeedItem));
-        if (posts.length < 1) setHasMorePosts(false);
+        if (posts.length < POSTS_PER_LOAD) setHasMorePosts(false);
       })
       .catch(() => {
         if (!cancelled) {
@@ -816,44 +1207,64 @@ export function HomescreenSection({
     return () => { cancelled = true; };
   }, [account?.id]);
 
+  // ── Rails ──
+  // Both rails paginate independently and offset-based off the *same*
+  // location.city_id, and always advance with the server's next_offset (page
+  // sizes are mixed: 6 on first load, 10 thereafter).
+  const [location, setLocation] = useState<HomescreenLocation | null>(null);
   const [allEvents, setAllEvents] = useState<UpcomingEvent[]>([]);
-  const [eventsPage, setEventsPage] = useState(1);
+  const [eventsOffset, setEventsOffset] = useState(0);
   const [hasMoreEvents, setHasMoreEvents] = useState(true);
+  const [venues, setVenues] = useState<TrendingVenue[]>([]);
+  const [venuesOffset, setVenuesOffset] = useState(0);
+  const [hasMoreVenues, setHasMoreVenues] = useState(true);
+  const [placements, setPlacements] = useState<HomescreenPlacement[]>([]);
+  const [neighborhoods, setNeighborhoods] = useState<HomescreenNeighborhood[]>([]);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [topTrendingVenue, setTopTrendingVenue] = useState<TrendingVenue | null>(null);
+  // Only the very first load shows the skeleton. Granting location mid-session
+  // refetches for the resolved city, and swapping content in place beats
+  // collapsing the screen the visitor is already reading.
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  const [outOfAreaDismissed, setOutOfAreaDismissed] = useState(false);
   const sentinelObserverRef = useRef<IntersectionObserver | null>(null);
   // Always-current refs read from inside the observer callback below, so the
   // observer itself never needs to be torn down and recreated when these
   // change (see sentinelCallbackRef for why that recreation was a problem).
   const loadMoreRef = useRef<() => void>(() => {});
   const hasMoreRef = useRef(false);
+  // The city the currently-rendered rails belong to. Load-more responses are
+  // matched against it so a city switch mid-scroll discards in-flight pages.
+  const activeCityRef = useRef<number | null>(null);
 
-  const cityId = 1;
-  const cityName = "Houston";
-
-  useEffect(() => {
+  // First paint. Deliberately never blocked on the location permission: with no
+  // coordinates the backend serves Houston, so the screen paints while the
+  // browser prompt is still up, then refetches if/when coordinates arrive.
+  const loadFirstPage = useCallback(() => {
     let cancelled = false;
     setLoading(true);
     setFetchError(null);
-    setAllEvents([]);
-    setEventsPage(1);
-    setHasMoreEvents(true);
 
     fetchHomescreen({
-      cityId,
-      cityName,
       userId: account?.id ?? undefined,
       lat: userCoords?.latitude,
       lng: userCoords?.longitude,
-      page: 1,
     })
       .then((result) => {
-        if (!cancelled) {
-          const events = result.upcoming_events ?? [];
-          setAllEvents(events);
-          if (events.length < 5) setHasMoreEvents(false);
-          setTopTrendingVenue(result.trending_venues?.[0] ?? null);
-        }
+        if (cancelled) return;
+        // Reset every rail together — a different city must not inherit the
+        // previous city's offsets.
+        setLocation(result.location ?? null);
+        activeCityRef.current = result.location?.city_id ?? null;
+        const events = result.upcoming_events;
+        setAllEvents(events?.items ?? []);
+        setEventsOffset(events?.next_offset ?? 0);
+        setHasMoreEvents(events?.has_more ?? false);
+        const rail = result.trending_venues;
+        setVenues(rail?.items ?? []);
+        setVenuesOffset(rail?.next_offset ?? 0);
+        setHasMoreVenues(rail?.has_more ?? false);
+        setPlacements(result.active_placements ?? []);
+        setNeighborhoods(result.top_neighborhoods ?? []);
       })
       .catch((err: unknown) => {
         if (!cancelled) {
@@ -861,48 +1272,84 @@ export function HomescreenSection({
         }
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setHasLoadedOnce(true);
+        }
       });
 
     return () => { cancelled = true; };
   }, [account?.id, userCoords?.latitude, userCoords?.longitude]);
 
+  useEffect(() => loadFirstPage(), [loadFirstPage]);
+
   const loadMore = useCallback(() => {
-    if (loadingMore || (!hasMoreEvents && !hasMorePosts)) return;
+    const cityId = location?.city_id;
+    if (loadingMore || !cityId) return;
+    if (!hasMoreEvents && !hasMoreVenues && !hasMorePosts) return;
     setLoadingMore(true);
 
     const eventsRequest = hasMoreEvents
-      ? fetchHomescreen({
+      ? fetchHomescreenEvents({
           cityId,
-          cityName,
+          offset: eventsOffset,
           userId: account?.id ?? undefined,
-          lat: userCoords?.latitude,
-          lng: userCoords?.longitude,
-          page: eventsPage + 1,
         })
-          .then((result) => {
-            const newEvents = result.upcoming_events ?? [];
-            if (newEvents.length < 5) setHasMoreEvents(false);
+          .then((page) => {
+            // Drop a page that belongs to a city we've since moved off — a
+            // load-more in flight when the city changes would otherwise splice
+            // the old city's events into the new city's feed.
+            if (activeCityRef.current !== cityId) return;
             setAllEvents((prev) => {
-              // The backend's page param doesn't always exclude already-served
-              // events (seen live: the same event reappeared on a later page,
-              // which crashes React with a duplicate list key) — dedupe here
-              // regardless of why. seenIds accumulates as we go so this also
-              // catches duplicates *within* a single page response, not just
-              // across pages. An all-duplicate page counts as the end.
+              // A live event can shift position between pages, so the same id
+              // can legitimately arrive twice — dedupe rather than crash React
+              // on a duplicate key. seenIds accumulates as we go so this also
+              // catches duplicates *within* one page.
               const seenIds = new Set(prev.map((e) => e.id));
-              const deduped: typeof newEvents = [];
-              for (const e of newEvents) {
+              const deduped: UpcomingEvent[] = [];
+              for (const e of page.items ?? []) {
                 if (seenIds.has(e.id)) continue;
                 seenIds.add(e.id);
                 deduped.push(e);
               }
-              if (deduped.length === 0) setHasMoreEvents(false);
               return [...prev, ...deduped];
             });
-            setEventsPage(eventsPage + 1);
+            setEventsOffset(page.next_offset);
+            // Trust has_more, but never past a page that made no progress: an
+            // empty page or a next_offset that didn't advance leaves the
+            // sentinel on screen at the same offset, which re-fires this
+            // request forever.
+            setHasMoreEvents(
+              page.has_more &&
+                (page.items?.length ?? 0) > 0 &&
+                page.next_offset > eventsOffset
+            );
           })
           .catch(() => setHasMoreEvents(false))
+      : Promise.resolve();
+
+    const venuesRequest = hasMoreVenues
+      ? fetchTrendingVenues({ cityId, offset: venuesOffset })
+          .then((page) => {
+            if (activeCityRef.current !== cityId) return;
+            setVenues((prev) => {
+              const seenIds = new Set(prev.map((v) => v.id));
+              const deduped: TrendingVenue[] = [];
+              for (const v of page.items ?? []) {
+                if (seenIds.has(v.id)) continue;
+                seenIds.add(v.id);
+                deduped.push(v);
+              }
+              return [...prev, ...deduped];
+            });
+            setVenuesOffset(page.next_offset);
+            setHasMoreVenues(
+              page.has_more &&
+                (page.items?.length ?? 0) > 0 &&
+                page.next_offset > venuesOffset
+            );
+          })
+          .catch(() => setHasMoreVenues(false))
       : Promise.resolve();
 
     const postsRequest = hasMorePosts
@@ -926,22 +1373,25 @@ export function HomescreenSection({
           .catch(() => setHasMorePosts(false))
       : Promise.resolve();
 
-    Promise.all([eventsRequest, postsRequest]).finally(() => setLoadingMore(false));
+    Promise.all([eventsRequest, venuesRequest, postsRequest]).finally(() =>
+      setLoadingMore(false)
+    );
   }, [
     loadingMore,
+    location?.city_id,
     hasMoreEvents,
+    hasMoreVenues,
     hasMorePosts,
-    eventsPage,
+    eventsOffset,
+    venuesOffset,
     postsPage,
     account?.id,
-    userCoords?.latitude,
-    userCoords?.longitude,
   ]);
 
   // Keep these refs current every render so the observer callback below
   // always sees fresh values without the observer itself needing to change.
   loadMoreRef.current = loadMore;
-  hasMoreRef.current = hasMoreEvents || hasMorePosts;
+  hasMoreRef.current = hasMoreEvents || hasMoreVenues || hasMorePosts;
 
   // Callback ref instead of useRef + useEffect: the sentinel <div> only
   // exists once the loading skeleton is replaced by real content, and a
@@ -973,20 +1423,85 @@ export function HomescreenSection({
     sentinelObserverRef.current = observer;
   }, []);
 
-  // Build the feed: the first event + first post lead, then on-fire venue /
-  // suggested producers, then every subsequently loaded event and post
-  // appended in load order as the visitor scrolls.
-  const eventItems = allEvents.map((evt, i) => upcomingEventToFeedItem(evt, i));
+  // ── Location messaging ──
+  // A visitor who denied location and one who is genuinely out of range both
+  // come back as fallback/unsupported; only the second sent coordinates, which
+  // is what distance_mi being non-null tells us. The first already has the
+  // permission card, so don't stack a second notice on them.
+  const isOutOfArea =
+    !!location &&
+    location.source === "fallback" &&
+    !location.supported &&
+    location.distance_mi != null;
+  const locationCardVariant: "guest" | "registered" | "blocked" | "unsupported" | null =
+    locationPromptVariant ?? (isOutOfArea && !outOfAreaDismissed ? "unsupported" : null);
+  // Label the served city whenever it wasn't chosen from the visitor's own
+  // location, so a Houston feed is never silently presented as "near you".
+  const showCityLabel = !!location && location.source === "fallback";
+
+  // The pulse banner only earns its space when the top neighborhood is
+  // actually spiking. The count comes from venues we've loaded — the table's
+  // venue_count is the neighborhood's total, not how many are hot right now.
+  const topNeighborhood = neighborhoods[0];
+  const pulseNeighborhood =
+    topNeighborhood && SPIKING_STATES.has(topNeighborhood.social_energy_state ?? "")
+      ? topNeighborhood
+      : null;
+  const spikingVenues = pulseNeighborhood
+    ? venues.filter(
+        (v) =>
+          v.neighborhood === pulseNeighborhood.name &&
+          SPIKING_STATES.has(v.social_energy_state ?? "")
+      )
+    : [];
+
+  // Build the feed in mockup order: lead event, neighborhood pulse, offers,
+  // first post, top venue, suggested producers — then the remaining events
+  // with a venue card every fourth card as both rails page in.
+  const eventItems = allEvents.map(upcomingEventToFeedItem);
+  const venueItems = venues.map(trendingVenueToFeedItem);
   const feed: HomeFeedItem[] = [];
   if (eventItems[0]) feed.push(eventItems[0]);
-  if (homescreenPosts[0]) feed.push(homescreenPosts[0]);
-  if (topTrendingVenue) {
-    feed.push(trendingVenueToFeedItem(topTrendingVenue));
+  if (pulseNeighborhood) {
+    feed.push({
+      feed_type: "neighborhood_pulse",
+      id: pulseNeighborhood.id,
+      neighborhood: pulseNeighborhood,
+      spikingCount: spikingVenues.length,
+      topVenueId: spikingVenues[0]?.id,
+    });
   }
+  if (placements.length > 0) {
+    feed.push({ feed_type: "offers", id: "offers", placements });
+  }
+  if (homescreenPosts[0]) feed.push(homescreenPosts[0]);
+  if (venueItems[0]) feed.push(venueItems[0]);
   if (isLoggedIn && suggestedProducers.length > 0) {
     feed.push({ feed_type: "suggested_producers", id: "suggested_producers", producers: suggestedProducers });
   }
-  feed.push(...eventItems.slice(1), ...homescreenPosts.slice(1));
+  // Weave the three streams rather than concatenating them. Events are the
+  // spine (they're the most numerous), with a post every 2nd and a venue
+  // every 3rd. This used to append `...posts.slice(1)` after the whole event
+  // list, which is why the feed read as "every event, then every post".
+  let nextVenue = 1;
+  let nextPost = 1;
+  eventItems.slice(1).forEach((evt, i) => {
+    feed.push(evt);
+    const position = i + 1;
+    if (position % 2 === 0 && homescreenPosts[nextPost]) {
+      feed.push(homescreenPosts[nextPost]);
+      nextPost += 1;
+    }
+    if (position % 3 === 0 && venueItems[nextVenue]) {
+      feed.push(venueItems[nextVenue]);
+      nextVenue += 1;
+    }
+  });
+  // The venue rail pages in faster than the cadence consumes it, so hold the
+  // surplus back to be woven into the events still loading — but once the
+  // event rail is exhausted, flush it so nothing loaded is silently dropped.
+  if (!hasMoreEvents) feed.push(...venueItems.slice(nextVenue));
+  feed.push(...homescreenPosts.slice(nextPost));
 
   return (
     <section className="flex flex-1 flex-col overflow-y-auto pb-28">
@@ -1055,21 +1570,40 @@ export function HomescreenSection({
         </div>
       )}
 
-      {loading ? (
+      {/* ── Location ask / out-of-area notice ──────────────────────── */}
+      {locationCardVariant && (
+        <div className="px-1 pb-3">
+          <LocationCard
+            variant={locationCardVariant}
+            cityName={location?.city_name ?? "Houston"}
+            onAllow={() => onAllowLocation?.()}
+            onDismiss={() =>
+              locationCardVariant === "unsupported"
+                ? setOutOfAreaDismissed(true)
+                : onDismissLocationPrompt?.()
+            }
+          />
+        </div>
+      )}
+
+      {loading && !hasLoadedOnce ? (
         /* ── Skeleton ─────────────────────────────────────────────── */
         <div className="space-y-4 px-1">
           <div className="h-72 animate-pulse rounded-[18px] bg-white/10" />
           <div className="h-14 animate-pulse rounded-[14px] bg-white/10" />
           <div className="h-72 animate-pulse rounded-[18px] bg-white/10" />
         </div>
-      ) : fetchError ? (
+      ) : fetchError && !hasLoadedOnce ? (
         /* ── Error ────────────────────────────────────────────────── */
+        /* Only when there is nothing to show. A failed *refetch* (e.g. the
+           one triggered by granting location) must not wipe a feed the
+           visitor is already reading. */
         <div className="mt-16 flex flex-col items-center gap-3 px-6 text-center">
           <p className="text-[0.85rem] text-white/40">Could not load your feed.</p>
           <p className="text-[0.72rem] text-white/25">{fetchError}</p>
           <button
             type="button"
-            onClick={() => { setLoading(true); setFetchError(null); fetchHomescreen({ cityId: 1, cityName: "Houston", userId: account?.id ?? undefined }).then((r) => setAllEvents(r.upcoming_events ?? [])).catch((e: unknown) => setFetchError(e instanceof Error ? e.message : "Error")).finally(() => setLoading(false)); }}
+            onClick={loadFirstPage}
             className="mt-2 rounded-full border border-white/20 px-5 py-2 text-[0.78rem] font-semibold text-white/70"
           >
             Try Again
@@ -1077,7 +1611,15 @@ export function HomescreenSection({
         </div>
       ) : (
         <div className="space-y-4 px-1">
-          <h2 className="font-[family:var(--font-display)] text-[1.4rem] text-white">Your Bevy</h2>
+          {/* Featured rail is disabled until the client supplies videos —
+              see the commented-out FeaturedRow above.
+          <FeaturedRow events={allEvents} onOpen={gatedEventOpen} /> */}
+          <div className="flex items-baseline justify-between gap-2">
+            <h2 className="font-[family:var(--font-display)] text-[1.4rem] text-white">Your Bevy</h2>
+            {showCityLabel && (
+              <span className="text-[0.7rem] text-white/40">Showing {location?.city_name}</span>
+            )}
+          </div>
           <div className="space-y-3">
             {feed.map((item) => (
               <FeedCard
@@ -1085,6 +1627,7 @@ export function HomescreenSection({
                 item={item}
                 onEventOpen={gatedEventOpen}
                 onVenueOpen={gatedVenueOpen}
+                onOffersOpen={() => navigateTo("offers")}
                 isLoggedIn={isLoggedIn}
                 onRequireAuth={requireAuth}
               />
@@ -1096,7 +1639,7 @@ export function HomescreenSection({
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-white" />
             </div>
           )}
-          {!loadingMore && !hasMoreEvents && !hasMorePosts && (
+          {!loadingMore && !hasMoreEvents && !hasMoreVenues && !hasMorePosts && (
             <p className="py-6 text-center text-[0.78rem] text-white/35">
               You&apos;ve reached the bottom — that&apos;s everything for now
             </p>

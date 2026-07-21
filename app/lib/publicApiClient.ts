@@ -2593,108 +2593,161 @@ export async function reportUserProfile(payload: {
 /*  Homescreen Feed                                                     */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Badge state shared by venues and events. Always lowercase snake_case, and
+ * independent of an event's live status — an event can be `upcoming` and
+ * `on_fire` at the same time.
+ */
+export type SocialEnergyState = "quiet" | "getting_attention" | "buzzing" | "on_fire";
+
+/** Offset-based rail paging. Always advance with the server's `next_offset`. */
+export type Paged<T> = {
+  items: T[];
+  offset: number;
+  limit: number;
+  /** Absent on the homescreen's first page; present on the load-more rails. */
+  total?: number;
+  has_more: boolean;
+  next_offset: number;
+};
+
+/**
+ * The lean event shape ep_get_homescreen_dev / ep_get_homescreen_events_dev
+ * project. Deliberately narrow — the backend drops ~95 source-mirror fields
+ * the home page never renders. Notably there is NO venue_name (the source
+ * table only stores venue_id + venue_address) and no image_urls/video_urls.
+ */
 export type UpcomingEvent = {
   id: number;
   title: string;
-  producer_id?: number;
+  cover_image_url?: string;
+  venue_address?: string;
+  /** 0 when the event isn't linked to a known venue (common for imports). */
+  venue_id?: number;
+  /** YYYY-MM-DD, local to the city. */
+  event_date?: string;
+  /** HH:mm:ss, local. */
+  start_time?: string;
+  /** HH:mm:ss local, or "" when unknown. */
+  end_time?: string;
+  /** True only when proven live right now — the only trigger for a LIVE badge. */
+  is_live?: boolean;
+  live_status?: "live" | "upcoming" | "started";
+  social_energy_state?: SocialEnergyState;
+  going_count?: number;
+  interested_count?: number;
+  category?: string;
+  ticket_type?: string;
+  ticket_url?: string;
+  /** May be empty — fall back to `id` for routing. */
+  public_slug?: string;
   producer?: {
     id?: number;
     name?: string;
-    display_name?: string;
     image_url?: string;
-    profile_photo_url?: string;
     event_count?: number;
-    total_events_live?: number;
     is_verified?: boolean;
     is_following?: boolean;
-  };
-  cover_image_url?: string;
-  image_urls?: string[];
-  /** Separate from image_urls; combined count is capped at 5 by Xano. */
-  video_urls?: VideoItem[];
-  event_date?: string;
-  start_time?: string;
-  end_time?: string;
-  venue_name?: string;
-  venue_address?: string;
-  neighborhood?: string;
-  city?: string;
-  description?: string;
-  category?: string;
-  event_category?: string;
-  going_count?: number;
-  rsvp_count?: number;
-  is_free?: boolean;
-  is_sold_out?: boolean;
-  ticket_url?: string;
-  ticket_price_min?: number;
-  ticket_price_max?: number;
-  age_requirement?: number;
-  public_slug?: string;
-  status?: string;
-  is_on_fire?: boolean;
+  } | null;
   [key: string]: unknown;
 };
 
+/**
+ * The lean venue shape ep_get_trending_venues_v2_dev projects (already sorted
+ * highest trending_score first). `category`, `description`, `image_url` and
+ * `uber_deeplink` are frequently empty in dev data — render them conditionally.
+ */
 export type TrendingVenue = {
-  id: number | string;
-  venue_name: string;
-  venue_type?: string;
-  image_primary_url?: string;
-  image_fallback_url?: string;
-  cover_image_url?: string;
-  image_url?: string;
+  id: number;
+  name: string;
+  category?: string;
   neighborhood?: string;
-  area_neighborhood?: string;
-  neighborhood_text?: string;
-  energy_level?: string;
-  social_energy_state?: string;
+  social_energy_state?: SocialEnergyState;
+  social_energy_score?: number;
   going_count?: number;
-  sb_going_count?: number;
-  is_on_fire?: boolean;
-  address?: string;
+  checkin_count?: number;
+  image_url?: string;
+  description?: string;
   latitude?: number;
   longitude?: number;
+  uber_deeplink?: string;
   trending_score?: number;
+  [key: string]: unknown;
+};
+
+/**
+ * Which city the response is for, and how it was chosen. `source: "fallback"`
+ * with `supported: false` means the visitor isn't in a city we cover yet.
+ * `distance_mi` is null when no coordinates were sent at all — that's what
+ * separates "location denied" from "location granted but out of range".
+ */
+export type HomescreenLocation = {
+  city_id: number;
+  city_name: string;
+  source: "gps" | "fallback";
+  supported: boolean;
+  distance_mi: number | null;
+};
+
+export type HomescreenWeather = {
+  current_temp_f?: number | null;
+  current_conditions?: string | null;
+  is_raining_now?: boolean;
+  is_good_for_outdoor?: boolean | null;
+  precipitation_prob_now?: number | null;
+};
+
+/** A row of the vendor_placements table — the paid Offers rail. */
+export type HomescreenPlacement = {
+  id: number;
+  venue_id?: number;
+  placement_type?: string;
+  placement_tier?: string;
+  creative_url?: string;
+  creative_title?: string;
+  creative_description?: string;
+  [key: string]: unknown;
+};
+
+/** A row of the neighborhoods table, sorted by social_energy_score desc. */
+export type HomescreenNeighborhood = {
+  id: number;
+  name: string;
+  social_energy_state?: SocialEnergyState;
+  social_energy_score?: number;
+  /** Total venues in the neighborhood — NOT the number currently spiking. */
+  venue_count?: number;
+  vibe_description?: string;
   [key: string]: unknown;
 };
 
 export type HomescreenApiResponse = {
   success: boolean;
-  city_id: number;
-  city_name: string;
-  weather?: Record<string, unknown>;
-  trending_venues?: TrendingVenue[];
-  upcoming_events?: UpcomingEvent[];
-  active_placements?: Record<string, unknown>[];
-  top_neighborhoods?: Record<string, unknown>[];
-  generated_at?: string;
-};
-
-export type HomescreenStory = {
-  id: number;
-  name: string;
-  image_url: string;
-};
-
-export type HomescreenFeatured = {
-  id: number;
-  type: "event" | "venue";
-  title: string;
-  image_url: string;
+  location: HomescreenLocation;
+  weather?: HomescreenWeather;
+  trending_venues?: Paged<TrendingVenue>;
+  upcoming_events?: Paged<UpcomingEvent>;
+  /** Not paginated — first load only. */
+  active_placements?: HomescreenPlacement[];
+  /** Not paginated — first load only. */
+  top_neighborhoods?: HomescreenNeighborhood[];
+  generated_at?: number;
 };
 
 export type EventFeedItem = {
   feed_type: "event";
   id: number;
   title: string;
-  venue_name?: string;
+  /** The event rail carries no venue name — only the street address. */
+  venue_address?: string;
   start_time?: string;
   event_date?: string;
   cover_image_url?: string;
   going_count?: number;
-  people_you_know?: number;
   is_on_fire?: boolean;
+  /** Proven live right now — the only thing that may render a LIVE badge. */
+  is_live?: boolean;
+  /** "Happening Tonight" — only set when the event's date really is today. */
   badge?: string;
   producer_id?: number;
   producer?: {
@@ -2706,7 +2759,6 @@ export type EventFeedItem = {
     is_verified?: boolean;
     is_following?: boolean;
   };
-  reason?: string;
   raw: UpcomingEvent;
 };
 
@@ -2714,14 +2766,16 @@ export type OnFireVenueItem = {
   feed_type: "on_fire_venue";
   id: number;
   venue_name: string;
-  venue_address?: string;
   venue_latitude?: number;
   venue_longitude?: number;
   neighborhood?: string;
   category?: string;
   description?: string;
+  image_url?: string;
   going_count?: number;
-  badge?: string;
+  is_on_fire?: boolean;
+  /** Prebuilt ride link. Often empty — fall back to a coordinate-built one. */
+  uber_deeplink?: string;
 };
 
 export type SuggestedProducerItem = {
@@ -2734,38 +2788,76 @@ export type SuggestedProducerItem = {
   handle?: string;
 };
 
-export type FeedItem =
-  | EventFeedItem
-  | OnFireVenueItem
-  | SuggestedProducerItem;
-
-export type HomescreenData = {
-  stories: HomescreenStory[];
-  featured: HomescreenFeatured[];
-  feed: FeedItem[];
-  raw?: HomescreenApiResponse;
-};
-
+/**
+ * First paint only. Send coordinates when the visitor has granted location and
+ * the backend resolves the nearest supported city; send nothing and it serves
+ * Houston. `cityId` is only for an explicit city pick — it's ignored when
+ * coordinates resolve to a supported city.
+ *
+ * Never call this to paginate: use fetchHomescreenEvents / fetchTrendingVenues.
+ */
 export async function fetchHomescreen(options: {
   cityId?: number;
-  cityName?: string;
   userId?: number;
   lat?: number;
   lng?: number;
-  page?: number;
 } = {}): Promise<HomescreenApiResponse> {
-  const { cityId = 1, cityName = "Houston", userId, lat, lng, page = 1 } = options;
+  const { cityId, userId, lat, lng } = options;
   const params = new URLSearchParams();
-  params.set("city_id", String(cityId));
-  params.set("city_name", cityName);
-  params.set("page", String(page));
+  if (cityId != null) params.set("city_id", String(cityId));
   if (userId) params.set("user_id", String(userId));
-  if (lat != null) params.set("lat", String(lat));
-  if (lng != null) params.set("lng", String(lng));
+  if (lat != null && lng != null) {
+    params.set("lat", String(lat));
+    params.set("lng", String(lng));
+  }
   return apiJson<HomescreenApiResponse>(
     `/api/genie/homescreen?${params.toString()}`,
     { auth: false }
   );
+}
+
+/**
+ * "Load more" for the venue rail. `cityId` must be the `location.city_id` the
+ * homescreen resolved, and `offset` the previous response's `next_offset` —
+ * page sizes are mixed (6 then 10), so never compute the offset locally.
+ */
+export async function fetchTrendingVenues(options: {
+  cityId: number;
+  offset: number;
+  limit?: number;
+}): Promise<Paged<TrendingVenue>> {
+  const { cityId, offset, limit = 10 } = options;
+  const params = new URLSearchParams({
+    city_id: String(cityId),
+    offset: String(offset),
+    limit: String(limit),
+  });
+  const result = await apiJson<{ venues: Paged<TrendingVenue> }>(
+    `/api/genie/trending-venues?${params.toString()}`,
+    { auth: false }
+  );
+  return result.venues;
+}
+
+/** "Load more" for the event rail. Same offset contract as the venue rail. */
+export async function fetchHomescreenEvents(options: {
+  cityId: number;
+  offset: number;
+  limit?: number;
+  userId?: number;
+}): Promise<Paged<UpcomingEvent>> {
+  const { cityId, offset, limit = 10, userId } = options;
+  const params = new URLSearchParams({
+    city_id: String(cityId),
+    offset: String(offset),
+    limit: String(limit),
+  });
+  if (userId) params.set("user_id", String(userId));
+  const result = await apiJson<{ events: Paged<UpcomingEvent> }>(
+    `/api/genie/homescreen-events?${params.toString()}`,
+    { auth: false }
+  );
+  return result.events;
 }
 
 /* ------------------------------------------------------------------ */

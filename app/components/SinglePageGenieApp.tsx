@@ -2039,9 +2039,22 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     return () => window.removeEventListener("beforeinstallprompt", handler);
   }, []);
 
+  // The hard-denied flag exists so we stop offering an "Allow" button the
+  // browser would ignore. It must be cleared the moment the browser can ask
+  // (or has been granted) again — otherwise "Reset permission" in Chrome's
+  // site-info bubble leaves the user stuck on the dead-end "we can't ask
+  // again" notice forever, since nothing else ever removes it.
+  const clearHardDeniedFlags = useCallback(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.removeItem("genie_geo_hard_denied_v1");
+    window.localStorage.removeItem("genie_geo_hard_denied_notice_dismissed_v1");
+  }, []);
+
   // ── Geolocation permission ──
   // On mount, find out whether the browser already has a real answer
-  // ("granted"/"denied") via the Permissions API. Safari doesn't support
+  // ("granted"/"denied") via the Permissions API, and stay subscribed so a
+  // change made in browser settings updates the UI without a reload. Safari
+  // doesn't support
   // that API, so there we can only tell "prompt" (never asked) apart from
   // "granted" once we've actually fetched a position — a real prior denial
   // looks the same as never-asked on Safari, which is an accepted gap.
@@ -2058,12 +2071,16 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     type PermissionStatusLike = {
       state: "granted" | "denied" | "prompt";
       addEventListener?: (type: "change", listener: () => void) => void;
+      removeEventListener?: (type: "change", listener: () => void) => void;
     };
     type PermissionsLike = {
       query: (descriptor: { name: "geolocation" }) => Promise<PermissionStatusLike>;
     };
     const permissionsApi = (navigator as Navigator & { permissions?: PermissionsLike })
       .permissions;
+
+    let permissionStatus: PermissionStatusLike | null = null;
+    let onPermissionChange: (() => void) | null = null;
 
     const onGranted = (latitude: number, longitude: number) => {
       setLocationGranted(true);
@@ -2096,20 +2113,38 @@ const [trialSuccess, setTrialSuccess] = useState(false);
       permissionsApi
         .query({ name: "geolocation" })
         .then((status) => {
-          if (status.state === "granted") {
-            navigator.geolocation.getCurrentPosition(
-              (pos) => onGranted(pos.coords.latitude, pos.coords.longitude),
-              () => {
-                setLocationGranted(true);
-                setGeoPermissionState("granted");
-              }
-            );
-          } else {
-            if (status.state === "denied") {
-              window.localStorage.setItem("genie_geo_hard_denied_v1", "1");
+          const apply = (state: PermissionStatusLike["state"]) => {
+            if (state === "granted") {
+              clearHardDeniedFlags();
+              navigator.geolocation.getCurrentPosition(
+                (pos) => onGranted(pos.coords.latitude, pos.coords.longitude),
+                () => {
+                  setLocationGranted(true);
+                  setGeoPermissionState("granted");
+                }
+              );
+              return;
             }
-            setGeoPermissionState(status.state);
-          }
+            if (state === "denied") {
+              window.localStorage.setItem("genie_geo_hard_denied_v1", "1");
+            } else {
+              // Back to "prompt" — e.g. the user hit Chrome's "Reset
+              // permission". The browser will ask again, so the sticky
+              // hard-denied flag must not keep us showing the dead-end
+              // "we can't ask again" notice.
+              clearHardDeniedFlags();
+            }
+            setGeoPermissionState(state);
+          };
+
+          apply(status.state);
+
+          // Without this, the permission is only ever read once per mount, so
+          // flipping it in Chrome's site-info bubble left the "Location is
+          // off" card on screen until a manual reload.
+          permissionStatus = status;
+          onPermissionChange = () => apply(status.state);
+          status.addEventListener?.("change", onPermissionChange);
         })
         .catch(() => setGeoPermissionState("prompt"));
     } else {
@@ -2123,10 +2158,13 @@ const [trialSuccess, setTrialSuccess] = useState(false);
       askNow;
 
     return () => {
+      if (permissionStatus && onPermissionChange) {
+        permissionStatus.removeEventListener?.("change", onPermissionChange);
+      }
       delete (window as Window & { __genieAskLocation?: () => void })
         .__genieAskLocation;
     };
-  }, []);
+  }, [clearHardDeniedFlags]);
 
   // ── Location-prompt banner variant ──
   // Decides whether to show the location-ask banner, and which copy, once
@@ -2187,6 +2225,9 @@ const [trialSuccess, setTrialSuccess] = useState(false);
         setLocationGranted(true);
         setGeoPermissionState("granted");
         setLocationPromptVariant(null);
+        // A previously blocked visitor who re-enabled location in site
+        // settings must not stay flagged as hard-denied.
+        clearHardDeniedFlags();
         window.localStorage.setItem("genie_location_prompt_dismissed_v1", "1");
       },
       (err) => {
@@ -2215,7 +2256,7 @@ const [trialSuccess, setTrialSuccess] = useState(false);
       },
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 60_000 }
     );
-  }, [account]);
+  }, [account, clearHardDeniedFlags]);
 
   const dismissLocationPrompt = useCallback(() => {
     if (typeof window !== "undefined") {
@@ -2781,6 +2822,16 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     goHome();
   }, [goHome]);
 
+  // Roles hang off the signed-in account, so a guest has nothing to switch
+  // between — send them to sign in instead of opening an empty switcher.
+  const openRoleSwitcher = useCallback(() => {
+    if (!account) {
+      navigateTo("account");
+      return;
+    }
+    setIsRoleSwitcherOpen(true);
+  }, [account, navigateTo]);
+
   const handleDrawerNavigate = useCallback(
     (target: DrawerMenuActionId) => {
       switch (target) {
@@ -2864,11 +2915,11 @@ const [trialSuccess, setTrialSuccess] = useState(false);
           break;
         case "switch-role":
           setIsDrawerOpen(false);
-          setIsRoleSwitcherOpen(true);
+          openRoleSwitcher();
           break;
       }
     },
-    [goHome, isVibeeMember, navigateTo]
+    [goHome, isVibeeMember, navigateTo, openRoleSwitcher]
   );
 
   const handleTopBack = useCallback(() => {
@@ -5370,7 +5421,9 @@ activeScreen === "vibbee-trial" ||
             visible={true}
             onContinue={() => {
               // TODO: pending states (vendor claim, producer/influencer approval) come later
-              navigateTo("home", false);
+              // goHome() → "homescreen" (the genie home feed), not "home" (the
+              // chat/ask screen), and clears the unlock flow off the back stack.
+              goHome();
             }}
           />
         ) : null}
@@ -6066,6 +6119,11 @@ activeScreen === "vibbee-trial" ||
     account={account}
     navigateTo={navigateTo}
     userCoords={userCoords}
+    // The homescreen's city is resolved from these coordinates server-side, so
+    // it surfaces the same location ask the Genie screen shows at :3090.
+    locationPromptVariant={locationPromptVariant}
+    onAllowLocation={requestLocationPermission}
+    onDismissLocationPrompt={dismissLocationPrompt}
     onVenueOpen={(id) => {
       setSharedVenueLoading(true);
       setSelectedVenueId(String(id));
@@ -6077,7 +6135,7 @@ activeScreen === "vibbee-trial" ||
       navigateTo("event-detail");
     }}
     onMenuOpen={() => setIsDrawerOpen(true)}
-    onOpenRoleSwitcher={() => setIsRoleSwitcherOpen(true)}
+    onOpenRoleSwitcher={openRoleSwitcher}
     onOrbTap={startListening}
     onNotifications={() => navigateTo("notifications")}
     unreadNotifCount={unreadNotifCount}
