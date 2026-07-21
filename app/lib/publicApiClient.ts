@@ -2839,6 +2839,95 @@ export async function fetchTrendingVenues(options: {
   return result.venues;
 }
 
+/**
+ * A card from ep_get_nearby_venues_dev. Field reliability measured across all
+ * 720 venues — design for the missing case: `image_url` is absent on ~25% of
+ * rows and `short_description` on ~41%.
+ *
+ * `price_band`, `reservation_url` and `image_alt` come back as `""` rather than
+ * null when absent, so always test truthiness — `!== null` lets `""` through.
+ *
+ * `social_energy_state` / `social_energy_score` are inert (nearly every venue is
+ * `"quiet"` / `0` while the enrichment jobs are off) — don't rank or badge them.
+ */
+export type NearbyVenue = {
+  id: number;
+  name: string;
+  address: string;
+  neighborhood: string | null;
+  latitude: number;
+  longitude: number;
+  /** null whenever the response is in fallback mode. */
+  distance_m: number | null;
+  image_url: string | null;
+  image_alt: string | null;
+  /** Truncated to 160 chars server-side. */
+  short_description: string | null;
+  price_band: string | null;
+  /** Can be 0 — hide the stars rather than render "0 star". */
+  google_rating: number;
+  google_user_ratings_total: number;
+  social_energy_state: string;
+  social_energy_score: number;
+  google_maps_url: string | null;
+  reservation_url: string | null;
+};
+
+/**
+ * `fallback: true` means the caller is outside our coverage and these are
+ * stand-in Houston venues — `distance_m`, `radius_used_m` and `total` are all
+ * null in that mode, so never render distance and never drive pagination off
+ * `total`. Use `has_more` for loop control.
+ *
+ * `radius_used_m` MAY EXCEED the requested `radius_m`: the server retries at 3x,
+ * then 40 km, when nothing is found. Compare it against what you asked for.
+ */
+export type NearbyVenuesResponse = {
+  success: boolean;
+  city_supported: boolean;
+  fallback: boolean;
+  city_id: number;
+  city_name: string;
+  city_distance_m: number | null;
+  radius_used_m: number | null;
+  venues: NearbyVenue[];
+  count: number;
+  offset: number;
+  limit: number;
+  total: number | null;
+  has_more: boolean;
+  next_offset: number;
+};
+
+/**
+ * Nearby venues, nearest-first. Public — no auth. The worst case (radius
+ * widening) is ~3 s, hence the 15 s timeout; pass a `signal` to cancel in-flight
+ * requests when params change so a slow earlier response can't overwrite a
+ * newer one.
+ */
+export async function fetchNearbyVenues(options: {
+  lat: number;
+  lng: number;
+  radiusM?: number;
+  limit?: number;
+  offset?: number;
+  signal?: AbortSignal;
+}): Promise<NearbyVenuesResponse> {
+  const { lat, lng, radiusM, limit, offset, signal } = options;
+  const params = new URLSearchParams({ lat: String(lat), lng: String(lng) });
+  if (radiusM != null) params.set("radius_m", String(radiusM));
+  if (limit != null) params.set("limit", String(limit));
+  if (offset != null) params.set("offset", String(offset));
+
+  // The caller's signal must not replace the timeout — either one aborting is
+  // enough, so they're combined rather than chosen between.
+  const timeout = AbortSignal.timeout(15_000);
+  return apiJson<NearbyVenuesResponse>(
+    `/api/genie/nearby-venues?${params.toString()}`,
+    { auth: false, signal: signal ? AbortSignal.any([signal, timeout]) : timeout }
+  );
+}
+
 /** "Load more" for the event rail. Same offset contract as the venue rail. */
 export async function fetchHomescreenEvents(options: {
   cityId: number;
