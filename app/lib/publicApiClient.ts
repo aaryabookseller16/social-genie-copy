@@ -968,6 +968,17 @@ export async function fetchVendorDashboard(vendorId: number) {
       schedule_json?: Record<string, unknown> | null;
     }>;
     offer_count: number;
+    // Stat totals, named exactly as vendor_dashboard_v1 returns them.
+    total_genie_appearances: number;
+    total_profile_views: number;
+    total_actions: number;
+    total_call_clicks: number;
+    total_map_clicks: number;
+    total_reservation_clicks: number;
+    total_saves: number;
+    engagement_rate?: number;
+    checkins_today?: number;
+    is_open_now?: boolean | null;
     // Venue/profile fields surfaced for the Edit Profile form
     description?: string | null;
     vibe_notes?: string | null;
@@ -1473,38 +1484,16 @@ export async function fetchVendorProfileCompleteness(vendorId: number) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Vendor Offers (list / toggle / delete)                            */
+/*  Vendor Offers                                                     */
 /* ------------------------------------------------------------------ */
 
-export type VendorOfferItem = {
-  id: number;
-  title: string;
-  description?: string;
-  offer_type: string;
-  active?: boolean;
-  vibee_only?: boolean;
-  redeem_instructions?: string | null;
-  discount_value?: string | null;
-};
-
-export async function fetchVendorOffers(vendorId: number) {
-  const params = new URLSearchParams({ vendor_id: String(vendorId) });
-  return apiJson<VendorOfferItem[]>(`/api/vendor/offers?${params.toString()}`);
-}
-
-export async function toggleVendorOffer(offerId: number, active: boolean) {
-  return apiJson<{ success: boolean }>("/api/vendor/offers", {
-    method: "PATCH",
-    body: JSON.stringify({ offer_id: offerId, active }),
-  });
-}
-
-export async function deleteVendorOffer(offerId: number) {
-  return apiJson<{ success: boolean }>(
-    `/api/vendor/offers?offer_id=${offerId}`,
-    { method: "DELETE" }
-  );
-}
+// fetchVendorOffers / toggleVendorOffer / deleteVendorOffer used to live here,
+// alongside a VendorOfferItem type and an /api/vendor/offers route. They proxied
+// to genie/vendor_list_offers_dev, vendor_update_offer_dev and
+// vendor_delete_offer_dev — none of which exist in Xano (all three 404), so every
+// call silently failed. Removed rather than left as traps. A vendor's offers come
+// from vendor_dashboard_v1, which returns them inline. Re-add when a real
+// vendor_update_offer endpoint ships.
 
 /* ------------------------------------------------------------------ */
 /*  Vendor — Influencer Offer Review Queue                            */

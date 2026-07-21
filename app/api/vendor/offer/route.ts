@@ -39,9 +39,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof XanoError) {
+      // Xano rejects all three create gates (vendor exists / is_live /
+      // founding_partner plan) as a 401 ERROR_CODE_UNAUTHORIZED. Passing that
+      // through would make apiJson treat it as an expired session and sign the
+      // vendor out. The caller *is* authenticated — they're just not permitted —
+      // so surface it as 403.
+      const status = error.status === 401 ? 403 : error.status;
       return NextResponse.json(
         { error: error.message, body: error.body },
-        { status: error.status }
+        { status }
       );
     }
     console.error("POST /api/vendor/offer failed:", error);
