@@ -49,7 +49,6 @@ export function PlanChoiceSection({
     try {
       const { checkout_url } = await createSubscriptionCheckout({
         email,
-        external_user_id: email,
         // `onboarding=1` tells the checkout-return handler to resume the
         // wizard at preferences rather than dropping the user on home.
         success_url: `${window.location.origin}?checkout=success&onboarding=1`,

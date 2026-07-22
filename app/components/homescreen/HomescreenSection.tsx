@@ -184,7 +184,7 @@ function StoryBar({ producers }: { producers: FollowedProducerItem[] }) {
       {producers.map((p) => (
         <a key={p.id} href={`/p/${p.id}`} className="flex w-16 flex-none flex-col items-center gap-1">
           <span className="rounded-full bg-gradient-to-tr from-red-600 via-red-500 to-orange-400 p-[2px]">
-            <span className="block rounded-full bg-black p-[2px]">
+            <span className="block rounded-full bg-white dark:bg-black p-[2px]">
               <span className="relative block h-14 w-14 overflow-hidden rounded-full">
                 {p.profile_photo_url ? (
                   <Image
@@ -201,7 +201,7 @@ function StoryBar({ producers }: { producers: FollowedProducerItem[] }) {
               </span>
             </span>
           </span>
-          <span className="w-full truncate text-center text-[0.62rem] text-white/70">
+          <span className="w-full truncate text-center text-[0.62rem] text-gray-600 dark:text-white/70">
             {p.display_name ?? "Producer"}
           </span>
         </a>
@@ -259,7 +259,7 @@ function FollowButton({
       }}
       disabled={followBusy}
       className={`rounded-full border px-4 py-1.5 text-[0.72rem] font-semibold transition ${
-        isFollowing ? "border-red-500 bg-red-600 text-white" : "border-white/30 text-white"
+        isFollowing ? "border-red-500 bg-red-600 text-white" : "border-gray-300 text-gray-700 dark:border-white/30 dark:text-white"
       } disabled:opacity-50`}
     >
       {isFollowing ? "Following" : "Follow"}
@@ -327,7 +327,7 @@ function EventFeedCard({
   };
 
   return (
-    <div className="overflow-hidden rounded-[18px] bg-black/40">
+    <div className="overflow-hidden rounded-[18px] bg-white/90 dark:bg-black/40">
       {/* Cover image */}
       <button type="button" onClick={onOpen} className="relative block h-44 w-full bg-zinc-900">
         {item.cover_image_url ? (
@@ -341,7 +341,7 @@ function EventFeedCard({
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-zinc-800 to-zinc-900">
-            <svg viewBox="0 0 24 24" className="h-10 w-10 text-white/20" fill="none" stroke="currentColor" strokeWidth="1">
+            <svg viewBox="0 0 24 24" className="h-10 w-10 text-gray-300 dark:text-white/20" fill="none" stroke="currentColor" strokeWidth="1">
               <rect x="3" y="3" width="18" height="18" rx="2" /><path d="m3 9 4-4 4 4 5-5 5 5" /><circle cx="8.5" cy="13.5" r="1.5" />
             </svg>
           </div>
@@ -368,18 +368,18 @@ function EventFeedCard({
       <div className="px-3 py-3">
         <div className="flex items-start justify-between gap-2">
           <button type="button" onClick={onOpen} className="text-left">
-            <h3 className="text-[1rem] font-bold leading-snug text-white">{item.title}</h3>
+            <h3 className="text-[1rem] font-bold leading-snug text-gray-900 dark:text-white">{item.title}</h3>
           </button>
           <button
             type="button"
             aria-label={saved ? "Unsave" : "Save"}
             onClick={handleSave}
             disabled={saveBusy}
-            className="flex h-8 w-8 flex-none items-center justify-center rounded-full border border-white/25 disabled:opacity-50"
+            className="flex h-8 w-8 flex-none items-center justify-center rounded-full border border-gray-200 dark:border-white/25 disabled:opacity-50"
           >
             <svg
               viewBox="0 0 24 24"
-              className={`h-4 w-4 ${saved ? "text-red-500" : "text-white/80"}`}
+              className={`h-4 w-4 ${saved ? "text-red-500" : "text-gray-700 dark:text-white/80"}`}
               fill={saved ? "currentColor" : "none"}
               stroke="currentColor"
               strokeWidth="2"
@@ -398,7 +398,7 @@ function EventFeedCard({
                 <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 flex-none text-red-400" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 1 1 18 0z" /><circle cx="12" cy="10" r="3" />
                 </svg>
-                <span className="truncate text-[0.78rem] text-white/70">{item.venue_address}</span>
+                <span className="truncate text-[0.78rem] text-gray-600 dark:text-white/70">{item.venue_address}</span>
               </div>
             ) : null}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -407,7 +407,7 @@ function EventFeedCard({
                   <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 flex-none text-red-400" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
                   </svg>
-                  <span className="text-[0.78rem] text-white/70">{formatEventTime(item.start_time)} - Late</span>
+                  <span className="text-[0.78rem] text-gray-600 dark:text-white/70">{formatEventTime(item.start_time)} - Late</span>
                 </div>
               ) : null}
               {item.event_date ? (
@@ -415,7 +415,7 @@ function EventFeedCard({
                   <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 flex-none text-red-400" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
                   </svg>
-                  <span className="text-[0.78rem] text-white/70">{item.event_date}</span>
+                  <span className="text-[0.78rem] text-gray-600 dark:text-white/70">{item.event_date}</span>
                 </div>
               ) : null}
             </div>
@@ -423,13 +423,13 @@ function EventFeedCard({
 
           {item.going_count ? (
             <div className="mt-2 flex items-center gap-2">
-              <span className="text-[0.72rem] text-white/65">{item.going_count} Going</span>
+              <span className="text-[0.72rem] text-gray-600 dark:text-white/65">{item.going_count} Going</span>
             </div>
           ) : null}
         </button>
 
         {producer ? (
-          <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-2.5">
+          <div className="mt-3 flex items-center justify-between border-t border-gray-200 dark:border-white/10 pt-2.5">
             <a
               href={profileHref}
               onClick={(e) => {
@@ -449,11 +449,11 @@ function EventFeedCard({
                 <ProducerAvatar name={producer.name} />
               )}
               <div className="min-w-0">
-                <p className="truncate text-[0.78rem] font-semibold text-white">{producer.name}</p>
+                <p className="truncate text-[0.78rem] font-semibold text-gray-900 dark:text-white">{producer.name}</p>
                 {/* event_count is the producer's live event total — not a
                     monthly figure, and nothing here is "suggested". */}
                 {producer.event_count ? (
-                  <p className="text-[0.62rem] text-white/50">
+                  <p className="text-[0.62rem] text-gray-500 dark:text-white/50">
                     {producer.event_count} live {producer.event_count === 1 ? "event" : "events"}
                   </p>
                 ) : null}
@@ -496,7 +496,7 @@ function SocialPostCard({
   };
 
   return (
-    <div className="overflow-hidden rounded-[18px] bg-black/40">
+    <div className="overflow-hidden rounded-[18px] bg-white/90 dark:bg-black/40">
       <Link href={`/posts/${post.id}`} onClick={handleOpen} className="block">
         <div className="flex items-center gap-2 px-3 pt-3">
           {author?.profile_photo_url ? (
@@ -514,12 +514,12 @@ function SocialPostCard({
             <ProducerAvatar name={authorName} size={32} />
           )}
           <div>
-            <p className="text-[0.78rem] font-semibold text-white">{authorName}</p>
-            <p className="text-[0.65rem] text-white/50">{formatShortRelativeTime(post.created_at)}</p>
+            <p className="text-[0.78rem] font-semibold text-gray-900 dark:text-white">{authorName}</p>
+            <p className="text-[0.65rem] text-gray-500 dark:text-white/50">{formatShortRelativeTime(post.created_at)}</p>
           </div>
         </div>
         {post.post_text ? (
-          <p className="mt-2 px-3 text-[0.82rem] leading-5 text-white/80">{post.post_text}</p>
+          <p className="mt-2 px-3 text-[0.82rem] leading-5 text-gray-700 dark:text-white/80">{post.post_text}</p>
         ) : null}
         {media.length > 0 ? (
           <div className="mt-2.5">
@@ -536,9 +536,9 @@ function SocialPostCard({
         <Link
           href={`/posts/${post.id}`}
           onClick={handleOpen}
-          className="flex items-center justify-between border-t border-white/10 pt-2"
+          className="flex items-center justify-between border-t border-gray-200 dark:border-white/10 pt-2"
         >
-          <span className="text-[0.72rem] text-white/50">
+          <span className="text-[0.72rem] text-gray-500 dark:text-white/50">
             {post.like_count ? `${post.like_count} like${post.like_count === 1 ? "" : "s"}` : "Like"}
             {post.comment_count
               ? ` · ${post.comment_count} comment${post.comment_count === 1 ? "" : "s"}`
@@ -671,8 +671,8 @@ function SuggestedProducerCard({
   };
 
   return (
-    <div className="overflow-hidden rounded-[18px] bg-black/40">
-      <p className="px-4 pt-3.5 text-[0.65rem] font-semibold uppercase tracking-wide text-white/40">
+    <div className="overflow-hidden rounded-[18px] bg-white/90 dark:bg-black/40">
+      <p className="px-4 pt-3.5 text-[0.65rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/40">
         Suggested Producer
       </p>
       <div className="flex items-center justify-between px-4 pb-4 pt-2">
@@ -694,9 +694,9 @@ function SuggestedProducerCard({
             <ProducerAvatar name={item.name} size={36} />
           )}
           <div className="min-w-0">
-            <p className="truncate text-[0.82rem] font-semibold text-white">{item.name}</p>
+            <p className="truncate text-[0.82rem] font-semibold text-gray-900 dark:text-white">{item.name}</p>
             {item.event_count ? (
-              <p className="text-[0.65rem] text-white/50">
+              <p className="text-[0.65rem] text-gray-500 dark:text-white/50">
                 {item.event_count} live {item.event_count === 1 ? "event" : "events"}
               </p>
             ) : null}
@@ -757,7 +757,7 @@ function FeaturedRow({
   if (!withCover.length) return null;
   return (
     <div>
-      <h2 className="mb-3 font-[family:var(--font-display)] text-[1.4rem] text-white">Featured</h2>
+      <h2 className="mb-3 font-[family:var(--font-display)] text-[1.4rem] text-gray-900 dark:text-white">Featured</h2>
       <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {withCover.map((evt) => (
           <button
@@ -823,12 +823,12 @@ function NeighborhoodPulse({
       className="flex w-full items-center gap-3 rounded-[18px] bg-gradient-to-r from-red-950/70 to-black/40 px-4 py-3 text-left disabled:cursor-default"
     >
       <span className="h-2 w-2 flex-none animate-pulse rounded-full bg-red-500" aria-hidden="true" />
-      <span className="min-w-0 flex-1 text-[0.82rem] leading-5 text-white/85">
+      <span className="min-w-0 flex-1 text-[0.82rem] leading-5 text-gray-700 dark:text-white/85">
         {neighborhood.name} just hit <span className="font-semibold text-red-400">{state}</span>
         {detail}
       </span>
       {onOpen ? (
-        <svg viewBox="0 0 24 24" className="h-4 w-4 flex-none text-white/40" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg viewBox="0 0 24 24" className="h-4 w-4 flex-none text-gray-400 dark:text-white/40" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <polyline points="9 18 15 12 9 6" />
         </svg>
       ) : null}
@@ -857,8 +857,8 @@ function OffersRow({
         onClick={onSeeAll}
         className="mb-3 flex w-full items-center justify-between"
       >
-        <span className="font-[family:var(--font-display)] text-[1.4rem] text-white">Offers</span>
-        <svg viewBox="0 0 24 24" className="h-5 w-5 text-white/50" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <span className="font-[family:var(--font-display)] text-[1.4rem] text-gray-900 dark:text-white">Offers</span>
+        <svg viewBox="0 0 24 24" className="h-5 w-5 text-gray-500 dark:text-white/50" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <polyline points="9 18 15 12 9 6" />
         </svg>
       </button>
@@ -868,7 +868,7 @@ function OffersRow({
             key={p.id}
             type="button"
             onClick={() => p.venue_id && onOpen(p.venue_id)}
-            className="w-40 flex-none overflow-hidden rounded-[16px] bg-black/40 text-left"
+            className="w-40 flex-none overflow-hidden rounded-[16px] bg-white/90 dark:bg-black/40 text-left"
           >
             <span className="relative block h-24 w-full bg-zinc-900">
               {p.creative_url ? (
@@ -884,11 +884,11 @@ function OffersRow({
               ) : null}
             </span>
             <span className="block px-2.5 py-2">
-              <span className="block truncate text-[0.78rem] font-semibold text-white">
+              <span className="block truncate text-[0.78rem] font-semibold text-gray-900 dark:text-white">
                 {p.creative_title ?? "Offer"}
               </span>
               {p.creative_description ? (
-                <span className="mt-0.5 block line-clamp-2 text-[0.65rem] leading-4 text-white/60">
+                <span className="mt-0.5 block line-clamp-2 text-[0.65rem] leading-4 text-gray-500 dark:text-white/60">
                   {p.creative_description}
                 </span>
               ) : null}
@@ -945,7 +945,7 @@ function LocationCard({
   const canAllow = variant === "guest" || variant === "registered";
 
   return (
-    <div className="flex items-start gap-3 rounded-[18px] border border-white/15 bg-black/40 px-4 py-3">
+    <div className="flex items-start gap-3 rounded-[18px] border border-gray-200 dark:border-white/15 bg-white/90 dark:bg-black/40 px-4 py-3">
       <span className="mt-0.5 flex-none text-red-400" aria-hidden="true">
         <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
           <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 1 1 18 0z" />
@@ -953,8 +953,8 @@ function LocationCard({
         </svg>
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-[0.82rem] font-semibold text-white">{copy.title}</p>
-        <p className="mt-0.5 text-[0.72rem] leading-4 text-white/65">{copy.body}</p>
+        <p className="text-[0.82rem] font-semibold text-gray-900 dark:text-white">{copy.title}</p>
+        <p className="mt-0.5 text-[0.72rem] leading-4 text-gray-600 dark:text-white/65">{copy.body}</p>
         <div className="mt-2 flex gap-2">
           {canAllow ? (
             <button
@@ -968,7 +968,7 @@ function LocationCard({
           <button
             type="button"
             onClick={onDismiss}
-            className="rounded-full border border-white/25 px-3 py-1 text-[0.72rem] font-semibold text-white/85"
+            className="rounded-full border border-gray-200 dark:border-white/25 px-3 py-1 text-[0.72rem] font-semibold text-gray-700 dark:text-white/85"
           >
             {canAllow ? "Not now" : "Got it"}
           </button>
@@ -1516,7 +1516,7 @@ export function HomescreenSection({
             type="button"
             onClick={onOpenRoleSwitcher}
             aria-label={`Current role: ${ROLE_BAR_LABELS[activeRole]}. Switch profiles`}
-            className="flex items-center gap-0.5 text-[0.7rem] font-semibold leading-none text-white transition hover:text-white/80"
+            className="flex items-center gap-0.5 text-[0.7rem] font-semibold leading-none text-gray-900 transition hover:text-gray-600 dark:text-white dark:hover:text-white/80"
           >
             {ROLE_BAR_LABELS[activeRole]}
             <svg viewBox="0 0 24 24" className="h-3 w-3 text-red-500" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -1534,7 +1534,7 @@ export function HomescreenSection({
           >
             <Image src="/icons/top_bar_genie.png" alt="" aria-hidden="true" fill sizes="36px" className="object-contain" />
           </button>
-          <button type="button" aria-label="Messages" onClick={onMessages} className="relative flex h-9 w-9 items-center justify-center text-white/70 hover:text-white">
+          <button type="button" aria-label="Messages" onClick={onMessages} className="relative flex h-9 w-9 items-center justify-center text-gray-600 hover:text-gray-900 dark:text-white/70 dark:hover:text-white">
             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
             </svg>
@@ -1544,7 +1544,7 @@ export function HomescreenSection({
               </span>
             )}
           </button>
-          <button type="button" aria-label="Notifications" onClick={onNotifications} className="relative flex h-9 w-9 items-center justify-center text-white/70 hover:text-white">
+          <button type="button" aria-label="Notifications" onClick={onNotifications} className="relative flex h-9 w-9 items-center justify-center text-gray-600 hover:text-gray-900 dark:text-white/70 dark:hover:text-white">
             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
               <path d="M13.73 21a2 2 0 0 1-3.46 0" />
@@ -1589,9 +1589,9 @@ export function HomescreenSection({
       {loading && !hasLoadedOnce ? (
         /* ── Skeleton ─────────────────────────────────────────────── */
         <div className="space-y-4 px-1">
-          <div className="h-72 animate-pulse rounded-[18px] bg-white/10" />
-          <div className="h-14 animate-pulse rounded-[14px] bg-white/10" />
-          <div className="h-72 animate-pulse rounded-[18px] bg-white/10" />
+          <div className="h-72 animate-pulse rounded-[18px] bg-gray-200 dark:bg-white/10" />
+          <div className="h-14 animate-pulse rounded-[14px] bg-gray-200 dark:bg-white/10" />
+          <div className="h-72 animate-pulse rounded-[18px] bg-gray-200 dark:bg-white/10" />
         </div>
       ) : fetchError && !hasLoadedOnce ? (
         /* ── Error ────────────────────────────────────────────────── */
@@ -1599,12 +1599,12 @@ export function HomescreenSection({
            one triggered by granting location) must not wipe a feed the
            visitor is already reading. */
         <div className="mt-16 flex flex-col items-center gap-3 px-6 text-center">
-          <p className="text-[0.85rem] text-white/40">Could not load your feed.</p>
-          <p className="text-[0.72rem] text-white/25">{fetchError}</p>
+          <p className="text-[0.85rem] text-gray-400 dark:text-white/40">Could not load your feed.</p>
+          <p className="text-[0.72rem] text-gray-300 dark:text-white/25">{fetchError}</p>
           <button
             type="button"
             onClick={loadFirstPage}
-            className="mt-2 rounded-full border border-white/20 px-5 py-2 text-[0.78rem] font-semibold text-white/70"
+            className="mt-2 rounded-full border border-gray-200 dark:border-white/20 px-5 py-2 text-[0.78rem] font-semibold text-gray-600 dark:text-white/70"
           >
             Try Again
           </button>
@@ -1615,9 +1615,9 @@ export function HomescreenSection({
               see the commented-out FeaturedRow above.
           <FeaturedRow events={allEvents} onOpen={gatedEventOpen} /> */}
           <div className="flex items-baseline justify-between gap-2">
-            <h2 className="font-[family:var(--font-display)] text-[1.4rem] text-white">Your Bevy</h2>
+            <h2 className="font-[family:var(--font-display)] text-[1.4rem] text-gray-900 dark:text-white">Your Bevy</h2>
             {showCityLabel && (
-              <span className="text-[0.7rem] text-white/40">Showing {location?.city_name}</span>
+              <span className="text-[0.7rem] text-gray-400 dark:text-white/40">Showing {location?.city_name}</span>
             )}
           </div>
           <div className="space-y-3">
@@ -1636,11 +1636,11 @@ export function HomescreenSection({
           <div ref={sentinelCallbackRef} className="h-4" />
           {loadingMore && (
             <div className="flex justify-center py-4">
-              <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-200 border-t-red-600 dark:border-white/20 dark:border-t-white" />
             </div>
           )}
           {!loadingMore && !hasMoreEvents && !hasMoreVenues && !hasMorePosts && (
-            <p className="py-6 text-center text-[0.78rem] text-white/35">
+            <p className="py-6 text-center text-[0.78rem] text-gray-400 dark:text-white/35">
               You&apos;ve reached the bottom — that&apos;s everything for now
             </p>
           )}

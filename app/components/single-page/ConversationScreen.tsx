@@ -609,10 +609,10 @@ export function ConversationScreen({
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[url('/bg.png')] bg-cover bg-center">
+      <main className="flex min-h-screen items-center justify-center bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
         <ScrollUnlock />
-        <div className="pointer-events-none fixed inset-0 bg-black/60" />
-        <div className="relative z-10 h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+        <div className="pointer-events-none fixed inset-0 z-0 hidden bg-black/60 dark:block" />
+        <div className="relative z-10 h-10 w-10 animate-spin rounded-full border-2 border-gray-200 border-t-red-600 dark:border-white/20 dark:border-t-white" />
       </main>
     );
   }
@@ -621,14 +621,14 @@ export function ConversationScreen({
   // no messages to show, so offer the way out instead of an empty thread.
   if (accessDenied) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[url('/bg.png')] bg-cover bg-center">
+      <main className="flex min-h-screen items-center justify-center bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
         <ScrollUnlock />
-        <div className="pointer-events-none fixed inset-0 bg-black/60" />
+        <div className="pointer-events-none fixed inset-0 z-0 hidden bg-black/60 dark:block" />
         <div className="relative z-10 mx-auto flex max-w-xs flex-col items-center gap-4 px-6 text-center">
-          <p className="text-[0.9rem] font-semibold text-white">
+          <p className="text-[0.9rem] font-semibold text-gray-900 dark:text-white">
             This conversation isn&apos;t available
           </p>
-          <p className="text-[0.8rem] text-white/50">
+          <p className="text-[0.8rem] text-gray-500 dark:text-white/50">
             You don&apos;t have access to it.
           </p>
           <button
@@ -644,18 +644,18 @@ export function ConversationScreen({
   }
 
   return (
-    <main className="flex min-h-screen flex-col bg-[url('/bg.png')] bg-cover bg-center">
+    <main className="flex min-h-screen flex-col bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
       <ScrollUnlock />
-      <div className="pointer-events-none fixed inset-0 bg-black/60" />
+      <div className="pointer-events-none fixed inset-0 z-0 hidden bg-black/60 dark:block" />
 
       <div className="relative z-10 mx-auto flex h-screen w-full max-w-md flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-white/10 px-4 pb-4 pt-14">
+        <div className="flex items-center justify-between border-b border-gray-200 px-4 pb-4 pt-14 dark:border-white/10">
           <button
             type="button"
             aria-label="Back"
             onClick={onBack}
-            className="flex h-9 w-9 flex-none items-center justify-center rounded-full text-white hover:bg-white/10"
+            className="flex h-9 w-9 flex-none items-center justify-center rounded-full text-gray-700 hover:bg-gray-100 dark:text-white dark:hover:bg-white/10"
           >
             <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M19 12H5m0 0 6-6m-6 6 6 6" />
@@ -672,7 +672,7 @@ export function ConversationScreen({
                 {(counterpartName ?? (isProducerOwnerReplying ? "CU" : "?")).slice(0, 2).toUpperCase()}
               </div>
             )}
-            <h1 className="truncate text-[0.95rem] font-bold text-white">
+            <h1 className="truncate text-[0.95rem] font-bold text-gray-900 dark:text-white">
               {counterpartName ?? (isProducerOwnerReplying ? "Customer" : "Conversation")}
             </h1>
           </div>
@@ -681,7 +681,7 @@ export function ConversationScreen({
             type="button"
             aria-label="More options"
             onClick={() => setShowMenu((v) => !v)}
-            className="flex h-9 w-9 flex-none items-center justify-center rounded-full text-white hover:bg-white/10"
+            className="flex h-9 w-9 flex-none items-center justify-center rounded-full text-gray-700 hover:bg-gray-100 dark:text-white dark:hover:bg-white/10"
           >
             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
               <circle cx="12" cy="5" r="1.6" />
@@ -700,12 +700,12 @@ export function ConversationScreen({
             />
             <div
               ref={menuRef}
-              className="absolute right-4 top-[4.2rem] z-30 w-48 overflow-hidden rounded-xl border border-white/10 bg-black/90 text-sm text-white shadow-xl"
+              className="absolute right-4 top-[4.2rem] z-30 w-48 overflow-hidden rounded-xl border border-gray-200 bg-white text-sm text-gray-800 shadow-xl dark:border-white/10 dark:bg-black/90 dark:text-white"
             >
             <button
               type="button"
               onClick={handleToggleBlock}
-              className="block w-full px-4 py-3 text-left hover:bg-white/10"
+              className="block w-full px-4 py-3 text-left hover:bg-gray-100 dark:hover:bg-white/10"
             >
               {isBlocked ? "Unblock" : "Block"}
             </button>
@@ -715,7 +715,7 @@ export function ConversationScreen({
                 setShowMenu(false);
                 setShowReportPicker(true);
               }}
-              className="block w-full px-4 py-3 text-left text-red-400 hover:bg-white/10"
+              className="block w-full px-4 py-3 text-left text-red-600 hover:bg-gray-100 dark:text-red-400 dark:hover:bg-white/10"
             >
               Report
             </button>
@@ -725,14 +725,14 @@ export function ConversationScreen({
 
         {showReportPicker ? (
           <div
-            className="absolute inset-0 z-40 flex items-end justify-center bg-black/60 sm:items-center"
+            className="absolute inset-0 z-40 flex items-end justify-center bg-black/40 sm:items-center dark:bg-black/60"
             onClick={() => setShowReportPicker(false)}
           >
             <div
-              className="w-full max-w-md rounded-t-2xl border border-white/10 bg-[#1a0a0a] p-4 sm:rounded-2xl"
+              className="w-full max-w-md rounded-t-2xl border border-gray-200 bg-white p-4 sm:rounded-2xl dark:border-white/10 dark:bg-[#1a0a0a]"
               onClick={(e) => e.stopPropagation()}
             >
-              <p className="mb-3 text-sm font-semibold text-white">Why are you reporting this person?</p>
+              <p className="mb-3 text-sm font-semibold text-gray-900 dark:text-white">Why are you reporting this person?</p>
               <div className="flex flex-col gap-1">
                 {(["spam", "inappropriate", "false_info", "harassment", "hate_speech", "other"] as const).map(
                   (reason) => (
@@ -740,7 +740,7 @@ export function ConversationScreen({
                       key={reason}
                       type="button"
                       onClick={() => handleReport(reason)}
-                      className="rounded-lg px-3 py-2 text-left text-sm text-white/85 hover:bg-white/10"
+                      className="rounded-lg px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-white/85 dark:hover:bg-white/10"
                     >
                       {reason.replace("_", " ")}
                     </button>
@@ -750,7 +750,7 @@ export function ConversationScreen({
               <button
                 type="button"
                 onClick={() => setShowReportPicker(false)}
-                className="mt-2 w-full rounded-lg px-3 py-2 text-center text-sm text-white/50 hover:bg-white/10"
+                className="mt-2 w-full rounded-lg px-3 py-2 text-center text-sm text-gray-500 hover:bg-gray-100 dark:text-white/50 dark:hover:bg-white/10"
               >
                 Cancel
               </button>
@@ -759,7 +759,7 @@ export function ConversationScreen({
         ) : null}
 
         {actionMessage ? (
-          <div className="border-b border-white/10 bg-white/5 px-4 py-2 text-center text-[0.75rem] text-white/70">
+          <div className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-center text-[0.75rem] text-gray-600 dark:border-white/10 dark:bg-white/5 dark:text-white/70">
             {actionMessage}
           </div>
         ) : null}
@@ -772,12 +772,12 @@ export function ConversationScreen({
         >
           {loadingOlder ? (
             <div className="flex justify-center py-2">
-              <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-200 border-t-red-600 dark:border-white/20 dark:border-t-white" />
             </div>
           ) : null}
           {messages.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center text-center">
-              <p className="text-[0.85rem] text-white/40">No messages yet. Say hi!</p>
+              <p className="text-[0.85rem] text-gray-400 dark:text-white/40">No messages yet. Say hi!</p>
             </div>
           ) : (
             messages.map((message, i) => {
@@ -789,7 +789,7 @@ export function ConversationScreen({
                 <Fragment key={message.id}>
                   {showDay ? (
                     <div className="flex justify-center py-2">
-                      <span className="rounded-full bg-black/40 px-3 py-1 text-[0.62rem] font-medium text-white/50">
+                      <span className="rounded-full bg-gray-200/80 px-3 py-1 text-[0.62rem] font-medium text-gray-600 dark:bg-black/40 dark:text-white/50">
                         {dayLabel(toMs(message.created_at))}
                       </span>
                     </div>
@@ -797,17 +797,19 @@ export function ConversationScreen({
                   <div className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
                     <div
                       className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-[0.85rem] leading-snug ${
-                        isMine ? "bg-red-600 text-white" : "bg-white/10 text-white/90"
+                        isMine
+                          ? "bg-red-600 text-white"
+                          : "bg-gray-100 text-gray-800 dark:bg-white/10 dark:text-white/90"
                       } ${message.failed ? "ring-1 ring-red-400/60" : ""}`}
                     >
                       <p className="whitespace-pre-wrap break-words">{message.message_text}</p>
                       <p
                         className={`mt-1 flex items-center justify-end gap-1 text-[0.62rem] ${
-                          isMine ? "text-white/70" : "text-white/40"
+                          isMine ? "text-white/70" : "text-gray-500 dark:text-white/40"
                         }`}
                       >
                         {message.failed ? (
-                          <span className="text-red-300">
+                          <span className="text-red-600 dark:text-red-300">
                             {message.blocked ? "Not delivered" : "Failed — tap Send to retry"}
                           </span>
                         ) : message.pending ? (
@@ -825,17 +827,17 @@ export function ConversationScreen({
         </div>
 
         {error ? (
-          <p className="px-4 pb-2 text-center text-[0.78rem] text-red-400">{error}</p>
+          <p className="px-4 pb-2 text-center text-[0.78rem] text-red-600 dark:text-red-400">{error}</p>
         ) : null}
 
         {/* Composer */}
-        <div className="border-t border-white/10 px-4 py-3">
+        <div className="border-t border-gray-200 px-4 py-3 dark:border-white/10">
           {isBlocked ? (
-            <p className="py-2 text-center text-[0.78rem] text-white/40">
+            <p className="py-2 text-center text-[0.78rem] text-gray-400 dark:text-white/40">
               You&apos;ve blocked this person. Unblock to send messages.
             </p>
           ) : blockedByOther ? (
-            <p className="py-2 text-center text-[0.78rem] text-white/40">
+            <p className="py-2 text-center text-[0.78rem] text-gray-400 dark:text-white/40">
               You can&apos;t send messages to this person right now.
             </p>
           ) : (
@@ -865,7 +867,7 @@ export function ConversationScreen({
                 }}
                 placeholder="Message"
                 style={{ fontSize: "16px" }}
-                className="min-w-0 flex-1 resize-none rounded-2xl border border-white/15 bg-black/25 px-4 py-2.5 text-white placeholder:text-white/35 focus:border-white/30 focus:outline-none"
+                className="min-w-0 flex-1 resize-none rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-gray-900 placeholder:text-gray-400 focus:border-red-400 focus:outline-none dark:border-white/15 dark:bg-black/25 dark:text-white dark:placeholder:text-white/35 dark:focus:border-white/30"
               />
               <button
                 type="submit"

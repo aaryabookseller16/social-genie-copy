@@ -233,39 +233,39 @@ export function MessagesScreen({ account, onBack, onOpenConversation }: Props) {
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[url('/bg.png')] bg-cover bg-center">
+      <main className="flex min-h-screen items-center justify-center bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
         <ScrollUnlock />
-        <div className="pointer-events-none fixed inset-0 bg-black/60" />
-        <div className="relative z-10 h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+        <div className="pointer-events-none fixed inset-0 z-0 hidden bg-black/60 dark:block" />
+        <div className="relative z-10 h-10 w-10 animate-spin rounded-full border-2 border-gray-200 border-t-red-600 dark:border-white/20 dark:border-t-white" />
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[url('/bg.png')] bg-cover bg-center">
+    <main className="min-h-screen bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
       <ScrollUnlock />
-      <div className="pointer-events-none fixed inset-0 bg-black/60" />
+      <div className="pointer-events-none fixed inset-0 z-0 hidden bg-black/60 dark:block" />
 
       <div className="relative z-10 mx-auto max-w-md">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-white/10 px-4 pb-4 pt-14">
+        <div className="flex items-center justify-between border-b border-gray-200 px-4 pb-4 pt-14 dark:border-white/10">
           <button
             type="button"
             aria-label="Back"
             onClick={onBack}
-            className="flex h-9 w-9 items-center justify-center rounded-full text-white hover:bg-white/10"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-gray-700 hover:bg-gray-100 dark:text-white dark:hover:bg-white/10"
           >
             <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M19 12H5m0 0 6-6m-6 6 6 6" />
             </svg>
           </button>
-          <h1 className="text-lg font-bold text-white">Messages</h1>
+          <h1 className="text-lg font-bold text-gray-900 dark:text-white">Messages</h1>
           <button
             type="button"
             aria-label="Refresh"
             onClick={handleRefresh}
             disabled={refreshing}
-            className="flex h-9 w-9 items-center justify-center rounded-full text-white hover:bg-white/10 disabled:opacity-50"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:text-white dark:hover:bg-white/10"
           >
             <svg
               viewBox="0 0 24 24"
@@ -285,13 +285,13 @@ export function MessagesScreen({ account, onBack, onOpenConversation }: Props) {
         {/* List */}
         {conversations.length === 0 ? (
           <div className="flex flex-col items-center justify-center px-4 py-20 text-center">
-            <svg viewBox="0 0 24 24" className="mb-4 h-10 w-10 text-white/20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg viewBox="0 0 24 24" className="mb-4 h-10 w-10 text-gray-300 dark:text-white/20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
             </svg>
-            <p className="text-[0.9rem] text-white/40">No conversations yet</p>
+            <p className="text-[0.9rem] text-gray-400 dark:text-white/40">No conversations yet</p>
           </div>
         ) : (
-          <div className="divide-y divide-white/[0.08]">
+          <div className="divide-y divide-gray-200 dark:divide-white/[0.08]">
             {conversations.map((conversation) => (
               <button
                 key={`${conversation.threadType}-${conversation.threadId}`}
@@ -306,24 +306,26 @@ export function MessagesScreen({ account, onBack, onOpenConversation }: Props) {
                     viewerRole: conversation.viewerRole,
                   })
                 }
-                className={`flex w-full items-center gap-3 px-4 py-4 text-left transition hover:bg-white/5 ${
-                  conversation.unreadCount > 0 ? "bg-white/5" : "bg-transparent"
+                className={`flex w-full items-center gap-3 px-4 py-4 text-left transition hover:bg-gray-50 dark:hover:bg-white/5 ${
+                  conversation.unreadCount > 0
+                    ? "bg-red-50/70 dark:bg-white/5"
+                    : "bg-transparent"
                 }`}
               >
                 <ConversationAvatar conversation={conversation} />
 
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[0.9rem] font-semibold leading-snug text-white">
+                  <p className="truncate text-[0.9rem] font-semibold leading-snug text-gray-900 dark:text-white">
                     {conversation.counterpartName ??
                       (conversation.viewerRole === "producer" ? "Customer" : "Conversation")}
                   </p>
-                  <p className="mt-0.5 truncate text-[0.78rem] leading-snug text-white/60">
+                  <p className="mt-0.5 truncate text-[0.78rem] leading-snug text-gray-600 dark:text-white/60">
                     {conversation.lastMessagePreview || "Start the conversation"}
                   </p>
                 </div>
 
                 <div className="flex flex-none flex-col items-end gap-1">
-                  <p className="text-[0.68rem] text-white/35">{timeAgo(conversation.lastMessageAt)}</p>
+                  <p className="text-[0.68rem] text-gray-400 dark:text-white/35">{timeAgo(conversation.lastMessageAt)}</p>
                   {conversation.unreadCount > 0 && (
                     <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[0.6rem] font-bold leading-none text-white">
                       {conversation.unreadCount > 9 ? "9+" : conversation.unreadCount}

@@ -3,6 +3,7 @@ import { type GenieVenue } from "./genieTypes";
 import {
   clearConsumerSession,
   readAuthToken,
+  readConsumerAccount,
   writeAuthToken,
   writeConsumerAccount,
   writeSavedVenueIds,
@@ -495,10 +496,20 @@ export async function createSubscriptionCheckout(payload: {
   }
 
   const externalUserId = readExternalUserId();
+  // checkout_vibee resolves the account by email first and only falls back to
+  // external_user_id. Signup mints a fresh external_user_id, so the cached
+  // guest-session id points at a different, email-less row — the email is the
+  // only key that reaches the record checkout can actually charge. Resolve it
+  // here so no call site can omit it.
+  const email = payload.email || readConsumerAccount()?.email || "";
+  if (!email) {
+    throw new Error("Please sign in to upgrade.");
+  }
+
   return apiJson<{ checkout_url: string }>("/api/subscription/create", {
     method: "POST",
     body: JSON.stringify({
-      email: payload.email || undefined,
+      email,
       external_user_id: payload.external_user_id || externalUserId || undefined,
       success_url: payload.success_url,
       cancel_url: payload.cancel_url,

@@ -4,7 +4,6 @@ import { type FormEvent, type RefObject, useEffect, useState } from "react";
 
 import { trackEvent } from "@/app/lib/analytics";
 import { analyticsEvents } from "@/app/lib/analyticsEvents";
-import { type RuntimeConfig } from "@/app/lib/genieTypes";
 import { type ConsumerAccount } from "@/app/lib/localState";
 import {
   createSubscriptionCheckout,
@@ -13,7 +12,7 @@ import {
   updateUserProfile,
 } from "@/app/lib/publicApiClient";
 import ImageUploader from "@/app/components/ImageUploader";
-import { ActionButton, PlanCards } from "./ui";
+import { ActionButton } from "./ui";
 
 // "vibee" is gone as a signup mode — the tier is chosen after verification on
 // the plan chooser, so signup only ever creates a free account first.
@@ -48,13 +47,11 @@ export function AccountSection({
   sectionRef,
   visible,
   account,
-  config,
   onDismiss,
   onOpenVendor,
   onOpenOffers,
   onOpenPreferences,
   onAccountChange,
-  onModeChange,
   onAdvanceOnboarding,
   authError,
   onAuthErrorShown,
@@ -62,13 +59,11 @@ export function AccountSection({
   sectionRef: RefObject<HTMLElement | null>;
   visible: boolean;
   account: ConsumerAccount | null;
-  config: RuntimeConfig;
   onDismiss: () => void;
   onOpenVendor: () => void;
   onOpenOffers: () => void;
   onOpenPreferences: () => void;
   onAccountChange: (account: ConsumerAccount, message: string) => void;
-  onModeChange?: (mode: AccountScreenMode) => void;
   // Free signup sends a magic link but does not wait for it — advance the
   // onboarding wizard (Step 2) on the guest session instead of dead-ending.
   onAdvanceOnboarding?: (email: string) => void;
@@ -78,6 +73,11 @@ export function AccountSection({
   onAuthErrorShown?: () => void;
 }) {
   const [mode, setMode] = useState<AccountScreenMode>("login");
+  // Modes the user passed through to reach `mode`, so the back arrow can retrace
+  // them. Empty means this screen was entered directly (a gated action elsewhere
+  // in the app navigated here), and back has to leave the account screen
+  // entirely via onDismiss.
+  const [modeHistory, setModeHistory] = useState<AccountScreenMode[]>([]);
   const [form, setForm] = useState<ConsumerFormState>(createEmptyConsumerForm());
   const [message, setMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -146,12 +146,9 @@ export function AccountSection({
   }
 
   useEffect(() => {
-    onModeChange?.(mode);
-  }, [mode, onModeChange]);
-
-  useEffect(() => {
     if (!visible) {
       setMode("login");
+      setModeHistory([]);
       setMessage(null);
       setForm(createEmptyConsumerForm());
     }
@@ -171,16 +168,28 @@ export function AccountSection({
     return null;
   }
 
-  const openFreeSignup = () => {
-    setMode("free");
+  const openMode = (next: AccountScreenMode) => {
+    setModeHistory((prev) => [...prev, mode]);
+    setMode(next);
     setForm(createEmptyConsumerForm());
     setMessage(null);
   };
 
-  const openLogin = () => {
-    setMode("login");
-    setForm(createEmptyConsumerForm());
-    setMessage(null);
+  const openFreeSignup = () => openMode("free");
+
+  const openLogin = () => openMode("login");
+
+  // Retrace an in-screen hop (login ⇄ signup) if there was one; otherwise hand
+  // back to the caller, which pops the app's own screen history and returns the
+  // user to the event/offer/feed item they came from.
+  const goBackFromAuthForm = () => {
+    if (modeHistory.length > 0) {
+      setModeHistory((prev) => prev.slice(0, -1));
+      setMode(modeHistory[modeHistory.length - 1]);
+      setMessage(null);
+      return;
+    }
+    onDismiss();
   };
 
   const submitLogin = async (event: FormEvent<HTMLFormElement>) => {
@@ -292,7 +301,9 @@ export function AccountSection({
     }
   };
 
-  if (!account && mode === "login") {
+  // Any non-"free" mode falls through to login: it is the only entry point for
+  // a logged-out visitor now that the standalone signup pitch is gone.
+  if (!account && mode !== "free") {
     return (
       <section
         ref={sectionRef}
@@ -300,7 +311,7 @@ export function AccountSection({
       >
         <button
           type="button"
-          onClick={() => setMode(null)}
+          onClick={goBackFromAuthForm}
           className="-ml-1 flex h-9 w-9 flex-none items-center justify-center text-gray-600 dark:text-white/82"
           aria-label="Go back"
         >
@@ -367,7 +378,7 @@ export function AccountSection({
       >
         <button
           type="button"
-          onClick={() => setMode(null)}
+          onClick={goBackFromAuthForm}
           className="-ml-1 flex h-9 w-9 flex-none items-center justify-center text-gray-600 dark:text-white/82"
           aria-label="Go back"
         >
@@ -476,98 +487,18 @@ export function AccountSection({
     );
   }
 
+  // Unreachable: the two branches above cover every logged-out mode. Kept so the
+  // profile view below can rely on `account` being present.
+  if (!account) {
+    return null;
+  }
+
   return (
     <section
       ref={sectionRef}
       className="relative min-h-[calc(100dvh-1.5rem)] bg-transparent px-1 pb-[calc(env(safe-area-inset-bottom,0px)+5.75rem)] pt-4 sm:px-2"
     >
-      {!account ? (
-        <>
-          <div className="relative mx-auto w-full max-w-[23rem]">
-            <p className="mb-6 text-center text-[15px] leading-relaxed text-gray-600 dark:text-white/75">
-              Sign up. Let&apos;s get you connected
-              <br />
-              to your vibe!
-              <br />
-              Already signed up?{" "}
-              <button
-                type="button"
-                onClick={openLogin}
-                className="font-semibold text-red-600 dark:text-[#ff7b7b]"
-              >
-                Login!
-              </button>
-            </p>
-
-            {/* Marketing only — the tier is committed after verification on the
-                plan chooser, so both cards open the same signup form. */}
-            <PlanCards
-              freeBenefits={config.freeBenefits}
-              vibeeBenefits={config.vibeeBenefits}
-              vibeeMonthlyPrice={config.vibeeMonthlyPrice}
-              onSelectFree={openFreeSignup}
-              onSelectVibee={openFreeSignup}
-            />
-
-            <div className="mt-8 space-y-3.5">
-              <p className="pt-1 text-center text-[17px] font-semibold text-gray-900 dark:text-[#ff7b7b]">
-                Are you a venue or event host?
-              </p>
-
-              <button
-                type="button"
-                onClick={() => {
-                  trackEvent(analyticsEvents.vendorSignupCtaTapped);
-                  onOpenVendor();
-                }}
-                className="group relative flex w-full items-center justify-between rounded-[12px] border border-red-500 bg-red-600 px-3.5 py-2.5 text-left shadow-sm"
-              >
-                <span className="relative flex items-center gap-2.5">
-                  <span className="inline-flex h-[22px] w-[22px] items-center justify-center rounded-full border border-white/50 bg-white/20">
-                    <svg
-                      viewBox="0 0 16 16"
-                      className="h-3 w-3 text-white"
-                      fill="currentColor"
-                    >
-                      <path d="M9.23 7.16c-.89-.27-1.4-.52-1.4-1.08 0-.57.52-.95 1.33-.95.88 0 1.45.31 1.95.76l.91-1.24c-.57-.5-1.29-.84-2.33-.95V2.5h-1.3v1.21c-1.5.2-2.54 1.13-2.54 2.48 0 1.57 1.2 2.16 2.72 2.6.95.27 1.52.56 1.52 1.18 0 .58-.52 1.02-1.46 1.02-1.02 0-1.87-.43-2.48-1.01l-.93 1.17c.72.72 1.7 1.19 2.88 1.33V13.5h1.3v-1.09c1.7-.2 2.74-1.2 2.74-2.58 0-1.56-1.13-2.18-2.91-2.67" />
-                    </svg>
-                  </span>
-                  <span className="text-[17px] font-semibold text-white">
-                    Sign Up as a Vendor
-                  </span>
-                </span>
-                <svg
-                  viewBox="0 0 16 16"
-                  className="relative h-4 w-4 text-white"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="m6 3.5 4 4-4 4" />
-                </svg>
-              </button>
-
-              <p className="pt-1 text-center text-[13px] leading-relaxed text-gray-600 dark:text-white/40">
-                By signing up, you agree to our{" "}
-                <span className="text-red-600 underline underline-offset-2 dark:text-[#ff7b7b]">Privacy Policy</span>{" "}
-                and{" "}
-                <span className="text-red-600 underline underline-offset-2 dark:text-[#ff7b7b]">Terms</span>
-                <br />
-                Already signed up?{" "}
-                <button
-                  type="button"
-                  onClick={openLogin}
-                  className="text-red-600 underline underline-offset-2 dark:text-[#ff7b7b]"
-                >
-                  Login
-                </button>
-              </p>
-            </div>
-          </div>
-        </>
-      ) : editingProfile ? (
+      {editingProfile ? (
         <>
           <h2 className="text-center text-[1.65rem] font-semibold leading-tight text-gray-900 dark:text-white">
             Edit your profile

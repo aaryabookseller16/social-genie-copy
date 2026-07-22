@@ -4,10 +4,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import {
-  AccountSection,
-  type AccountScreenMode,
-} from "@/app/components/single-page/AccountSection";
+import { AccountSection } from "@/app/components/single-page/AccountSection";
 import { DrawerMenu, type DrawerMenuActionId } from "@/app/components/single-page/DrawerMenu";
 import { RoleSwitcherDialog } from "@/app/components/single-page/RoleSwitcherDialog";
 import { LoginSuccessDialog } from "@/app/components/single-page/LoginSuccessDialog";
@@ -613,8 +610,6 @@ const [trialSuccess, setTrialSuccess] = useState(false);
   const [onboardingRoles, setOnboardingRoles] = useState<OnboardingRole[]>([]);
   const [verifyGateOpen, setVerifyGateOpen] = useState(false);
   const [mapPreviewFailed, setMapPreviewFailed] = useState(false);
-  const [accountScreenMode, setAccountScreenMode] =
-    useState<AccountScreenMode>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [contactForm, setContactForm] = useState({
@@ -2973,11 +2968,11 @@ const [trialSuccess, setTrialSuccess] = useState(false);
         goBack("home");
         break;
       case "account":
-        if (accountScreenMode) {
-          setAccountScreenMode(null);
-        } else {
-          dismissAccount();
-        }
+        // `accountScreenMode` only mirrors AccountSection's internal mode for
+        // observers — writing to it never changed what that section rendered, so
+        // the old branch here swallowed the first back press. AccountSection now
+        // handles its own in-screen back; at this level back always leaves.
+        dismissAccount();
         break;
         case "event-detail":
   setSelectedEventSlug(null);
@@ -3006,7 +3001,6 @@ case "vibbee-trial":
         goBack("home");
     }
   }, [
-    accountScreenMode,
     activeScreen,
     detailReturnScreen,
     dismissAccount,
@@ -3488,7 +3482,7 @@ activeScreen === "vibbee-trial" ||
                             href={mapsUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="block w-full rounded-[18px] border border-white/30 bg-white/10 px-4 py-3 text-center text-sm font-semibold text-white backdrop-blur-sm hover:bg-white/20"
+                            className="block w-full rounded-[18px] border border-gray-300 bg-white px-4 py-3 text-center text-sm font-semibold text-gray-800 backdrop-blur-sm hover:bg-gray-50 dark:border-white/30 dark:bg-white/10 dark:text-white dark:hover:bg-white/20"
                           >
                             Search on Google Maps
                           </a>
@@ -3497,7 +3491,7 @@ activeScreen === "vibbee-trial" ||
                     );
                   })()
                 ) : (
-                  <div className="rounded-[22px] border border-white/15 bg-black/30 px-4 py-3 text-sm leading-6 text-white/80 backdrop-blur-sm">
+                  <div className="rounded-[22px] border border-gray-200 bg-white/90 px-4 py-3 text-sm leading-6 text-gray-700 backdrop-blur-sm dark:border-white/15 dark:bg-black/30 dark:text-white/80">
                     {nonStructuredResponse.response_mode === "city_missing"
                       ? "Tell Genie your city and preferences so recommendations can stay local."
                       : nonStructuredResponse.reply}
@@ -3510,7 +3504,7 @@ activeScreen === "vibbee-trial" ||
                       <button
                         type="button"
                         onClick={() => navigateTo("preferences")}
-                        className="w-full rounded-[18px] border border-white/30 bg-white/10 px-4 py-3 text-sm font-semibold text-white backdrop-blur-sm hover:bg-white/20"
+                        className="w-full rounded-[18px] border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-800 backdrop-blur-sm hover:bg-gray-50 dark:border-white/30 dark:bg-white/10 dark:text-white dark:hover:bg-white/20"
                       >
                         Set my preferences
                       </button>
@@ -3526,7 +3520,7 @@ activeScreen === "vibbee-trial" ||
                 )}
               </div>
             ) : statusMessage && currentResponseMode !== "structured_results" ? (
-              <div className="mt-5 rounded-[22px] border border-white/15 bg-black/30 px-4 py-3 text-sm leading-6 text-white/80 backdrop-blur-sm">
+              <div className="mt-5 rounded-[22px] border border-gray-200 bg-white/90 px-4 py-3 text-sm leading-6 text-gray-700 backdrop-blur-sm dark:border-white/15 dark:bg-black/30 dark:text-white/80">
                 {statusMessage}
               </div>
             ) : null}
@@ -4359,7 +4353,7 @@ activeScreen === "vibbee-trial" ||
             </div>
 
             {!account ? (
-              <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-5 text-sm text-white/70">
+              <div className="rounded-[20px] border border-gray-200 bg-white/80 px-4 py-5 text-sm text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/70">
                 Sign up or log in to save venues and keep them here.
               </div>
             ) : savedVenues.length ? (
@@ -4369,7 +4363,7 @@ activeScreen === "vibbee-trial" ||
                     key={`saved-${venue.id}`}
                     type="button"
                     onClick={() => { selectVenue(venue, index, "saved"); logVenueInteraction("tap", Number(venue.id), "saved"); }}
-                    className="overflow-hidden rounded-[18px] border border-white/10 bg-black/30 text-left"
+                    className="overflow-hidden rounded-[18px] border border-gray-200 bg-white/90 text-left dark:border-white/10 dark:bg-black/30"
                   >
                     <div className="relative h-44 w-full">
                       <Image
@@ -4401,7 +4395,7 @@ activeScreen === "vibbee-trial" ||
                         <p className="line-clamp-1 text-[0.88rem] font-bold text-white">
                           {venue.venue_name}
                         </p>
-                        <p className="mt-0.5 truncate text-[0.68rem] text-white/65">
+                        <p className="mt-0.5 truncate text-[0.68rem] text-gray-500 dark:text-white/65">
                           {getVenueHeadlineShort(venue)}
                           {(() => {
                             const d = getVenueDistance(venue, index, userCoordsLL);
@@ -4415,7 +4409,7 @@ activeScreen === "vibbee-trial" ||
                       {buildVenueTags(venue).slice(0, 2).map((tag) => (
                         <span
                           key={tag}
-                          className="rounded-full border border-white/15 bg-white/8 px-2.5 py-0.5 text-[0.62rem] font-medium text-white/75"
+                          className="rounded-full border border-gray-200 bg-gray-100 px-2.5 py-0.5 text-[0.62rem] font-medium text-gray-600 dark:border-white/15 dark:bg-white/8 dark:text-white/75"
                         >
                           {tag}
                         </span>
@@ -4425,7 +4419,7 @@ activeScreen === "vibbee-trial" ||
                 ))}
               </div>
             ) : (
-              <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-5 text-sm text-white/70">
+              <div className="rounded-[20px] border border-gray-200 bg-white/80 px-4 py-5 text-sm text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/70">
                 You have not saved any spots yet. Save one from a Genie result and it will appear here.
               </div>
             )}
@@ -4561,11 +4555,11 @@ activeScreen === "vibbee-trial" ||
 
               {/* States */}
               {!account ? (
-                <div className="rounded-[20px] border border-[#E7070380] bg-black/20 px-4 py-5 text-sm text-white/72">
+                <div className="rounded-[20px] border border-[#E7070380] bg-white/80 px-4 py-5 text-sm text-gray-600 dark:bg-black/20 dark:text-white/72">
                   Sign in to view V.I.Bee offers.
                 </div>
               ) : offersLoading ? (
-                <div className="rounded-[20px] border border-[#E7070380] bg-black/20 px-4 py-5 text-sm text-white/72">
+                <div className="rounded-[20px] border border-[#E7070380] bg-white/80 px-4 py-5 text-sm text-gray-600 dark:bg-black/20 dark:text-white/72">
                   Loading offers...
                 </div>
               ) : offersError ? (
@@ -4654,7 +4648,7 @@ activeScreen === "vibbee-trial" ||
                   })}
                 </div>
               ) : (
-                <div className="rounded-[20px] border border-[#E7070380] bg-black/20 px-4 py-5 text-sm text-white/72">
+                <div className="rounded-[20px] border border-[#E7070380] bg-white/80 px-4 py-5 text-sm text-gray-600 dark:bg-black/20 dark:text-white/72">
                   No offers in this category right now. Check back soon.
                 </div>
               )}
@@ -4694,7 +4688,7 @@ activeScreen === "vibbee-trial" ||
                     Offer Detail
                   </h2>
                 </div>
-                <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-5 text-sm text-white/72">
+                <div className="rounded-[20px] border border-gray-200 bg-white/80 px-4 py-5 text-sm text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
                   Offer not available. Pick another from V.I.Bee Offers.
                 </div>
               </section>
@@ -5136,11 +5130,11 @@ activeScreen === "vibbee-trial" ||
               </div>
 
               {!account ? (
-                <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-5 text-sm text-white/72">
+                <div className="rounded-[20px] border border-gray-200 bg-white/80 px-4 py-5 text-sm text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
                   Sign in to view your redemption history.
                 </div>
               ) : redemptionsLoading ? (
-                <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-5 text-sm text-white/72">
+                <div className="rounded-[20px] border border-gray-200 bg-white/80 px-4 py-5 text-sm text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
                   Loading redemption history...
                 </div>
               ) : filtered.length ? (
@@ -5223,7 +5217,7 @@ activeScreen === "vibbee-trial" ||
                   })}
                 </div>
               ) : (
-                <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-5 text-sm text-white/72">
+                <div className="rounded-[20px] border border-gray-200 bg-white/80 px-4 py-5 text-sm text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-white/72">
                   {redemptionsFilter === "all"
                     ? "You have not redeemed any offers yet."
                     : `No ${redemptionsFilter} redemptions.`}
@@ -5387,9 +5381,7 @@ activeScreen === "vibbee-trial" ||
           sectionRef={accountRef}
           visible={activeScreen === "account"}
           account={account}
-          config={config}
           onDismiss={dismissAccount}
-          onModeChange={setAccountScreenMode}
           onOpenVendor={() => navigateTo("vendor")}
           onOpenOffers={() => navigateTo("offers")}
           onOpenPreferences={() => navigateTo("preferences")}
@@ -5402,7 +5394,6 @@ activeScreen === "vibbee-trial" ||
           onAccountChange={(nextAccount) => {
             setAccount(nextAccount);
             void hydrateAuthenticatedSession();
-            setAccountScreenMode(null);
             const pending = pendingReturnRef.current;
             if (pending) {
               pendingReturnRef.current = null;
