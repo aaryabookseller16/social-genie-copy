@@ -4,10 +4,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import {
-  AccountSection,
-  type AccountScreenMode,
-} from "@/app/components/single-page/AccountSection";
+import { AccountSection } from "@/app/components/single-page/AccountSection";
 import { DrawerMenu, type DrawerMenuActionId } from "@/app/components/single-page/DrawerMenu";
 import { RoleSwitcherDialog } from "@/app/components/single-page/RoleSwitcherDialog";
 import { LoginSuccessDialog } from "@/app/components/single-page/LoginSuccessDialog";
@@ -613,8 +610,6 @@ const [trialSuccess, setTrialSuccess] = useState(false);
   const [onboardingRoles, setOnboardingRoles] = useState<OnboardingRole[]>([]);
   const [verifyGateOpen, setVerifyGateOpen] = useState(false);
   const [mapPreviewFailed, setMapPreviewFailed] = useState(false);
-  const [accountScreenMode, setAccountScreenMode] =
-    useState<AccountScreenMode>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [contactForm, setContactForm] = useState({
@@ -2973,11 +2968,11 @@ const [trialSuccess, setTrialSuccess] = useState(false);
         goBack("home");
         break;
       case "account":
-        if (accountScreenMode) {
-          setAccountScreenMode(null);
-        } else {
-          dismissAccount();
-        }
+        // `accountScreenMode` only mirrors AccountSection's internal mode for
+        // observers — writing to it never changed what that section rendered, so
+        // the old branch here swallowed the first back press. AccountSection now
+        // handles its own in-screen back; at this level back always leaves.
+        dismissAccount();
         break;
         case "event-detail":
   setSelectedEventSlug(null);
@@ -3006,7 +3001,6 @@ case "vibbee-trial":
         goBack("home");
     }
   }, [
-    accountScreenMode,
     activeScreen,
     detailReturnScreen,
     dismissAccount,
@@ -5387,9 +5381,7 @@ activeScreen === "vibbee-trial" ||
           sectionRef={accountRef}
           visible={activeScreen === "account"}
           account={account}
-          config={config}
           onDismiss={dismissAccount}
-          onModeChange={setAccountScreenMode}
           onOpenVendor={() => navigateTo("vendor")}
           onOpenOffers={() => navigateTo("offers")}
           onOpenPreferences={() => navigateTo("preferences")}
@@ -5402,7 +5394,6 @@ activeScreen === "vibbee-trial" ||
           onAccountChange={(nextAccount) => {
             setAccount(nextAccount);
             void hydrateAuthenticatedSession();
-            setAccountScreenMode(null);
             const pending = pendingReturnRef.current;
             if (pending) {
               pendingReturnRef.current = null;
