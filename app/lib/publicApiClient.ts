@@ -72,13 +72,45 @@ export type VibeeOffer = {
   redemption_count?: number;
   redemption_limit?: number;
   vibee_only?: boolean;
-  // Optional venue context — populated by Xano when available,
-  // used for offer cards and venue detail linking.
+  /** The offer's own promo/flyer image on genie_offers. Rarely populated today. */
+  image_url?: string | null;
+  /** genie_venues FK. Distinct from vendor_id, which points at genie_vendor. */
+  venue_id?: number | null;
+  /**
+   * vendor_create_offer stores the discount and expiry in here rather than in
+   * top-level columns, so `discount_value` above is empty on vendor-authored
+   * offers. Read this first.
+   */
+  schedule_json?: {
+    discount_value?: string;
+    expiry_date?: number;
+    [key: string]: unknown;
+  } | null;
+
+  // Venue context, joined by Xano's vibee_offers as of the v1.5-dev deploy.
+  // NOTE: Xano sends empty strings / 0 / {} rather than null for "no data",
+  // so these must be normalized before use — see resolveOfferVenue().
   venue_name?: string;
+  /** Xano's field name. `venue_image` is the older alias, kept for callers. */
+  venue_image_url?: string;
   venue_image?: string;
   venue_neighborhood?: string;
   venue_rating?: number;
   venue_review_count?: number;
+  venue_address?: string;
+  venue_phone?: string;
+  venue_latitude?: number;
+  venue_longitude?: number;
+  venue_reservation_url?: string;
+  venue_hours_json?: Record<string, unknown> | null;
+  venue_is_open_now?: boolean;
+  venue_price_band?: string;
+  venue_energy_level?: string;
+  venue_crowd?: string;
+  venue_music?: string;
+  venue_patio?: string;
+  venue_hookah?: string;
+  venue_black_owned?: string;
   expires_at?: number | null;
 };
 

@@ -251,6 +251,103 @@ function isAlreadyRedeemedMessage(message: string) {
   );
 }
 
+/**
+ * Offers rarely resolve to a venue photo today (see the offer card), and every
+ * unresolved card previously landed on the same single JPEG. Spread them across
+ * the placeholder assets we ship, keyed on the offer id so a card keeps the same
+ * image between renders.
+ */
+const OFFER_FALLBACK_IMAGES = [
+  "/sample-venue-1.jpeg",
+  "/sample-venue-2.jpeg",
+  "/placeholder-venue.png",
+];
+
+function offerFallbackImage(offerId: number) {
+  const index = Math.abs(Number(offerId) || 0) % OFFER_FALLBACK_IMAGES.length;
+  return OFFER_FALLBACK_IMAGES[index];
+}
+
+/**
+ * Normalizes the venue block Xano joins onto each V.I.Bee offer.
+ *
+ * Xano returns column defaults rather than nulls for missing data — `""`, `0`,
+ * `{}`, `false`. Rendering those raw is actively wrong, not just ugly:
+ * `venue_rating: 0` would draw an empty five-star row on a venue with no
+ * reviews, `venue_is_open_now: false` would claim "Closed now" for a venue that
+ * simply has no hours on file, and `venue_latitude: 0` would drop a map pin in
+ * the Gulf of Guinea. Vendor-created venues (the only ones with live offers
+ * today) have almost none of this data, so the empty cases are the common path.
+ *
+ * `matchedVenue` is the locally-known venue, used as a fallback for anything the
+ * join didn't carry.
+ */
+function resolveOfferVenue(offer: VibeeOffer, matchedVenue?: GenieVenue | null) {
+  const str = (...values: Array<string | null | undefined>) => {
+    for (const value of values) {
+      const trimmed = value?.trim();
+      if (trimmed) return trimmed;
+    }
+    return null;
+  };
+  const num = (...values: Array<number | null | undefined>) => {
+    for (const value of values) {
+      if (typeof value === "number" && Number.isFinite(value) && value !== 0) {
+        return value;
+      }
+    }
+    return null;
+  };
+  // 0/0 is Xano's default for an unset coordinate, not a real location.
+  const latitude = num(offer.venue_latitude, matchedVenue?.latitude);
+  const longitude = num(offer.venue_longitude, matchedVenue?.longitude);
+  const hasHours =
+    !!offer.venue_hours_json && Object.keys(offer.venue_hours_json).length > 0;
+
+  return {
+    id: num(offer.venue_id, matchedVenue ? Number(matchedVenue.id) : null),
+    name: str(offer.venue_name, matchedVenue?.venue_name),
+    image: str(
+      offer.image_url,
+      offer.venue_image_url,
+      offer.venue_image,
+      matchedVenue?.image
+    ),
+    address: str(offer.venue_address, matchedVenue?.address),
+    phone: str(offer.venue_phone, matchedVenue?.phone),
+    neighborhood: str(
+      offer.venue_neighborhood,
+      matchedVenue?.neighborhood_text,
+      matchedVenue?.city
+    ),
+    rating: num(offer.venue_rating, matchedVenue?.google_rating),
+    reviewCount: num(
+      offer.venue_review_count,
+      matchedVenue?.google_user_ratings_total
+    ),
+    reservationUrl: str(offer.venue_reservation_url, matchedVenue?.reservation_url),
+    priceBand: str(offer.venue_price_band, matchedVenue?.price_band),
+    // Only meaningful alongside hours data; false on its own means "unknown".
+    isOpenNow: hasHours ? (offer.venue_is_open_now ?? null) : matchedVenue?.is_open_now ?? null,
+    latitude,
+    longitude,
+    hasLocation: latitude !== null && longitude !== null,
+  };
+}
+
+/** Vendor-authored offers keep the discount inside schedule_json, not a column. */
+function getOfferDiscount(offer: VibeeOffer) {
+  const value = offer.discount_value?.trim() || offer.schedule_json?.discount_value?.trim();
+  return value || null;
+}
+
+/** `expiry_date` is 0 when the vendor left it blank. */
+function getOfferExpiry(offer: VibeeOffer) {
+  const raw = offer.expires_at ?? offer.schedule_json?.expiry_date;
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw <= 0) return null;
+  return raw < 1_000_000_000_000 ? raw * 1000 : raw;
+}
+
 const socialTagOptions = {
   music_tags: [
     "R&B / Soul",
@@ -4583,16 +4680,18 @@ activeScreen === "vibbee-trial" ||
                       ...savedVenues,
                     ];
                     const matchedVenue = knownVenues.find(
-                      (v) => Number(v.id) === offer.vendor_id
+                      (v) =>
+                        Number(v.id) === Number(offer.venue_id) ||
+                        (!offer.venue_id && Number(v.id) === offer.vendor_id)
                     );
-                    const venueName =
-                      offer.venue_name ||
-                      matchedVenue?.venue_name ||
-                      `Venue #${offer.vendor_id}`;
-                    const venueImage =
-                      offer.venue_image ||
-                      matchedVenue?.image ||
-                      "/sample-venue-1.jpeg";
+                    // The offer's own title leads — it's the one reliably
+                    // populated field. The venue name is a subtitle, shown only
+                    // when the Xano join actually resolved one.
+                    const venue = resolveOfferVenue(offer, matchedVenue);
+                    const venueName = venue.name;
+                    const offerTitle = offer.title?.trim() || venueName || "V.I.Bee Offer";
+                    const venueImage = venue.image || offerFallbackImage(offer.id);
+                    const discountValue = getOfferDiscount(offer);
                     return (
                       <button
                         key={offer.id}
@@ -4610,19 +4709,24 @@ activeScreen === "vibbee-trial" ||
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={venueImage}
-                          alt={venueName}
+                          alt={offerTitle}
                           className="h-[4.5rem] w-[4.5rem] flex-none rounded-[14px] object-cover"
                         />
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-[1rem] font-semibold text-gray-900 dark:text-white">
-                            {venueName}
+                            {offerTitle}
                           </p>
+                          {venueName ? (
+                            <p className="truncate text-[0.8rem] text-gray-500 dark:text-white/60">
+                              {venueName}
+                            </p>
+                          ) : null}
                           <span className="mt-1 inline-flex rounded-full bg-red-600 px-2.5 py-0.5 text-[0.66rem] font-bold uppercase tracking-wide text-white">
                             {label}
                           </span>
-                          {offer.discount_value ? (
+                          {discountValue ? (
                             <p className="mt-1 truncate text-[0.82rem] font-semibold text-[#e8900a]">
-                              {offer.discount_value}
+                              {discountValue}
                             </p>
                           ) : null}
                           {offer.description ? (
@@ -4714,27 +4818,47 @@ activeScreen === "vibbee-trial" ||
             ...(response?.more_nearby ?? []),
             ...savedVenues,
           ];
+          // Match on venue_id — vendor_id points at genie_vendor, a different
+          // ID space, so the old comparison never matched.
           const matchedVenue = knownVenues.find(
-            (v) => Number(v.id) === offer.vendor_id
+            (v) =>
+              Number(v.id) === Number(offer.venue_id) ||
+              (!offer.venue_id && Number(v.id) === offer.vendor_id)
           );
+          const venue = resolveOfferVenue(offer, matchedVenue);
+          // The offer's own title is the headline: it's the one field that's
+          // reliably populated, and it's what the user tapped.
+          const resolvedVenueName = venue.name;
           const venueName =
-            offer.venue_name || matchedVenue?.venue_name || `Venue #${offer.vendor_id}`;
-          const venueImage =
-            offer.venue_image || matchedVenue?.image || "/sample-venue-1.jpeg";
+            offer.title?.trim() || resolvedVenueName || "V.I.Bee Offer";
+          const venueImage = venue.image || offerFallbackImage(offer.id);
           const isMember = account?.membership === "vibee";
           const redeeming = redeemingOfferId === offer.id;
+          const alreadyRedeemed = redemptions.some((r) => r.offer_id === offer.id);
+          const discountValue = getOfferDiscount(offer);
+          const expiresAt = getOfferExpiry(offer);
 
-          const rating = offer.venue_rating ?? matchedVenue?.google_rating ?? null;
-          const reviewCount = offer.venue_review_count ?? matchedVenue?.google_user_ratings_total ?? null;
-          const neighborhood = offer.venue_neighborhood ?? matchedVenue?.neighborhood_text ?? matchedVenue?.city ?? null;
-          const address = matchedVenue?.address ?? null;
-          const phone = matchedVenue?.phone ?? null;
-          const reservationUrl = matchedVenue?.reservation_url ?? null;
-          const isOpenNow = matchedVenue?.is_open_now ?? null;
+          const rating = venue.rating;
+          const reviewCount = venue.reviewCount;
+          const neighborhood = venue.neighborhood;
+          const address = venue.address;
+          const phone = venue.phone;
+          const reservationUrl = venue.reservationUrl;
+          const isOpenNow = venue.isOpenNow;
           const isOfficial = matchedVenue?.is_official_vendor ?? false;
           const venueTags = matchedVenue ? buildVenueTags(matchedVenue).slice(0, 4) : [];
-          const staticMapUrl = matchedVenue ? buildStaticMapUrl(matchedVenue) : null;
-          const mapsUrl = matchedVenue ? buildNativeMapsUrl(matchedVenue) : null;
+          // Both map helpers need real coordinates; venue.hasLocation rejects the
+          // 0/0 default that most vendor-created venues still carry.
+          const staticMapUrl =
+            matchedVenue && venue.hasLocation ? buildStaticMapUrl(matchedVenue) : null;
+          const mapsUrl =
+            matchedVenue && venue.hasLocation
+              ? buildNativeMapsUrl(matchedVenue)
+              : address
+                ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                    `${resolvedVenueName ?? ""} ${address}`.trim()
+                  )}`
+                : null;
 
           return (
             <section className="pb-32">
@@ -4760,6 +4884,11 @@ activeScreen === "vibbee-trial" ||
                 <h2 className="text-[1.6rem] font-bold leading-tight text-gray-900 dark:text-white">
                   {venueName}
                 </h2>
+                {resolvedVenueName ? (
+                  <p className="mt-1 text-[0.9rem] text-gray-500 dark:text-white/60">
+                    {resolvedVenueName}
+                  </p>
+                ) : null}
 
                 {/* Vibe tags */}
                 {venueTags.length > 0 && (
@@ -4855,11 +4984,8 @@ activeScreen === "vibbee-trial" ||
                   <p className="text-[1rem] font-semibold text-gray-900 dark:text-white">Offer</p>
                   <span className="rounded-full bg-red-600 px-3 py-1 text-[0.72rem] font-bold text-white">{label}</span>
                 </div>
-                {offer.discount_value && (
-                  <p className="text-[1.15rem] font-bold text-[#e8900a]">{offer.discount_value}</p>
-                )}
-                {offer.title && (
-                  <p className="mt-1 text-[0.9rem] leading-6 text-gray-700 dark:text-white/80">{offer.title}</p>
+                {discountValue && (
+                  <p className="text-[1.15rem] font-bold text-[#e8900a]">{discountValue}</p>
                 )}
                 {offer.description && (
                   <p className="mt-1 text-[0.9rem] leading-6 text-gray-600 dark:text-white/65">{offer.description}</p>
@@ -4870,25 +4996,77 @@ activeScreen === "vibbee-trial" ||
                     {offer.redeem_instructions}
                   </p>
                 )}
+                <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.78rem] text-gray-500 dark:text-white/55">
+                  {expiresAt && <span>Valid until {formatDate(expiresAt)}</span>}
+                  {offer.redemption_limit ? (
+                    <span>
+                      {Math.max(
+                        offer.redemption_limit - (offer.redemption_count ?? 0),
+                        0
+                      )}{" "}
+                      of {offer.redemption_limit} left
+                    </span>
+                  ) : null}
+                  {alreadyRedeemed && (
+                    <span className="font-semibold text-green-500">
+                      You&apos;ve redeemed this
+                    </span>
+                  )}
+                </div>
               </div>
 
-              {/* Map */}
-              {(staticMapUrl || venueImage) && (
-                <div className="mt-5 overflow-hidden rounded-[20px]">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={staticMapUrl ?? venueImage}
-                    alt="Venue map"
-                    className="h-48 w-full object-cover"
-                  />
+              {/* Venue block — only rendered when the Xano join actually
+                  resolved a venue. Previously this fell back to the offer image,
+                  which rendered the placeholder logo a second time. */}
+              {resolvedVenueName && (
+                <div className="mt-5 rounded-[20px] border border-[#E7070380] bg-transparent p-4 dark:bg-black/30">
+                  <p className="text-[0.72rem] font-bold uppercase tracking-wide text-gray-400 dark:text-white/40">
+                    Where to use it
+                  </p>
+                  <p className="mt-1 text-[1.05rem] font-bold text-gray-900 dark:text-white">
+                    {resolvedVenueName}
+                  </p>
+                  {address && (
+                    <p className="mt-1 text-[0.86rem] text-gray-600 dark:text-white/65">
+                      {address}
+                    </p>
+                  )}
+                  {staticMapUrl && (
+                    <div className="mt-3 overflow-hidden rounded-[16px]">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={staticMapUrl}
+                        alt={`Map of ${resolvedVenueName}`}
+                        className="h-40 w-full object-cover"
+                      />
+                    </div>
+                  )}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {mapsUrl && (
+                      <a
+                        href={mapsUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 rounded-full border border-[#E7070380] py-2 text-center text-[0.82rem] font-semibold text-gray-900 dark:border-white/20 dark:text-white"
+                      >
+                        Directions
+                      </a>
+                    )}
+                    {venue.id && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSharedVenueLoading(true);
+                          setSelectedVenueId(String(venue.id));
+                          navigateTo("detail");
+                        }}
+                        className="flex-1 rounded-full border border-[#E7070380] py-2 text-center text-[0.82rem] font-semibold text-gray-900 dark:border-white/20 dark:text-white"
+                      >
+                        View venue
+                      </button>
+                    )}
+                  </div>
                 </div>
-              )}
-
-              {/* Address */}
-              {address && (
-                <p className="mt-3 text-center text-[0.88rem] font-medium text-gray-700 dark:text-white/70">
-                  {address}
-                </p>
               )}
 
               {/* Fixed Redeem CTA */}
