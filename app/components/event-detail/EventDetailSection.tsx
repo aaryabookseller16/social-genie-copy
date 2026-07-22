@@ -187,7 +187,7 @@ function VerifiedBadge() {
 }
 
 function Skeleton({ className }: { className: string }) {
-  return <div className={`animate-pulse rounded-[10px] bg-white/10 ${className}`} />;
+  return <div className={`animate-pulse rounded-[10px] bg-gray-200 dark:bg-white/10 ${className}`} />;
 }
 
 function LoadingSkeleton() {
@@ -227,15 +227,15 @@ function LoadingSkeleton() {
 function ErrorState({ onBack, onRetry }: { onBack: () => void; onRetry: () => void }) {
   return (
     <section className="-mx-4 -mt-3 sm:-mx-6 sm:-mt-5 pb-[calc(env(safe-area-inset-bottom,0px)+5rem)]">
-      <div className="flex h-[55vw] min-h-[220px] max-h-[340px] w-full items-center justify-center bg-black/40">
+      <div className="flex h-[55vw] min-h-[220px] max-h-[340px] w-full items-center justify-center bg-white/90 dark:bg-black/40">
         <button type="button" onClick={onBack} className="absolute left-4 top-4 flex h-9 w-9 items-center justify-center text-white">
           <BackIcon />
         </button>
       </div>
       <div className="flex flex-col items-center gap-4 px-4 pt-12 text-center sm:px-6">
         <p className="text-[2rem]">😕</p>
-        <p className="text-[1rem] font-semibold text-white">Couldn&apos;t load event details</p>
-        <p className="text-[0.83rem] text-white/55">Check your connection and try again.</p>
+        <p className="text-[1rem] font-semibold text-gray-900 dark:text-white">Couldn&apos;t load event details</p>
+        <p className="text-[0.83rem] text-gray-500 dark:text-white/55">Check your connection and try again.</p>
         <button
           type="button"
           onClick={onRetry}
@@ -251,15 +251,15 @@ function ErrorState({ onBack, onRetry }: { onBack: () => void; onRetry: () => vo
 function AuthRequiredState({ onBack, onLogin }: { onBack: () => void; onLogin: () => void }) {
   return (
     <section className="-mx-4 -mt-3 sm:-mx-6 sm:-mt-5 pb-[calc(env(safe-area-inset-bottom,0px)+5rem)]">
-      <div className="relative flex h-[55vw] min-h-[220px] max-h-[340px] w-full items-center justify-center bg-black/40">
+      <div className="relative flex h-[55vw] min-h-[220px] max-h-[340px] w-full items-center justify-center bg-white/90 dark:bg-black/40">
         <button type="button" onClick={onBack} className="absolute left-4 top-4 flex h-9 w-9 items-center justify-center text-white">
           <BackIcon />
         </button>
       </div>
       <div className="flex flex-col items-center gap-4 px-4 pt-12 text-center sm:px-6">
         <p className="text-[2rem]">🔒</p>
-        <p className="text-[1rem] font-semibold text-white">Sign in to view event details</p>
-        <p className="text-[0.83rem] text-white/55">
+        <p className="text-[1rem] font-semibold text-gray-900 dark:text-white">Sign in to view event details</p>
+        <p className="text-[0.83rem] text-gray-500 dark:text-white/55">
           Create a free account or sign in to access full event info, tickets, and more.
         </p>
         <button
@@ -272,7 +272,7 @@ function AuthRequiredState({ onBack, onLogin }: { onBack: () => void; onLogin: (
         <button
           type="button"
           onClick={onBack}
-          className="text-[0.78rem] text-white/40 underline underline-offset-2"
+          className="text-[0.78rem] text-gray-400 dark:text-white/40 underline underline-offset-2"
         >
           Go back
         </button>
@@ -304,16 +304,16 @@ function MiniEventCard({
       />
       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
       <div className="absolute inset-x-0 bottom-0 p-3">
-        <p className="text-[0.82rem] font-semibold leading-tight text-white">{evt.title}</p>
+        <p className="text-[0.82rem] font-semibold leading-tight text-gray-900 dark:text-white">{evt.title}</p>
         {evt.category ? (
-          <p className="mt-0.5 flex items-center gap-1 text-[0.72rem] text-white/65">
+          <p className="mt-0.5 flex items-center gap-1 text-[0.72rem] text-gray-600 dark:text-white/65">
             <svg viewBox="0 0 24 24" className="h-3 w-3 flex-none" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
             </svg>
             {evt.category}
           </p>
         ) : null}
-        <span className="mt-1.5 block text-[0.72rem] font-medium text-white/80">
+        <span className="mt-1.5 block text-[0.72rem] font-medium text-gray-700 dark:text-white/80">
           Learn more
         </span>
       </div>
@@ -539,14 +539,14 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
                 setShowCalendarMenu(false);
               };
               return (
-                <div className="absolute right-0 top-11 z-10 w-48 overflow-hidden rounded-xl border border-white/15 bg-black/80 text-sm text-white shadow-lg backdrop-blur-md">
+                <div className="absolute right-0 top-11 z-10 w-48 overflow-hidden rounded-xl border border-gray-200 bg-white text-sm text-gray-800 shadow-lg backdrop-blur-md dark:border-white/15 dark:bg-black/80 dark:text-white">
                   <button
                     type="button"
                     onClick={() => {
                       window.open(buildGoogleCalendarUrl(calOpts), "_blank", "noopener,noreferrer");
                       finish();
                     }}
-                    className="flex w-full items-center px-4 py-2.5 text-left hover:bg-white/10"
+                    className="flex w-full items-center px-4 py-2.5 text-left hover:bg-gray-100 dark:hover:bg-white/10"
                   >
                     Google Calendar
                   </button>
@@ -556,7 +556,7 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
                       window.open(buildOutlookCalendarUrl(calOpts), "_blank", "noopener,noreferrer");
                       finish();
                     }}
-                    className="flex w-full items-center px-4 py-2.5 text-left hover:bg-white/10"
+                    className="flex w-full items-center px-4 py-2.5 text-left hover:bg-gray-100 dark:hover:bg-white/10"
                   >
                     Outlook.com
                   </button>
@@ -569,7 +569,7 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
                       downloadIcs(`${safeName}.ics`, ics);
                       finish();
                     }}
-                    className="flex w-full items-center px-4 py-2.5 text-left hover:bg-white/10"
+                    className="flex w-full items-center px-4 py-2.5 text-left hover:bg-gray-100 dark:hover:bg-white/10"
                   >
                     Apple / Other (.ics)
                   </button>
@@ -587,13 +587,13 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
       <div className="flex flex-col gap-5 bg-gradient-to-b from-[#1a0202] via-[#2a0606] to-transparent px-4 pb-8 pt-4 sm:px-6">
 
         {/* Title */}
-        <h1 className="text-[1.85rem] font-bold leading-tight text-white">{evTitle}</h1>
+        <h1 className="text-[1.85rem] font-bold leading-tight text-gray-900 dark:text-white">{evTitle}</h1>
 
         {/* Meta */}
         <div className="flex flex-col gap-2.5">
           {(startT || dateStr) ? (
-            <div className="flex items-center gap-2 text-[0.82rem] text-white/75">
-              <svg viewBox="0 0 24 24" className="h-4 w-4 flex-none text-white/50" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <div className="flex items-center gap-2 text-[0.82rem] text-gray-600 dark:text-white/75">
+              <svg viewBox="0 0 24 24" className="h-4 w-4 flex-none text-gray-500 dark:text-white/50" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
                 <line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" />
                 <line x1="3" y1="10" x2="21" y2="10" />
@@ -608,17 +608,17 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
           {venueName ? (
             <div className="flex flex-col gap-0.5">
               <div className="flex items-center gap-2">
-                <svg viewBox="0 0 24 24" className="h-4 w-4 flex-none text-white/50" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <svg viewBox="0 0 24 24" className="h-4 w-4 flex-none text-gray-500 dark:text-white/50" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
                 </svg>
-                <span className="text-[0.82rem] font-semibold text-white">{venueName}</span>
+                <span className="text-[0.82rem] font-semibold text-gray-900 dark:text-white">{venueName}</span>
               </div>
-              {venueAddr ? <p className="pl-6 text-[0.78rem] text-white/55">{venueAddr}</p> : null}
+              {venueAddr ? <p className="pl-6 text-[0.78rem] text-gray-500 dark:text-white/55">{venueAddr}</p> : null}
             </div>
           ) : null}
 
           {(category || producer?.name) ? (
-            <div className="flex items-center gap-4 text-[0.82rem] text-white/75">
+            <div className="flex items-center gap-4 text-[0.82rem] text-gray-600 dark:text-white/75">
               {category ? (
                 <span className="flex items-center gap-1.5">
                   <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -651,7 +651,7 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
             className={`flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-2.5 text-[0.8rem] font-semibold transition-transform active:scale-95 disabled:pointer-events-none disabled:opacity-60 ${
               rsvp.status === "going"
                 ? "bg-white text-[#1a0202]"
-                : "border border-white/30 bg-white/10 text-white"
+                : "border border-gray-300 dark:border-white/30 bg-gray-200 dark:bg-white/10 text-gray-900 dark:text-white"
             }`}
           >
             {rsvp.status === "going" ? "✓ Going" : "Going"}
@@ -667,7 +667,7 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
             className={`flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-2.5 text-[0.8rem] font-semibold transition-transform active:scale-95 disabled:pointer-events-none disabled:opacity-60 ${
               rsvp.status === "interested"
                 ? "bg-white text-[#1a0202]"
-                : "border border-white/30 bg-white/10 text-white"
+                : "border border-gray-300 dark:border-white/30 bg-gray-200 dark:bg-white/10 text-gray-900 dark:text-white"
             }`}
           >
             {rsvp.status === "interested" ? "✓ Interested" : "Interested"}
@@ -703,7 +703,7 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
               );
               logInteraction?.("ride_click", ev.id as number, "event-detail");
             }}
-            className="flex flex-none items-center justify-center gap-1.5 rounded-full border border-white/25 bg-black/30 px-4 py-2.5 text-[0.8rem] font-medium text-white backdrop-blur-sm transition-transform hover:bg-white/10 active:scale-95"
+            className="flex flex-none items-center justify-center gap-1.5 rounded-full border border-gray-300 bg-white px-4 py-2.5 text-[0.8rem] font-medium text-gray-700 backdrop-blur-sm transition-transform hover:bg-gray-50 active:scale-95 dark:border-white/25 dark:bg-black/30 dark:text-white dark:hover:bg-white/10"
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4 flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M5 17H3a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v2" />
@@ -721,7 +721,7 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
               else { void navigator.clipboard.writeText(u); }
               logInteraction?.("share", ev.id as number, "event-detail");
             }}
-            className="flex flex-none items-center justify-center gap-1.5 rounded-full border border-white/25 bg-black/30 px-4 py-2.5 text-[0.8rem] font-medium text-white backdrop-blur-sm transition-transform hover:bg-white/10 active:scale-95"
+            className="flex flex-none items-center justify-center gap-1.5 rounded-full border border-gray-300 bg-white px-4 py-2.5 text-[0.8rem] font-medium text-gray-700 backdrop-blur-sm transition-transform hover:bg-gray-50 active:scale-95 dark:border-white/25 dark:bg-black/30 dark:text-white dark:hover:bg-white/10"
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4 flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
@@ -741,9 +741,9 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
         {vibbeeOffers.length + influencerOffers.length > 0 ? (
           <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-2 [scrollbar-width:none] sm:-mx-6 sm:px-6">
             {vibbeeOffers.map((offer) => (
-              <div key={`vibbee-${offer.id}`} className="w-[85vw] max-w-72 flex-none rounded-[14px] border border-white/10 bg-black/30 px-4 py-3">
+              <div key={`vibbee-${offer.id}`} className="w-[85vw] max-w-72 flex-none rounded-[14px] border border-gray-200 dark:border-white/10 bg-white/85 dark:bg-black/30 px-4 py-3">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="min-w-0 truncate text-[0.9rem] font-semibold text-white">V.I.Bee Offer</span>
+                  <span className="min-w-0 truncate text-[0.9rem] font-semibold text-gray-900 dark:text-white">V.I.Bee Offer</span>
                   {offer.offer_type ? (
                     <span className="flex-none rounded-full bg-red-600 px-2.5 py-0.5 text-[0.65rem] font-bold text-white">
                       {offer.offer_type}
@@ -754,15 +754,15 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
                   <p className="mt-1.5 text-[0.88rem] font-semibold text-red-400">{offer.offer_title}</p>
                 ) : null}
                 {offer.offer_description ? (
-                  <p className="mt-1 text-[0.78rem] leading-5 text-white/60">{offer.offer_description}</p>
+                  <p className="mt-1 text-[0.78rem] leading-5 text-gray-500 dark:text-white/60">{offer.offer_description}</p>
                 ) : null}
               </div>
             ))}
             {influencerOffers.map((offer) => {
               const card = (
-                <div className="w-[85vw] max-w-72 flex-none rounded-[14px] border border-white/10 bg-black/30 px-4 py-3">
+                <div className="w-[85vw] max-w-72 flex-none rounded-[14px] border border-gray-200 dark:border-white/10 bg-white/85 dark:bg-black/30 px-4 py-3">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="min-w-0 truncate text-[0.9rem] font-semibold text-white">
+                    <span className="min-w-0 truncate text-[0.9rem] font-semibold text-gray-900 dark:text-white">
                       {offer.influencer_handle ? `Offer from @${offer.influencer_handle}` : "Influencer Offer"}
                     </span>
                     {offer.offer_type ? (
@@ -773,7 +773,7 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
                   </div>
                   <p className="mt-1.5 text-[0.88rem] font-semibold text-red-400">{offer.offer_title}</p>
                   {offer.offer_description ? (
-                    <p className="mt-1 text-[0.78rem] leading-5 text-white/60">{offer.offer_description}</p>
+                    <p className="mt-1 text-[0.78rem] leading-5 text-gray-500 dark:text-white/60">{offer.offer_description}</p>
                   ) : null}
                 </div>
               );
@@ -791,8 +791,8 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
         {/* ── Event Details ── */}
         {description ? (
           <div>
-            <h3 className="mb-2 text-[1rem] font-semibold text-white">Event Details</h3>
-            <p className="line-clamp-5 text-[0.83rem] leading-6 text-white/65">{description}</p>
+            <h3 className="mb-2 text-[1rem] font-semibold text-gray-900 dark:text-white">Event Details</h3>
+            <p className="line-clamp-5 text-[0.83rem] leading-6 text-gray-600 dark:text-white/65">{description}</p>
             {ev.public_slug && description.length > 240 ? (
               <button
                 type="button"
@@ -812,8 +812,8 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
 
         {/* ── Event Location ── */}
         <div>
-          <h3 className="mb-3 text-[1rem] font-semibold text-white">Event Location</h3>
-          <div className="relative h-44 w-full overflow-hidden rounded-[14px] border border-white/10">
+          <h3 className="mb-3 text-[1rem] font-semibold text-gray-900 dark:text-white">Event Location</h3>
+          <div className="relative h-44 w-full overflow-hidden rounded-[14px] border border-gray-200 dark:border-white/10">
             <iframe
               title={`Map – ${venueName || evTitle}`}
               src={`https://www.google.com/maps?q=${encodeURIComponent(mapAddr)}&output=embed`}
@@ -823,16 +823,16 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
               allowFullScreen
             />
           </div>
-          {venueAddr ? <p className="mt-2 text-[0.85rem] text-white/75">{venueAddr}</p> : null}
+          {venueAddr ? <p className="mt-2 text-[0.85rem] text-gray-600 dark:text-white/75">{venueAddr}</p> : null}
         </div>
 
         {/* ── Event Producers ── */}
         {producer?.name ? (
           <div>
-            <h3 className="mb-3 text-[1rem] font-semibold text-white">Event Producers</h3>
+            <h3 className="mb-3 text-[1rem] font-semibold text-gray-900 dark:text-white">Event Producers</h3>
             <div className="flex items-center gap-3">
               {producerId ? (
-                <a href={`/p/${producerId}`} aria-label={`View ${producer.name ?? "producer"} profile`} className="h-12 w-12 flex-none overflow-hidden rounded-full border border-white/10 bg-black/40">
+                <a href={`/p/${producerId}`} aria-label={`View ${producer.name ?? "producer"} profile`} className="h-12 w-12 flex-none overflow-hidden rounded-full border border-gray-200 dark:border-white/10 bg-white/90 dark:bg-black/40">
                   {producer.image_url ? (
                     <Image src={producer.image_url} alt={producer.name ?? "Producer"} width={48} height={48} className="h-12 w-12 object-cover" />
                   ) : (
@@ -842,7 +842,7 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
                   )}
                 </a>
               ) : (
-                <div className="h-12 w-12 flex-none overflow-hidden rounded-full border border-white/10 bg-black/40">
+                <div className="h-12 w-12 flex-none overflow-hidden rounded-full border border-gray-200 dark:border-white/10 bg-white/90 dark:bg-black/40">
                   {producer.image_url ? (
                     <Image src={producer.image_url} alt={producer.name ?? "Producer"} width={48} height={48} className="h-12 w-12 object-cover" />
                   ) : (
@@ -855,12 +855,12 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
               <div className="flex flex-1 flex-col gap-0.5">
                 <div className="flex items-center gap-2">
                   {producerId ? (
-                    <a href={`/p/${producerId}`} className="flex items-center gap-1 text-[0.9rem] font-semibold text-white hover:text-red-300">
+                    <a href={`/p/${producerId}`} className="flex items-center gap-1 text-[0.9rem] font-semibold text-gray-900 hover:text-red-600 dark:text-white dark:hover:text-red-300">
                       {producer.name}
                       {producer.is_verified ? <VerifiedBadge /> : null}
                     </a>
                   ) : (
-                    <span className="flex items-center gap-1 text-[0.9rem] font-semibold text-white">
+                    <span className="flex items-center gap-1 text-[0.9rem] font-semibold text-gray-900 dark:text-white">
                       {producer.name}
                       {producer.is_verified ? <VerifiedBadge /> : null}
                     </span>
@@ -878,7 +878,7 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
                     {isFollowing ? "Following" : "Follow"}
                   </button>
                 </div>
-                <p className="flex items-center gap-1 text-[0.75rem] text-white/55">
+                <p className="flex items-center gap-1 text-[0.75rem] text-gray-500 dark:text-white/55">
                   <svg viewBox="0 0 24 24" className="h-3 w-3 flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                     <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
                   </svg>
@@ -897,7 +897,7 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
         {/* ── More like this ── */}
         {relatedEvents.length > 0 ? (
           <div>
-            <h3 className="mb-3 text-[1rem] font-semibold text-white">More like this</h3>
+            <h3 className="mb-3 text-[1rem] font-semibold text-gray-900 dark:text-white">More like this</h3>
             <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-2 [scrollbar-width:none] sm:-mx-6 sm:px-6">
               {relatedEvents.map((evt) => (
                 <MiniEventCard
@@ -913,7 +913,7 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
         {/* ── Also in this venue ── */}
         {venueEvents.length > 0 ? (
           <div>
-            <h3 className="mb-3 text-[1rem] font-semibold text-white">Also in this venue</h3>
+            <h3 className="mb-3 text-[1rem] font-semibold text-gray-900 dark:text-white">Also in this venue</h3>
             <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-2 [scrollbar-width:none] sm:-mx-6 sm:px-6">
               {venueEvents.map((evt) => (
                 <MiniEventCard

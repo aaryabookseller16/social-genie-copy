@@ -73,24 +73,24 @@ export function RoleSwitcherDialog({
       />
 
       {/* Bottom sheet */}
-      <div className="absolute bottom-0 left-1/2 w-full max-w-md -translate-x-1/2 overflow-hidden rounded-t-[28px] bg-black bg-[url('/bg.png')] bg-cover bg-center shadow-[0_-12px_60px_rgba(0,0,0,0.7)]">
+      <div className="absolute bottom-0 left-1/2 w-full max-w-md -translate-x-1/2 overflow-hidden rounded-t-[28px] bg-white bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat shadow-[0_-12px_60px_rgba(0,0,0,0.18)] dark:bg-black dark:bg-[url('/bg.png')] dark:shadow-[0_-12px_60px_rgba(0,0,0,0.7)]">
         {/* Dark overlay for readability */}
-        <div className="pointer-events-none absolute inset-0 bg-black/55" />
+        <div className="pointer-events-none absolute inset-0 hidden bg-black/55 dark:block" />
 
         <div className="relative px-5 pb-[calc(env(safe-area-inset-bottom,0px)+1.75rem)] pt-4">
           {/* Handle */}
-          <div className="mx-auto mb-5 h-1 w-10 rounded-full bg-white/25" />
+          <div className="mx-auto mb-5 h-1 w-10 rounded-full bg-gray-300 dark:bg-white/25" />
 
           {/* Header */}
           <div className="mb-6 flex items-center justify-between">
-            <h2 className="text-[1.6rem] font-bold leading-tight text-white">
+            <h2 className="text-[1.6rem] font-bold leading-tight text-gray-900 dark:text-white">
               Switch Profiles
             </h2>
             <button
               type="button"
               onClick={onClose}
               aria-label="Close"
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white/70 transition hover:bg-white/20 hover:text-white"
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-gray-100 text-gray-500 transition hover:bg-gray-200 hover:text-gray-900 dark:border-white/20 dark:bg-white/10 dark:text-white/70 dark:hover:bg-white/20 dark:hover:text-white"
             >
               <svg
                 viewBox="0 0 24 24"
@@ -115,7 +115,7 @@ export function RoleSwitcherDialog({
                 key={role}
                 type="button"
                 onClick={() => onNavigateToRole(role)}
-                className="w-full rounded-[18px] border border-red-500/60 bg-[linear-gradient(180deg,rgba(180,20,20,0.92),rgba(100,5,5,0.98))] px-4 py-4 text-center text-[1.1rem] font-bold text-white shadow-[0_0_0_1px_rgba(255,80,80,0.15),0_8px_24px_rgba(0,0,0,0.4)] transition hover:brightness-110 active:scale-[0.98]"
+                className="w-full rounded-[18px] border border-red-500 bg-red-600 hover:bg-red-700 dark:border-red-500/60 dark:bg-[linear-gradient(180deg,rgba(180,20,20,0.92),rgba(100,5,5,0.98))] px-4 py-4 text-center text-[1.1rem] font-bold text-white shadow-[0_0_0_1px_rgba(255,80,80,0.15),0_8px_24px_rgba(0,0,0,0.4)] transition hover:brightness-110 active:scale-[0.98]"
               >
                 {ROLE_LABELS[role]}
               </button>
@@ -128,7 +128,7 @@ export function RoleSwitcherDialog({
               <button
                 type="button"
                 onClick={onUnlockNew}
-                className="w-full rounded-[18px] border border-white/20 bg-white/8 px-4 py-3.5 text-center text-[0.95rem] font-semibold text-white/80 transition hover:bg-white/12 hover:text-white"
+                className="w-full rounded-[18px] border border-gray-200 bg-gray-50 px-4 py-3.5 text-center text-[0.95rem] font-semibold text-gray-700 transition hover:bg-gray-100 hover:text-gray-900 dark:border-white/20 dark:bg-white/8 dark:text-white/80 dark:hover:bg-white/12 dark:hover:text-white"
               >
                 + Unlock a new role
               </button>

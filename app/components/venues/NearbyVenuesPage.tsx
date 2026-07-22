@@ -45,26 +45,26 @@ let sessionCache: (LoadedState & { scrollTop: number }) | null = null;
 
 function Banner({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mb-3 flex items-start gap-3 rounded-[18px] border border-white/15 bg-black/40 px-4 py-3">
-      <span className="mt-0.5 flex-none text-red-400" aria-hidden="true">
+    <div className="mb-3 flex items-start gap-3 rounded-[18px] border border-gray-200 bg-white/90 px-4 py-3 dark:border-white/15 dark:bg-black/40">
+      <span className="mt-0.5 flex-none text-red-600 dark:text-red-400" aria-hidden="true">
         <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
           <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 1 1 18 0z" />
           <circle cx="12" cy="10" r="3" />
         </svg>
       </span>
-      <p className="min-w-0 flex-1 text-[0.76rem] leading-5 text-white/75">{children}</p>
+      <p className="min-w-0 flex-1 text-[0.76rem] leading-5 text-gray-600 dark:text-white/75">{children}</p>
     </div>
   );
 }
 
 function VenueSkeleton() {
   return (
-    <div className="flex gap-3 rounded-[20px] border border-white/10 bg-black/20 p-3">
-      <div className="h-28 w-28 flex-none animate-pulse rounded-2xl bg-white/10" />
+    <div className="flex gap-3 rounded-[20px] border border-gray-200 bg-white/80 p-3 dark:border-white/10 dark:bg-black/20">
+      <div className="h-28 w-28 flex-none animate-pulse rounded-2xl bg-gray-200 dark:bg-white/10" />
       <div className="flex-1 space-y-2 py-1">
-        <div className="h-4 w-2/3 animate-pulse rounded bg-white/10" />
-        <div className="h-3 w-1/2 animate-pulse rounded bg-white/10" />
-        <div className="h-3 w-1/3 animate-pulse rounded bg-white/10" />
+        <div className="h-4 w-2/3 animate-pulse rounded bg-gray-200 dark:bg-white/10" />
+        <div className="h-3 w-1/2 animate-pulse rounded bg-gray-200 dark:bg-white/10" />
+        <div className="h-3 w-1/3 animate-pulse rounded bg-gray-200 dark:bg-white/10" />
       </div>
     </div>
   );

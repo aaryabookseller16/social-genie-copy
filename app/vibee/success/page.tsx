@@ -52,21 +52,21 @@ function SuccessContent() {
   }, [sessionId]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#1a0505,#2a0a0a,#000)] px-6 py-10">
-      <div className="w-full max-w-md rounded-[28px] border border-white/10 bg-black/40 p-8 text-center shadow-[0_20px_60px_rgba(0,0,0,0.45)] backdrop-blur-sm">
+    <div className="flex min-h-screen items-center justify-center bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[linear-gradient(180deg,#1a0505,#2a0a0a,#000)] px-6 py-10">
+      <div className="w-full max-w-md rounded-[28px] border border-gray-100 bg-white/90 p-8 text-center shadow-[0_20px_60px_rgba(0,0,0,0.08)] dark:border-white/10 dark:bg-black/40 dark:shadow-[0_20px_60px_rgba(0,0,0,0.45)] dark:backdrop-blur-sm">
         {status === "pending" ? (
           <>
-            <div className="mx-auto mb-6 h-14 w-14 animate-spin rounded-full border-4 border-white/15 border-t-[#e83434]" />
-            <h1 className="font-[family:var(--font-display)] text-2xl font-semibold text-white">
+            <div className="mx-auto mb-6 h-14 w-14 animate-spin rounded-full border-4 border-gray-200 border-t-[#e83434] dark:border-white/15" />
+            <h1 className="font-[family:var(--font-display)] text-2xl font-semibold text-gray-900 dark:text-white">
               Activating your V.I.Bee membership...
             </h1>
-            <p className="mt-2 text-sm text-white/60">
+            <p className="mt-2 text-sm text-gray-500 dark:text-white/60">
               Confirming your payment with Stripe.
             </p>
           </>
         ) : status === "active" ? (
           <>
-            <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-green-500/20 text-green-400">
+            <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-green-100 text-green-600 dark:bg-green-500/20 dark:text-green-400">
               <svg
                 viewBox="0 0 24 24"
                 className="h-8 w-8"
@@ -79,10 +79,10 @@ function SuccessContent() {
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             </div>
-            <h1 className="font-[family:var(--font-display)] text-2xl font-semibold text-white">
+            <h1 className="font-[family:var(--font-display)] text-2xl font-semibold text-gray-900 dark:text-white">
               Welcome to V.I.Bee!
             </h1>
-            <p className="mt-3 text-sm text-white/70">
+            <p className="mt-3 text-sm text-gray-600 dark:text-white/70">
               Your membership is active. Unlock exclusive offers, early
               invites, and members-only deals across every venue.
             </p>
@@ -94,14 +94,14 @@ function SuccessContent() {
             </Link>
             <Link
               href="/"
-              className="mt-3 inline-block text-sm font-medium text-white/60 hover:text-white"
+              className="mt-3 inline-block text-sm font-medium text-gray-500 hover:text-gray-900 dark:text-white/60 dark:hover:text-white"
             >
               Back to Genie
             </Link>
           </>
         ) : (
           <>
-            <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-amber-500/20 text-amber-300">
+            <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-300">
               <svg
                 viewBox="0 0 24 24"
                 className="h-8 w-8"
@@ -115,10 +115,10 @@ function SuccessContent() {
                 <path d="M12 8v4M12 16h0" />
               </svg>
             </div>
-            <h1 className="font-[family:var(--font-display)] text-2xl font-semibold text-white">
+            <h1 className="font-[family:var(--font-display)] text-2xl font-semibold text-gray-900 dark:text-white">
               Payment received
             </h1>
-            <p className="mt-3 text-sm text-white/70">
+            <p className="mt-3 text-sm text-gray-600 dark:text-white/70">
               {message ?? "Your membership is being activated."}
             </p>
             <Link
@@ -138,8 +138,8 @@ export default function VibeeSuccessPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#1a0505,#2a0a0a,#000)]">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-white/15 border-t-[#e83434]" />
+        <div className="flex min-h-screen items-center justify-center bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[linear-gradient(180deg,#1a0505,#2a0a0a,#000)]">
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-200 border-t-[#e83434] dark:border-white/15" />
         </div>
       }
     >

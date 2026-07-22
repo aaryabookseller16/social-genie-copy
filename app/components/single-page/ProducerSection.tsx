@@ -1163,10 +1163,10 @@ export function ProducerSection({
           ].map((s) => (
             <div
               key={s.label}
-              className="flex flex-col items-center justify-center rounded-2xl border border-red-900/30 bg-black/30 py-3 dark:border-red-900/40 dark:bg-black/40"
+              className="flex flex-col items-center justify-center rounded-2xl border border-red-200 bg-white/85 py-3 dark:border-red-900/40 dark:bg-black/40"
             >
-              <span className="text-xl font-bold text-white">{s.value}</span>
-              <span className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-white/40">{s.label}</span>
+              <span className="text-xl font-bold text-gray-900 dark:text-white">{s.value}</span>
+              <span className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-white/40">{s.label}</span>
             </div>
           ))}
         </div>
@@ -1175,7 +1175,7 @@ export function ProducerSection({
         <button
           type="button"
           onClick={() => setStep("offers")}
-          className="flex w-full items-center justify-between rounded-2xl border border-red-900/30 bg-black/30 px-4 py-3.5 text-left transition hover:border-red-700/50 dark:border-red-900/40 dark:bg-black/40"
+          className="flex w-full items-center justify-between rounded-2xl border border-red-200 bg-white/85 px-4 py-3.5 text-left transition hover:border-red-700/50 dark:border-red-900/40 dark:bg-black/40"
         >
           <span className="flex items-center gap-3">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-5 w-5 text-red-500">
@@ -1183,18 +1183,18 @@ export function ProducerSection({
               <rect x="9" y="3" width="6" height="4" rx="1" />
               <path d="M9 12h6M9 16h4" />
             </svg>
-            <span className="text-[0.88rem] font-medium text-white">Manage Offers</span>
+            <span className="text-[0.88rem] font-medium text-gray-900 dark:text-white">Manage Offers</span>
           </span>
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 flex-shrink-0 text-white/30">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 flex-shrink-0 text-gray-400 dark:text-white/30">
             <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
           </svg>
         </button>
 
         {/* Follower chart */}
         {followerHistory.length > 1 ? (
-          <div className="overflow-hidden rounded-2xl border border-red-900/30 bg-black/30 px-3 pb-2 pt-3 dark:border-red-900/40 dark:bg-black/40">
+          <div className="overflow-hidden rounded-2xl border border-red-200 bg-white/85 px-3 pb-2 pt-3 dark:border-red-900/40 dark:bg-black/40">
             <div className="mb-1 flex items-center justify-between">
-              <p className="text-xs font-semibold uppercase tracking-widest text-white/40">Followers</p>
+              <p className="text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/40">Followers</p>
               <p className="text-xs font-medium text-amber-400">Last 10 days</p>
             </div>
             <FollowerChart data={followerHistory} />
@@ -1203,7 +1203,7 @@ export function ProducerSection({
 
         {/* Events */}
         <div>
-          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-white/40">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/40">
             Your events
           </p>
           {eventsLoading ? (
@@ -1211,8 +1211,8 @@ export function ProducerSection({
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-red-900 border-t-red-500" />
             </div>
           ) : events.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-white/10 p-6 text-center">
-              <p className="text-sm text-white/40">No events yet.</p>
+            <div className="rounded-2xl border border-dashed border-gray-300 p-6 text-center dark:border-white/10">
+              <p className="text-sm text-gray-500 dark:text-white/40">No events yet.</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -1223,7 +1223,7 @@ export function ProducerSection({
                   key={ev.id ?? `ev-${i}`}
                   type="button"
                   onClick={() => openEventDetail(ev)}
-                  className="flex w-full items-center gap-4 rounded-2xl border border-red-900/30 bg-black/30 p-3 text-left transition hover:border-red-700/50 dark:border-red-900/40 dark:bg-black/40"
+                  className="flex w-full items-center gap-4 rounded-2xl border border-red-200 bg-white/85 p-3 text-left transition hover:border-red-700/50 dark:border-red-900/40 dark:bg-black/40"
                 >
                   {/* Thumbnail / placeholder */}
                   <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl bg-red-900/40">
@@ -1237,19 +1237,19 @@ export function ProducerSection({
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-semibold text-white">{ev.title}</p>
+                    <p className="truncate font-semibold text-gray-900 dark:text-white">{ev.title}</p>
                     {ev.category ? (
                       <span className="mt-1 inline-block rounded-full bg-red-600 px-2.5 py-0.5 text-[11px] font-medium text-white">
                         {ev.category}
                       </span>
                     ) : null}
                     {ev.event_date || ev.venue_name ? (
-                      <p className="mt-1 truncate text-xs text-white/40">
+                      <p className="mt-1 truncate text-xs text-gray-500 dark:text-white/40">
                         {[ev.event_date, ev.venue_name].filter(Boolean).join(" · ")}
                       </p>
                     ) : null}
                   </div>
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 flex-shrink-0 text-white/30">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 flex-shrink-0 text-gray-400 dark:text-white/30">
                     <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
                   </svg>
                 </button>
@@ -1260,7 +1260,7 @@ export function ProducerSection({
 
         {/* Posts */}
         <div>
-          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-white/40">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/40">
             Your posts
           </p>
           {postsLoading ? (
@@ -1268,17 +1268,17 @@ export function ProducerSection({
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-red-900 border-t-red-500" />
             </div>
           ) : posts.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-white/10 p-6 text-center">
-              <p className="text-sm text-white/40">No posts yet.</p>
+            <div className="rounded-2xl border border-dashed border-gray-300 p-6 text-center dark:border-white/10">
+              <p className="text-sm text-gray-500 dark:text-white/40">No posts yet.</p>
             </div>
           ) : (
             <div className="space-y-3">
               {posts.map((p, i) => (
                 <div
                   key={p.id ?? `post-${i}`}
-                  className="rounded-2xl border border-red-900/30 bg-black/30 p-4 dark:border-red-900/40 dark:bg-black/40"
+                  className="rounded-2xl border border-red-200 bg-white/85 p-4 dark:border-red-900/40 dark:bg-black/40"
                 >
-                  <p className="text-sm leading-relaxed text-white/80 line-clamp-3">{p.post_text}</p>
+                  <p className="text-sm leading-relaxed text-gray-700 line-clamp-3 dark:text-white/80">{p.post_text}</p>
                   {(() => {
                     const media = mediaGalleryFor(p.image_url, p.image_urls, p.video_urls);
                     return media.length > 0 ? (
@@ -1292,17 +1292,17 @@ export function ProducerSection({
                   })()}
                   <div className="mt-2 flex items-center gap-3">
                     {p.created_at ? (
-                      <span className="text-xs text-white/30">
+                      <span className="text-xs text-gray-400 dark:text-white/30">
                         {new Date(p.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                       </span>
                     ) : null}
                     {typeof p.like_count === "number" && p.like_count > 0 ? (
-                      <span className="text-xs text-white/30">{p.like_count} likes</span>
+                      <span className="text-xs text-gray-400 dark:text-white/30">{p.like_count} likes</span>
                     ) : null}
                     {p.id ? (
                       <Link
                         href={`/posts/${p.id}`}
-                        className="text-xs font-semibold text-red-400 hover:text-red-300"
+                        className="text-xs font-semibold text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
                       >
                         View post
                       </Link>
@@ -1330,7 +1330,7 @@ export function ProducerSection({
               <button
                 type="button"
                 onClick={() => { setFabOpen(false); openCreatePost(); }}
-                className="flex items-center gap-2 rounded-2xl bg-black/80 px-5 py-2.5 text-sm font-semibold text-white shadow-xl backdrop-blur-sm border border-white/10 whitespace-nowrap"
+                className="flex items-center gap-2 rounded-2xl bg-white px-5 py-2.5 text-sm font-semibold text-gray-900 shadow-xl backdrop-blur-sm border border-gray-200 whitespace-nowrap dark:bg-black/80 dark:text-white dark:border-white/10"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 text-red-400">
                   <path d="M5.433 13.917l1.262-3.155A4 4 0 017.58 9.42l6.92-6.918a2.121 2.121 0 013 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 01-.65-.65z" />
@@ -1341,7 +1341,7 @@ export function ProducerSection({
               <button
                 type="button"
                 onClick={() => { setFabOpen(false); openCreateEvent(); }}
-                className="flex items-center gap-2 rounded-2xl bg-black/80 px-5 py-2.5 text-sm font-semibold text-white shadow-xl backdrop-blur-sm border border-white/10 whitespace-nowrap"
+                className="flex items-center gap-2 rounded-2xl bg-white px-5 py-2.5 text-sm font-semibold text-gray-900 shadow-xl backdrop-blur-sm border border-gray-200 whitespace-nowrap dark:bg-black/80 dark:text-white dark:border-white/10"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 text-red-400">
                   <path fillRule="evenodd" d="M5.75 2a.75.75 0 01.75.75V4h7V2.75a.75.75 0 011.5 0V4h.25A2.75 2.75 0 0118 6.75v8.5A2.75 2.75 0 0115.25 18H4.75A2.75 2.75 0 012 15.25v-8.5A2.75 2.75 0 014.75 4H5V2.75A.75.75 0 015.75 2zm-1 5.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25v-6.5c0-.69-.56-1.25-1.25-1.25H4.75z" clipRule="evenodd" />
@@ -1399,7 +1399,7 @@ export function ProducerSection({
         <SectionHeader title="Manage Offers" onBack={() => setStep("dashboard")} />
 
         {/* Segmented tab bar */}
-        <div className="relative flex rounded-full border border-red-900/30 bg-black/30 p-1 dark:border-red-900/40 dark:bg-black/40">
+        <div className="relative flex rounded-full border border-red-200 bg-white/85 p-1 dark:border-red-900/40 dark:bg-black/40">
           <span
             aria-hidden
             className="absolute top-1 bottom-1 rounded-full bg-red-600 transition-transform duration-300 ease-out"
@@ -1417,7 +1417,7 @@ export function ProducerSection({
                 type="button"
                 onClick={() => setProducerOfferFilter(tab.key)}
                 className={`relative z-10 flex-1 rounded-full px-1 py-1.5 text-[0.72rem] font-semibold transition-colors duration-300 ${
-                  isActive ? "text-white" : "text-white/50"
+                  isActive ? "text-gray-900 dark:text-white" : "text-gray-500 dark:text-white/50"
                 }`}
               >
                 {tab.label}
@@ -1436,7 +1436,7 @@ export function ProducerSection({
             {producerOfferError}
           </p>
         ) : filtered.length === 0 ? (
-          <p className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-center text-[0.82rem] text-white/40">
+          <p className="rounded-2xl border border-gray-200 dark:border-white/10 bg-white/80 dark:bg-black/20 px-4 py-3 text-center text-[0.82rem] text-gray-400 dark:text-white/40">
             {producerOfferFilter === "pending"
               ? "No pending requests."
               : producerOfferFilter === "active"
@@ -1466,9 +1466,9 @@ export function ProducerSection({
             return (
               <div key={offer.id} className={`rounded-2xl border px-4 py-4 ${cardTone}`}>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[0.9rem] font-semibold text-white">{offer.offer_title}</p>
+                  <p className="text-[0.9rem] font-semibold text-gray-900 dark:text-white">{offer.offer_title}</p>
                   <div className="mt-1 flex flex-wrap items-center gap-2">
-                    <span className="text-[0.72rem] capitalize text-white/50">
+                    <span className="text-[0.72rem] capitalize text-gray-500 dark:text-white/50">
                       {offer.offer_type?.replace(/_/g, " ")}
                     </span>
                     {discount ? (
@@ -1478,13 +1478,13 @@ export function ProducerSection({
                     ) : null}
                   </div>
                   {offer.event_title ? (
-                    <p className="mt-1.5 text-[0.78rem] font-medium text-white/60">
+                    <p className="mt-1.5 text-[0.78rem] font-medium text-gray-500 dark:text-white/60">
                       For {offer.event_title}
                       {offer.event_date ? ` · ${offer.event_date}` : ""}
                     </p>
                   ) : null}
                   {offer.offer_description ? (
-                    <p className="mt-1.5 text-[0.78rem] text-white/50">
+                    <p className="mt-1.5 text-[0.78rem] text-gray-500 dark:text-white/50">
                       {offer.offer_description}
                     </p>
                   ) : null}
@@ -1533,7 +1533,7 @@ export function ProducerSection({
                             setRejectingProducerOfferId(null);
                             setProducerRejectReason("");
                           }}
-                          className="flex-1 rounded-lg border border-white/20 px-3 py-2 text-[0.78rem] font-medium text-white/70"
+                          className="flex-1 rounded-lg border border-gray-200 dark:border-white/20 px-3 py-2 text-[0.78rem] font-medium text-gray-600 dark:text-white/70"
                         >
                           Cancel
                         </button>
@@ -1556,7 +1556,7 @@ export function ProducerSection({
                           setRejectingProducerOfferId(offer.id);
                           setProducerRejectReason("");
                         }}
-                        className="flex-1 rounded-lg border border-white/20 px-3 py-2 text-[0.78rem] font-medium text-white/70"
+                        className="flex-1 rounded-lg border border-gray-200 dark:border-white/20 px-3 py-2 text-[0.78rem] font-medium text-gray-600 dark:text-white/70"
                       >
                         Reject
                       </button>
@@ -1596,7 +1596,7 @@ export function ProducerSection({
                             setRejectingProducerOfferId(null);
                             setProducerRejectReason("");
                           }}
-                          className="flex-1 rounded-lg border border-white/20 px-3 py-2 text-[0.78rem] font-medium text-white/70"
+                          className="flex-1 rounded-lg border border-gray-200 dark:border-white/20 px-3 py-2 text-[0.78rem] font-medium text-gray-600 dark:text-white/70"
                         >
                           Keep Active
                         </button>
@@ -1611,7 +1611,7 @@ export function ProducerSection({
                           setRejectingProducerOfferId(offer.id);
                           setProducerRejectReason("");
                         }}
-                        className="w-full rounded-lg border border-white/20 px-3 py-2 text-[0.78rem] font-medium text-white/70"
+                        className="w-full rounded-lg border border-gray-200 dark:border-white/20 px-3 py-2 text-[0.78rem] font-medium text-gray-600 dark:text-white/70"
                       >
                         Cancel Offer
                       </button>
@@ -1977,7 +1977,7 @@ export function ProducerSection({
         <div className="space-y-5 pt-5">
 
           {/* Title */}
-          <h1 className="font-[family:var(--font-display)] text-2xl font-bold leading-tight text-white">
+          <h1 className="font-[family:var(--font-display)] text-2xl font-bold leading-tight text-gray-900 dark:text-white">
             {selectedEvent.title}
           </h1>
 
@@ -1988,7 +1988,7 @@ export function ProducerSection({
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-500">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z" clipRule="evenodd" />
                 </svg>
-                <p className="text-sm leading-relaxed text-white/70">{timeLine}</p>
+                <p className="text-sm leading-relaxed text-gray-600 dark:text-white/70">{timeLine}</p>
               </div>
             ) : null}
 
@@ -1999,10 +1999,10 @@ export function ProducerSection({
                 </svg>
                 <div>
                   {selectedEvent.venue_name ? (
-                    <p className="text-sm text-white/70">{selectedEvent.venue_name}</p>
+                    <p className="text-sm text-gray-600 dark:text-white/70">{selectedEvent.venue_name}</p>
                   ) : null}
                   {venueLine2 ? (
-                    <p className="mt-0.5 text-xs text-white/40">{venueLine2}</p>
+                    <p className="mt-0.5 text-xs text-gray-400 dark:text-white/40">{venueLine2}</p>
                   ) : null}
                 </div>
               </div>
@@ -2022,12 +2022,12 @@ export function ProducerSection({
                   Free
                 </span>
               ) : selectedEvent.ticket_price_min !== undefined ? (
-                <span className="rounded-full border border-white/20 px-3 py-1 text-xs text-white/60">
+                <span className="rounded-full border border-gray-200 dark:border-white/20 px-3 py-1 text-xs text-gray-500 dark:text-white/60">
                   From ${selectedEvent.ticket_price_min}
                 </span>
               ) : null}
               {selectedEvent.age_requirement ? (
-                <span className="rounded-full border border-white/20 px-3 py-1 text-xs text-white/60">
+                <span className="rounded-full border border-gray-200 dark:border-white/20 px-3 py-1 text-xs text-gray-500 dark:text-white/60">
                   {selectedEvent.age_requirement}
                 </span>
               ) : null}
@@ -2052,7 +2052,7 @@ export function ProducerSection({
             <button
               type="button"
               onClick={handleShare}
-              className={`flex items-center justify-center gap-2 rounded-2xl border border-white/20 py-3 text-sm font-semibold text-white/80 transition hover:border-white/40 ${hasTicket ? "px-5" : "flex-1"}`}
+              className={`flex items-center justify-center gap-2 rounded-2xl border border-gray-200 dark:border-white/20 py-3 text-sm font-semibold text-gray-700 dark:text-white/80 transition hover:border-gray-300 dark:hover:border-white/40 ${hasTicket ? "px-5" : "flex-1"}`}
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
                 <path d="M13 4.5a2.5 2.5 0 11.702 1.737L6.97 9.604a2.518 2.518 0 010 .792l6.733 3.367a2.5 2.5 0 11-.671 1.341l-6.733-3.367a2.5 2.5 0 110-3.475l6.733-3.366A2.52 2.52 0 0113 4.5z" />
@@ -2062,7 +2062,7 @@ export function ProducerSection({
             <button
               type="button"
               onClick={() => openEditEvent(selectedEvent)}
-              className="flex items-center justify-center gap-2 rounded-2xl border border-white/20 px-5 py-3 text-sm font-semibold text-white/80 transition hover:border-white/40"
+              className="flex items-center justify-center gap-2 rounded-2xl border border-gray-200 dark:border-white/20 px-5 py-3 text-sm font-semibold text-gray-700 dark:text-white/80 transition hover:border-gray-300 dark:hover:border-white/40"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
                 <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
@@ -2073,9 +2073,9 @@ export function ProducerSection({
 
           {/* Description */}
           {selectedEvent.description ? (
-            <div className="rounded-2xl border border-white/8 bg-black/30 p-4">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-white/40">Event Details</p>
-              <p className={`text-sm leading-relaxed text-white/70 ${descriptionExpanded ? "" : "line-clamp-4"}`}>
+            <div className="rounded-2xl border border-gray-100 dark:border-white/8 bg-white/85 dark:bg-black/30 p-4">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/40">Event Details</p>
+              <p className={`text-sm leading-relaxed text-gray-600 dark:text-white/70 ${descriptionExpanded ? "" : "line-clamp-4"}`}>
                 {selectedEvent.description}
               </p>
               {longDesc ? (
@@ -2092,7 +2092,7 @@ export function ProducerSection({
 
           {/* Analytics */}
           <div>
-            <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-white/40">Analytics</p>
+            <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/40">Analytics</p>
             {eventAnalytics ? (
               <div className="grid grid-cols-3 gap-3">
                 {[
@@ -2102,15 +2102,15 @@ export function ProducerSection({
                 ].map((s) => (
                   <div
                     key={s.label}
-                    className="flex flex-col items-center justify-center rounded-2xl border border-red-900/30 bg-black/30 py-4 dark:border-red-900/40 dark:bg-black/40"
+                    className="flex flex-col items-center justify-center rounded-2xl border border-red-200 bg-white/85 py-4 dark:border-red-900/40 dark:bg-black/40"
                   >
-                    <span className="text-xl font-bold text-white">{s.value}</span>
-                    <span className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-white/40">{s.label}</span>
+                    <span className="text-xl font-bold text-gray-900 dark:text-white">{s.value}</span>
+                    <span className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-white/40">{s.label}</span>
                   </div>
                 ))}
               </div>
             ) : eventAnalyticsError ? (
-              <p className="text-sm text-white/30">Analytics unavailable right now.</p>
+              <p className="text-sm text-gray-400 dark:text-white/30">Analytics unavailable right now.</p>
             ) : (
               <div className="flex items-center justify-center py-8">
                 <div className="h-5 w-5 animate-spin rounded-full border-2 border-red-900 border-t-red-500" />
@@ -2121,16 +2121,16 @@ export function ProducerSection({
           {/* RSVP list */}
           {rsvpList.length > 0 ? (
             <div>
-              <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-white/40">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-white/40">
                 RSVPs ({rsvpList.length})
               </p>
               <div className="space-y-2">
                 {rsvpList.map((r) => (
                   <div
                     key={r.id}
-                    className="flex items-center justify-between rounded-2xl border border-red-900/20 bg-black/30 px-4 py-3"
+                    className="flex items-center justify-between rounded-2xl border border-red-100 bg-white/85 px-4 py-3 dark:border-red-900/20 dark:bg-black/30"
                   >
-                    <span className="text-sm text-white/70">
+                    <span className="text-sm text-gray-600 dark:text-white/70">
                       {r.first_name ?? ""} {r.last_name ?? ""}
                       {!r.first_name && !r.last_name ? r.email ?? "Guest" : ""}
                     </span>
