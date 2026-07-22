@@ -55,6 +55,10 @@ export function AccountSection({
   onAdvanceOnboarding,
   authError,
   onAuthErrorShown,
+  requestedMode,
+  onRequestedModeApplied,
+  notice,
+  onNoticeShown,
 }: {
   sectionRef: RefObject<HTMLElement | null>;
   visible: boolean;
@@ -71,6 +75,16 @@ export function AccountSection({
   // the failure isn't silent — see SinglePageGenieApp's token-exchange catch.
   authError?: string | null;
   onAuthErrorShown?: () => void;
+  // Opens a specific auth form when a gated screen sends the user here, rather
+  // than always landing on login. Cleared via onRequestedModeApplied once used,
+  // so it does not force the same form on an unrelated later visit.
+  requestedMode?: AccountScreenMode;
+  onRequestedModeApplied?: () => void;
+  // Explains why a gated action sent the user here (e.g. tapping a V.I.Bee
+  // offer as a free member). Cleared once shown so it does not reappear when
+  // the user opens the account screen on their own later.
+  notice?: string | null;
+  onNoticeShown?: () => void;
 }) {
   const [mode, setMode] = useState<AccountScreenMode>("login");
   // Modes the user passed through to reach `mode`, so the back arrow can retrace
@@ -80,6 +94,8 @@ export function AccountSection({
   const [modeHistory, setModeHistory] = useState<AccountScreenMode[]>([]);
   const [form, setForm] = useState<ConsumerFormState>(createEmptyConsumerForm());
   const [message, setMessage] = useState<string | null>(null);
+  // Held locally so the banner survives the parent clearing the `notice` prop.
+  const [gateNotice, setGateNotice] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   /* profile edit form */
@@ -150,6 +166,7 @@ export function AccountSection({
       setMode("login");
       setModeHistory([]);
       setMessage(null);
+      setGateNotice(null);
       setForm(createEmptyConsumerForm());
     }
   }, [visible]);
@@ -161,6 +178,24 @@ export function AccountSection({
       onAuthErrorShown?.();
     }
   }, [visible, authError, onAuthErrorShown]);
+
+  useEffect(() => {
+    if (visible && notice) {
+      setGateNotice(notice);
+      onNoticeShown?.();
+    }
+  }, [visible, notice, onNoticeShown]);
+
+  useEffect(() => {
+    if (visible && requestedMode) {
+      setMode(requestedMode);
+      // Entered from a gated screen, so there is no in-screen hop to retrace —
+      // back must hand straight back to the caller.
+      setModeHistory([]);
+      setMessage(null);
+      onRequestedModeApplied?.();
+    }
+  }, [visible, requestedMode, onRequestedModeApplied]);
 
   void onAccountChange;
 
@@ -590,6 +625,38 @@ export function AccountSection({
         </>
       ) : (
         <>
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="-ml-1 mb-2 flex h-9 w-9 flex-none items-center justify-center text-gray-600 dark:text-white/82"
+            aria-label="Go back"
+          >
+            <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M19 12H6m0 0 5-5m-5 5 5 5" />
+            </svg>
+          </button>
+
+          {gateNotice ? (
+            <div className="mb-5 flex items-start gap-3 rounded-[18px] border border-[#E7070380] bg-red-50 px-4 py-3.5 text-left dark:bg-[rgba(120,10,10,0.35)]">
+              <svg
+                viewBox="0 0 24 24"
+                className="mt-0.5 h-5 w-5 flex-none text-red-500 dark:text-red-300"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <rect x="3" y="11" width="18" height="10" rx="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+              <p className="text-[0.86rem] leading-relaxed text-gray-700 dark:text-white/75">
+                {gateNotice}
+              </p>
+            </div>
+          ) : null}
+
           {account.avatarUrl ? (
             <div className="mx-auto mb-4 h-20 w-20 overflow-hidden rounded-full border-2 border-red-400 shadow-[0_0_16px_rgba(220,38,38,0.35)]">
               {/* eslint-disable-next-line @next/next/no-img-element */}

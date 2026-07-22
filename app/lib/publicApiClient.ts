@@ -75,13 +75,54 @@ export type VibeeOffer = {
   vibee_only?: boolean;
   // Optional venue context — populated by Xano when available,
   // used for offer cards and venue detail linking.
+  venue_id?: number;
   venue_name?: string;
   venue_image?: string;
   venue_neighborhood?: string;
   venue_rating?: number;
   venue_review_count?: number;
+  // Carried straight through from vibee_offers. Enough to render the offer
+  // detail page without a second round trip; fetchVenueById fills in the rest
+  // (tags, hours, map) when the venue isn't already cached locally.
+  venue_address?: string;
+  venue_phone?: string;
+  venue_reservation_url?: string;
+  venue_is_open_now?: boolean;
+  venue_price_band?: string;
+  venue_latitude?: number;
+  venue_longitude?: number;
   expires_at?: number | null;
 };
+
+/**
+ * genie/vibee_offers returns the raw genie_offers row plus venue_* keys. Two
+ * fields don't match what the UI consumes: the venue image arrives as
+ * `venue_image_url`, and the discount is nested inside `schedule_json` rather
+ * than sitting at the top level. Normalized in fetchVibeeOffers below.
+ *
+ * Venue keys are absent entirely (not null) when the venue can't be resolved,
+ * so every one of them is optional here.
+ */
+type RawVibeeOffer = VibeeOffer & {
+  image_url?: string;
+  venue_image_url?: string;
+  schedule_json?: {
+    discount_value?: string;
+    expiry_date?: number;
+  } | null;
+};
+
+function normalizeVibeeOffer(raw: RawVibeeOffer): VibeeOffer {
+  const { schedule_json, venue_image_url, image_url, ...rest } = raw;
+
+  return {
+    ...rest,
+    // Venue photo first — these are vendor-uploaded and the offer's own
+    // image_url is usually blank. Callers fall back to a placeholder.
+    venue_image: venue_image_url || image_url || undefined,
+    discount_value: schedule_json?.discount_value || undefined,
+  };
+}
 
 export type VibeeRedemption = {
   id: number;
@@ -614,10 +655,15 @@ export async function fetchVibeeOffers() {
   }
 
   const params = new URLSearchParams({ external_user_id: externalUserId });
-  return apiJson<{ offers: VibeeOffer[]; offer_count: number }>(
-    `/api/genie/offers?${params.toString()}`,
-    { auth: false }
-  );
+  const result = await apiJson<{
+    offers: RawVibeeOffer[];
+    offer_count: number;
+  }>(`/api/genie/offers?${params.toString()}`, { auth: false });
+
+  return {
+    ...result,
+    offers: (result.offers ?? []).map(normalizeVibeeOffer),
+  };
 }
 
 export async function redeemVibeeOffer(offerId: number) {

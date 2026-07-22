@@ -4,7 +4,10 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { AccountSection } from "@/app/components/single-page/AccountSection";
+import {
+  AccountSection,
+  type AccountScreenMode,
+} from "@/app/components/single-page/AccountSection";
 import { DrawerMenu, type DrawerMenuActionId } from "@/app/components/single-page/DrawerMenu";
 import { RoleSwitcherDialog } from "@/app/components/single-page/RoleSwitcherDialog";
 import { LoginSuccessDialog } from "@/app/components/single-page/LoginSuccessDialog";
@@ -184,13 +187,32 @@ async function shareLink(payload: { title: string; text: string; url: string }) 
   }
 }
 
+/**
+ * Xano stores unset coordinates as 0, not null, so a plain null check accepts
+ * (0, 0) — a real point in the Gulf of Guinea. Vendor-created venues routinely
+ * have no coordinates, so treat 0 as missing and let callers fall back to the
+ * address.
+ */
+function readVenueCoords(venue: GenieVenue) {
+  const latitude = Number(venue.latitude);
+  const longitude = Number(venue.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return null;
+  }
+  if (latitude === 0 && longitude === 0) {
+    return null;
+  }
+  return { latitude: String(latitude), longitude: String(longitude) };
+}
+
 function buildNativeMapsUrl(venue: GenieVenue) {
   if (venue.google_maps_url?.trim()) {
     return venue.google_maps_url.trim();
   }
 
-  const latitude = venue.latitude != null ? String(venue.latitude).trim() : undefined;
-  const longitude = venue.longitude != null ? String(venue.longitude).trim() : undefined;
+  const coords = readVenueCoords(venue);
+  const latitude = coords?.latitude;
+  const longitude = coords?.longitude;
   if (latitude && longitude) {
     return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${latitude},${longitude}`)}`;
   }
@@ -223,13 +245,11 @@ function buildStaticMapUrl(venue: GenieVenue) {
     return null;
   }
 
-  const latitude = venue.latitude != null ? String(venue.latitude).trim() : undefined;
-  const longitude = venue.longitude != null ? String(venue.longitude).trim() : undefined;
-  const location =
-    latitude && longitude
-      ? `${latitude},${longitude}`
-      : venue.address?.trim() ||
-        [venue.venue_name, venue.city].filter(Boolean).join(", ");
+  const coords = readVenueCoords(venue);
+  const location = coords
+    ? `${coords.latitude},${coords.longitude}`
+    : venue.address?.trim() ||
+      [venue.venue_name, venue.city].filter(Boolean).join(", ");
 
   if (!location) {
     return null;
@@ -598,8 +618,20 @@ const [trialSuccess, setTrialSuccess] = useState(false);
   const [sharedVenue, setSharedVenue] = useState<GenieVenue | null>(null);
   const [sharedVenueLoading, setSharedVenueLoading] = useState(false);
   const [selectedOfferId, setSelectedOfferId] = useState<number | null>(null);
+  // Full venue record for the offer being viewed. vibee_offers carries enough
+  // venue context for the basics, but not the tags, hours or coordinates the
+  // detail page renders — so fetch the venue when it isn't already cached.
+  const [offerVenue, setOfferVenue] = useState<GenieVenue | null>(null);
   const router = useRouter();
   const [account, setAccount] = useState<ConsumerAccount | null>(null);
+  // Lets a gated screen send the user to a specific auth form — the offers gate
+  // needs "Create a free account" to open signup, not the default login form.
+  // AccountSection clears it once applied, so it never leaks into a later visit.
+  const [accountEntryMode, setAccountEntryMode] =
+    useState<AccountScreenMode>(null);
+  // Why a gated action sent the user to the account screen, so they aren't left
+  // guessing why tapping an offer bounced them here.
+  const [accountNotice, setAccountNotice] = useState<string | null>(null);
   const [isAuthChecked, setIsAuthChecked] = useState(false);
   // Onboarding wizard: under magic-link there is no auth session until the link
   // is clicked, so the wizard runs on the guest session. `isOnboarding` routes
@@ -1915,6 +1947,43 @@ const [trialSuccess, setTrialSuccess] = useState(false);
       return getVenueId(previous) === selectedVenueId ? previous : null;
     });
   }, [selectedVenueId]);
+
+  useEffect(() => {
+    if (activeScreen !== "offer-detail") {
+      return;
+    }
+
+    const venueId = offers.find((o) => o.id === selectedOfferId)?.venue_id;
+    if (!venueId) {
+      setOfferVenue(null);
+      return;
+    }
+
+    // Already have it from a previous open of the same offer.
+    if (offerVenue && Number(offerVenue.id) === venueId) {
+      return;
+    }
+
+    let cancelled = false;
+    void fetchVenueById(venueId)
+      .then((venue) => {
+        if (!cancelled) {
+          setOfferVenue(venue);
+        }
+      })
+      .catch((error) => {
+        // Non-fatal: the offer payload still carries name, address and phone,
+        // so the page degrades to those rather than breaking.
+        console.error("Failed to load venue for offer", error);
+        if (!cancelled) {
+          setOfferVenue(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeScreen, selectedOfferId, offers, offerVenue]);
 
   useEffect(() => {
     if (
@@ -4531,7 +4600,7 @@ activeScreen === "vibbee-trial" ||
               </p>
 
               {/* Filter chips */}
-              <div className="-mx-4 mb-4 overflow-x-auto">
+              <div className="-mx-4 mb-4 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 <div className="flex gap-2 px-4">
                   {filterOptions.map((opt) => {
                     const active = offersFilter === opt.id;
@@ -4555,8 +4624,50 @@ activeScreen === "vibbee-trial" ||
 
               {/* States */}
               {!account ? (
-                <div className="rounded-[20px] border border-[#E7070380] bg-white/80 px-4 py-5 text-sm text-gray-600 dark:bg-black/20 dark:text-white/72">
-                  Sign in to view V.I.Bee offers.
+                <div className="flex min-h-[52dvh] items-center justify-center px-1">
+                  <div className="w-full max-w-[22rem] rounded-[24px] border border-[#E7070380] bg-white/85 px-6 py-8 text-center shadow-sm dark:bg-black/40">
+                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border-2 border-red-400/50 bg-red-500/15">
+                      <svg
+                        viewBox="0 0 24 24"
+                        className="h-7 w-7 text-red-500 dark:text-red-300"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <rect x="3" y="11" width="18" height="10" rx="2" />
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                      </svg>
+                    </div>
+                    <h3 className="mt-5 font-[family:var(--font-display)] text-[1.15rem] font-semibold text-gray-900 dark:text-white">
+                      Members only
+                    </h3>
+                    <p className="mx-auto mt-2 max-w-[26ch] text-[0.88rem] leading-relaxed text-gray-600 dark:text-white/60">
+                      Please sign in to view V.I.Bee offers.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAccountEntryMode("login");
+                        navigateTo("account");
+                      }}
+                      className="mt-6 w-full rounded-[18px] border border-red-500 bg-red-600 py-3.5 text-sm font-semibold text-white transition hover:bg-red-700 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                    >
+                      Sign In
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAccountEntryMode("free");
+                        navigateTo("account");
+                      }}
+                      className="mt-3 w-full rounded-[18px] bg-black/10 py-3.5 text-sm font-semibold text-red-600 transition hover:bg-black/15 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+                    >
+                      Create a free account
+                    </button>
+                  </div>
                 </div>
               ) : offersLoading ? (
                 <div className="rounded-[20px] border border-[#E7070380] bg-white/80 px-4 py-5 text-sm text-gray-600 dark:bg-black/20 dark:text-white/72">
@@ -4576,8 +4687,12 @@ activeScreen === "vibbee-trial" ||
                       ...(response?.more_nearby ?? []),
                       ...savedVenues,
                     ];
+                    // Match on venue_id — vendor_id is a different entity, which
+                    // is why Xano resolves venue in two hops before returning it.
                     const matchedVenue = knownVenues.find(
-                      (v) => Number(v.id) === offer.vendor_id
+                      (v) =>
+                        offer.venue_id != null &&
+                        Number(v.id) === offer.venue_id
                     );
                     const venueName =
                       offer.venue_name ||
@@ -4593,6 +4708,9 @@ activeScreen === "vibbee-trial" ||
                         type="button"
                         onClick={() => {
                           if (!canRedeem) {
+                            setAccountNotice(
+                              "Only V.I.Bee members can claim this offer. Upgrade to unlock it."
+                            );
                             navigateTo("account");
                             return;
                           }
@@ -4611,16 +4729,23 @@ activeScreen === "vibbee-trial" ||
                           <p className="truncate text-[1rem] font-semibold text-gray-900 dark:text-white">
                             {venueName}
                           </p>
-                          <span className="mt-1 inline-flex rounded-full bg-red-600 px-2.5 py-0.5 text-[0.66rem] font-bold uppercase tracking-wide text-white">
-                            {label}
-                          </span>
-                          {offer.discount_value ? (
-                            <p className="mt-1 truncate text-[0.82rem] font-semibold text-[#e8900a]">
-                              {offer.discount_value}
+                          {offer.title ? (
+                            <p className="mt-0.5 truncate text-[0.9rem] font-semibold text-gray-800 dark:text-white/90">
+                              {offer.title}
                             </p>
                           ) : null}
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                            <span className="inline-flex rounded-full bg-red-600 px-2.5 py-0.5 text-[0.66rem] font-bold uppercase tracking-wide text-white">
+                              {label}
+                            </span>
+                            {offer.discount_value ? (
+                              <span className="inline-flex rounded-full bg-[#e8900a] px-2.5 py-0.5 text-[0.66rem] font-bold uppercase tracking-wide text-white">
+                                {offer.discount_value} off
+                              </span>
+                            ) : null}
+                          </div>
                           {offer.description ? (
-                            <p className="mt-0.5 line-clamp-2 text-[0.78rem] leading-5 text-gray-600 dark:text-white/65">
+                            <p className="mt-1 line-clamp-2 text-[0.78rem] leading-5 text-gray-600 dark:text-white/65">
                               {offer.description}
                             </p>
                           ) : null}
@@ -4708,9 +4833,17 @@ activeScreen === "vibbee-trial" ||
             ...(response?.more_nearby ?? []),
             ...savedVenues,
           ];
-          const matchedVenue = knownVenues.find(
-            (v) => Number(v.id) === offer.vendor_id
-          );
+          // Prefer a locally cached venue, else the one fetched for this offer.
+          // Vendor-created venues never appear in the local caches, which is why
+          // the venue sections below used to stay empty for them.
+          const matchedVenue =
+            knownVenues.find(
+              (v) => offer.venue_id != null && Number(v.id) === offer.venue_id
+            ) ??
+            (offer.venue_id != null && offerVenue &&
+            Number(offerVenue.id) === offer.venue_id
+              ? offerVenue
+              : undefined);
           const venueName =
             offer.venue_name || matchedVenue?.venue_name || `Venue #${offer.vendor_id}`;
           const venueImage =
@@ -4718,13 +4851,23 @@ activeScreen === "vibbee-trial" ||
           const isMember = account?.membership === "vibee";
           const redeeming = redeemingOfferId === offer.id;
 
-          const rating = offer.venue_rating ?? matchedVenue?.google_rating ?? null;
-          const reviewCount = offer.venue_review_count ?? matchedVenue?.google_user_ratings_total ?? null;
-          const neighborhood = offer.venue_neighborhood ?? matchedVenue?.neighborhood_text ?? matchedVenue?.city ?? null;
-          const address = matchedVenue?.address ?? null;
-          const phone = matchedVenue?.phone ?? null;
-          const reservationUrl = matchedVenue?.reservation_url ?? null;
-          const isOpenNow = matchedVenue?.is_open_now ?? null;
+          // `||` not `??` throughout: vibee_offers returns unset venue columns as
+          // 0 or "" rather than null, so nullish coalescing would pin a real
+          // rating of 4.5 behind a literal 0.
+          const rating =
+            offer.venue_rating || matchedVenue?.google_rating || null;
+          const reviewCount =
+            offer.venue_review_count || matchedVenue?.google_user_ratings_total || null;
+          const neighborhood =
+            offer.venue_neighborhood ||
+            matchedVenue?.neighborhood_text ||
+            matchedVenue?.city ||
+            null;
+          const address = offer.venue_address || matchedVenue?.address || null;
+          const phone = offer.venue_phone || matchedVenue?.phone || null;
+          const reservationUrl =
+            offer.venue_reservation_url || matchedVenue?.reservation_url || null;
+          const isOpenNow = matchedVenue?.is_open_now ?? offer.venue_is_open_now ?? null;
           const isOfficial = matchedVenue?.is_official_vendor ?? false;
           const venueTags = matchedVenue ? buildVenueTags(matchedVenue).slice(0, 4) : [];
           const staticMapUrl = matchedVenue ? buildStaticMapUrl(matchedVenue) : null;
@@ -5391,6 +5534,10 @@ activeScreen === "vibbee-trial" ||
           }}
           authError={magicLinkError}
           onAuthErrorShown={() => setMagicLinkError(null)}
+          requestedMode={accountEntryMode}
+          onRequestedModeApplied={() => setAccountEntryMode(null)}
+          notice={accountNotice}
+          onNoticeShown={() => setAccountNotice(null)}
           onAccountChange={(nextAccount) => {
             setAccount(nextAccount);
             void hydrateAuthenticatedSession();
