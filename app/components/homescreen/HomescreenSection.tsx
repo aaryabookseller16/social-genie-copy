@@ -1075,6 +1075,10 @@ type HomescreenSectionProps = {
   onDismissLocationPrompt?: () => void;
 };
 
+// Distance scrolled before the header is allowed to hide. Roughly its own
+// height, so it doesn't slide away on the first small nudge.
+const HEADER_HIDE_AFTER = 64;
+
 export function HomescreenSection({
   account,
   navigateTo,
@@ -1092,6 +1096,37 @@ export function HomescreenSection({
   onDismissLocationPrompt,
 }: HomescreenSectionProps) {
   const isLoggedIn = !!account;
+
+  // Header hides while scrolling down the feed and comes back on the first
+  // upward flick, so reaching it never means scrolling all the way to the top.
+  const feedScrollRef = useRef<HTMLElement | null>(null);
+  const lastScrollTopRef = useRef(0);
+  const [isHeaderHidden, setIsHeaderHidden] = useState(false);
+
+  const handleFeedScroll = useCallback(() => {
+    const el = feedScrollRef.current;
+    if (!el) {
+      return;
+    }
+
+    const current = el.scrollTop;
+    const delta = current - lastScrollTopRef.current;
+
+    // Ignore sub-pixel jitter and iOS rubber-band overscroll, which otherwise
+    // flip the header back and forth while the finger is still.
+    if (Math.abs(delta) < 6) {
+      return;
+    }
+    lastScrollTopRef.current = current;
+
+    // Near the top the header always belongs on screen, regardless of direction.
+    if (current <= HEADER_HIDE_AFTER) {
+      setIsHeaderHidden(false);
+      return;
+    }
+
+    setIsHeaderHidden(delta > 0);
+  }, []);
   // Everything renders for everyone; interactions gate on auth. Guests are
   // sent to the auth screen, logged-in users proceed to the event/producer.
   const requireAuth = useCallback(() => navigateTo("account"), [navigateTo]);
@@ -1504,9 +1539,19 @@ export function HomescreenSection({
   feed.push(...homescreenPosts.slice(nextPost));
 
   return (
-    <section className="flex flex-1 flex-col overflow-y-auto pb-28">
+    <section
+      ref={feedScrollRef}
+      onScroll={handleFeedScroll}
+      className="flex flex-1 flex-col overflow-y-auto pb-28"
+    >
       {/* ── Header ─────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-1 py-3">
+      {/* Sticky rather than in-flow so it can slide out and back without the
+          feed jumping. Background stays transparent by design. */}
+      <div
+        className={`sticky top-0 z-30 flex items-center justify-between px-1 py-3 transition-transform duration-200 ease-out ${
+          isHeaderHidden ? "-translate-y-full" : "translate-y-0"
+        }`}
+      >
         <div className="flex flex-col items-start gap-0.5">
           {/* Speech-bubble mark — no rounded-full crop, it would clip the tail. */}
           <div className="relative h-10 w-11">
