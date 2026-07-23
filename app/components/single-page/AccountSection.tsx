@@ -489,8 +489,30 @@ export function AccountSection({
               </svg>
             </span>
             <span>
-              I agree to the <span className="text-red-600 underline">Terms</span> and{" "}
-              <span className="text-red-600 underline">Privacy Policy</span>
+              I agree to the{" "}
+              {/* These sit inside the <label>, so a click would also toggle the
+                  consent checkbox on its way out — stopPropagation keeps the
+                  label from claiming it. Opened in a new tab so a half-filled
+                  signup form isn't lost. */}
+              <a
+                href="https://socialbevy.com/terms"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="text-red-600 underline"
+              >
+                Terms
+              </a>{" "}
+              and{" "}
+              <a
+                href="https://socialbevy.com/privacy"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="text-red-600 underline"
+              >
+                Privacy Policy
+              </a>
             </span>
           </label>
 
