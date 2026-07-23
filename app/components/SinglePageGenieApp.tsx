@@ -3437,7 +3437,21 @@ activeScreen === "vibbee-trial" ||
         {activeScreen === "thinking" ? (
           <section
             ref={thinkingRef}
-            className="relative flex min-h-0 flex-1 flex-col items-center text-center"
+            /* `main` pins itself to h-dvh and sets overflow-y-hidden for the
+               thinking screen, which is right for the orb layout — that one is
+               sized to fit the viewport and must not scroll. The AI-fallback
+               layout replaces the orb with a text reply of unbounded length, so
+               with nothing scrollable anywhere in the chain a long reply was
+               simply unreachable. Give that variant its own scroll container:
+               flex-1 + min-h-0 already bound its height inside main, so
+               overflow-y-auto here scrolls the reply without touching the orb
+               layout. Bottom padding clears the BottomDock, which shouldShowFooter
+               keeps visible on this screen. */
+            className={`relative flex min-h-0 flex-1 flex-col items-center text-center ${
+              isAiFallbackLayout
+                ? "overflow-y-auto pb-[calc(env(safe-area-inset-bottom,0px)+7rem)]"
+                : ""
+            }`}
           >
             {/* For city_unsupported / ai_fallback, Figma calls for bubble +
                 bulleted list only — no orb, no "Got it" header, no status text.
@@ -5370,8 +5384,18 @@ activeScreen === "vibbee-trial" ||
           );
         })() : null}
 
+        {/* BottomDock is `fixed bottom-0 z-[80]` and roughly 64px tall plus the
+            safe-area inset, so it overlays the last stretch of any scrolling
+            screen. This section carried only pb-4, which left the "Next" button
+            permanently underneath it — scrolling to the end of the list still
+            could not reach it. Every other docked screen clears the dock with
+            pb-28; use the safe-area-aware form so notched phones get the
+            home-indicator height on top of it. */}
         {activeScreen === "preferences" ? (
-          <section ref={preferencesRef} className="relative flex flex-1 flex-col pb-4">
+          <section
+            ref={preferencesRef}
+            className="relative flex flex-1 flex-col pb-[calc(env(safe-area-inset-bottom,0px)+7rem)]"
+          >
             {!account && !isOnboarding ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-4 pt-20 text-center">
                 <p className="text-[1.1rem] font-semibold text-gray-900 dark:text-white">
