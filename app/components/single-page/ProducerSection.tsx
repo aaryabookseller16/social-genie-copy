@@ -519,37 +519,59 @@ export function ProducerSection({
     }
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
+  /**
+   * A failed check is NOT the same as "you have no producer profile". Falling
+   * through to the onboarding form on error is what made already-onboarded
+   * producers get asked to register again on every role switch — an expired
+   * token, a Xano blip or a dropped connection all rendered the signup screen.
+   * Only an explicit `profile: null` from Xano may show it; everything else is
+   * a load failure the user can retry. See app/api/producer/profile/route.ts.
+   */
+  const checkRunRef = useRef(0);
 
-    async function check() {
-      try {
-        const data = await fetchMyProducerProfile();
-        if (cancelled) return;
-        const p = data.profile;
-        if (p && p.id) {
-          writeCachedProducerId(p.id);
-          setProfile(p);
-          if (p.status === "pending") {
-            setStep("pending-approval");
-          } else {
-            setStep("dashboard");
-            refreshEvents();
-            refreshPosts();
-            generateFollowerHistory(p.follower_count ?? 0, p.id ?? 1);
-          }
+  const runProfileCheck = useCallback(async () => {
+    const runId = ++checkRunRef.current;
+    setStep("loading");
+    setGateError(null);
+
+    try {
+      const data = await fetchMyProducerProfile();
+      // A superseded run (account switch, remount) must not write state.
+      if (runId !== checkRunRef.current) return;
+
+      const p = data.profile;
+      if (p && p.id) {
+        writeCachedProducerId(p.id);
+        setProfile(p);
+        if (p.status === "pending") {
+          setStep("pending-approval");
         } else {
-          setStep("onboarding");
+          setStep("dashboard");
+          refreshEvents();
+          refreshPosts();
+          generateFollowerHistory(p.follower_count ?? 0, p.id ?? 1);
         }
-      } catch {
-        if (cancelled) return;
+      } else {
+        // Xano genuinely holds no producer row for this user — the only case
+        // that should ever show the signup form. Drop the cached id too, or a
+        // previous account's producer_id would ride along on the next create.
+        clearCachedProducerId();
         setStep("onboarding");
       }
+    } catch (err) {
+      if (runId !== checkRunRef.current) return;
+      setGateError(
+        err instanceof Error
+          ? err.message
+          : "Could not check your producer profile."
+      );
+      setStep("error");
     }
+  }, [refreshEvents, refreshPosts, generateFollowerHistory]);
 
-    check();
-    return () => { cancelled = true; };
-  }, [account?.id, refreshEvents, refreshPosts, generateFollowerHistory]);
+  useEffect(() => {
+    void runProfileCheck();
+  }, [account?.id, runProfileCheck]);
 
   function addEvent(raw: ProducerEvent) {
     /* Xano may wrap the created event: { success, event: { id, title, ... } } */
@@ -997,6 +1019,52 @@ export function ProducerSection({
             disabled={checkingStatus}
           >
             {checkingStatus ? "Checking…" : "Check approval status"}
+          </ActionButton>
+          <ActionButton variant="secondary" className="w-full" onClick={onBack}>
+            Back to home
+          </ActionButton>
+        </div>
+      </section>
+    );
+  }
+
+  /* ---- Profile check failed (NOT the same as having no profile) ---- */
+  if (step === "error") {
+    return (
+      <section className="flex min-h-[55vh] flex-col items-center justify-center gap-6 pb-28 text-center">
+        <div className="flex h-20 w-20 items-center justify-center rounded-full bg-red-50 dark:bg-red-900/20">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-9 w-9 text-red-500 dark:text-red-400"
+          >
+            <path d="M12 9v4" />
+            <path d="M12 17h.01" />
+            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+          </svg>
+        </div>
+
+        <div className="space-y-2">
+          <h1 className="font-[family:var(--font-display)] text-[1.6rem] font-semibold text-gray-900 dark:text-white">
+            Couldn&apos;t load your producer profile
+          </h1>
+          <p className="max-w-xs text-sm leading-relaxed text-gray-500 dark:text-white/55">
+            This is a connection problem, not a missing profile — your events,
+            posts and followers are all still there. Try again in a moment.
+          </p>
+          {gateError ? (
+            <p className="mt-1 text-xs font-medium text-red-500">{gateError}</p>
+          ) : null}
+        </div>
+
+        <div className="flex w-full max-w-xs flex-col gap-3">
+          <ActionButton className="w-full" onClick={() => void runProfileCheck()}>
+            Try again
           </ActionButton>
           <ActionButton variant="secondary" className="w-full" onClick={onBack}>
             Back to home
