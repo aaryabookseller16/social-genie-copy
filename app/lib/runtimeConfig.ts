@@ -94,3 +94,42 @@ export function getRuntimeConfig(): RuntimeConfig {
  * TODO: replace with a real, non-deleted genie_posts id before shipping.
  */
 export const FEATURED_HOMESCREEN_POST_ID = 1;
+
+export type FeaturedVideo = {
+  id: string;
+  url: string;
+  /** Caption shown over the card and used as the player's accessible name. */
+  title: string;
+  /**
+   * Poster frame. Optional — Cloudinary-hosted videos fall back to a derived
+   * first-frame JPG (see deriveVideoThumbnail in app/lib/videoUpload.ts).
+   */
+  posterUrl?: string;
+};
+
+/**
+ * Client-supplied videos for the homescreen "Featured" rail.
+ *
+ * Hardcoded on purpose: there is no backend source for these yet. The events
+ * rail's lean projection in fn_genie_get_homescreen_events_dev drops
+ * video_urls, so nothing Xano returns to the homescreen carries video. Staff
+ * edit this list to change what is featured; swap it for an endpoint once that
+ * projection carries video_urls.
+ */
+export const FEATURED_HOMESCREEN_VIDEOS: FeaturedVideo[] = [
+  {
+    id: "featured-1",
+    url: "https://res.cloudinary.com/dak7jjbdy/video/upload/v1784822776/WhatsApp_Video_2026-07-23_at_3.34.20_PM_jmhw0z.mp4",
+    title: "Live from the floor",
+  },
+  {
+    id: "featured-2",
+    url: "https://res.cloudinary.com/dak7jjbdy/video/upload/v1784822657/WhatsApp_Video_2026-07-23_at_3.36.04_PM_m1z6mw.mp4",
+    title: "Tonight in Midtown",
+  },
+  {
+    id: "featured-3",
+    url: "https://res.cloudinary.com/dak7jjbdy/video/upload/v1784822144/WhatsApp_Video_2026-07-23_at_3.31.10_PM_kl8o38.mp4",
+    title: "On the scene",
+  },
+];

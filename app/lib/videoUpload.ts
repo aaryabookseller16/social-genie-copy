@@ -57,6 +57,24 @@ export function deriveVideoThumbnail(secureUrl: string): string {
   return withOffset.replace(/\.\w+(\?.*)?$/, ".jpg$1");
 }
 
+/**
+ * Cloudinary transcodes on delivery, so playback surfaces should never request
+ * the original upload. Sources here are raw phone clips — measured at 4.8MB,
+ * 4.7MB and 7.4MB — and `q_auto`/`f_auto` roughly halves that with no visible
+ * loss at feed size. Returns the URL untouched if it is not a Cloudinary
+ * delivery URL, so a non-Cloudinary source still plays.
+ */
+export function cloudinaryVideoVariant(secureUrl: string, transform: string): string {
+  if (!secureUrl.includes("/upload/")) return secureUrl;
+  return secureUrl.replace("/upload/", `/upload/${transform}/`);
+}
+
+/** Muted inline cards. c_limit never upscales, so it only caps oversized uploads. */
+export const VIDEO_VARIANT_PREVIEW = "f_auto:video,q_auto,w_480,c_limit";
+
+/** Full-screen playback — source resolution, still transcoded for size. */
+export const VIDEO_VARIANT_PLAYBACK = "f_auto:video,q_auto";
+
 type SignatureResponse = {
   cloud_name: string;
   api_key: string;

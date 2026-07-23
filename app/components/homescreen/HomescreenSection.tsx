@@ -28,6 +28,7 @@ import {
 } from "@/app/lib/publicApiClient";
 import { mediaGalleryFor } from "@/app/lib/image";
 import ImageGallery from "@/app/components/ImageGallery";
+import FeaturedVideoRail from "@/app/components/homescreen/FeaturedVideoRail";
 import { type FlowAnchor } from "@/app/components/single-page/ui";
 
 /* ------------------------------------------------------------------ */
@@ -724,70 +725,6 @@ function SuggestedProducersRow({
     </div>
   );
 }
-
-/* ------------------------------------------------------------------ */
-/*  Featured rail — DISABLED until the client supplies videos.          */
-/*                                                                      */
-/*  The mockup's Featured cards are video, but the events rail's lean   */
-/*  projection in fn_genie_get_homescreen_events_dev drops video_urls   */
-/*  (the column exists on genie_social_events). Rather than ship a row  */
-/*  of stills pretending to be the video rail, the whole section stays  */
-/*  commented out.                                                      */
-/*                                                                      */
-/*  To re-enable: add image_urls/video_urls back to that projection and *
-/*  to UpcomingEvent, uncomment this component and its <FeaturedRow />  */
-/*  render site below, then swap cover_image_url for the video poster   */
-/*  and wire the play badge to VideoPlayerModal (see                    */
-/*  FeaturedEventVideos.tsx, which already does exactly this).          */
-/* ------------------------------------------------------------------ */
-
-/*
-function FeaturedRow({
-  events,
-  onOpen,
-}: {
-  events: UpcomingEvent[];
-  onOpen: (evt: UpcomingEvent) => void;
-}) {
-  const withCover = events.filter((e) => e.cover_image_url).slice(0, 4);
-  if (!withCover.length) return null;
-  return (
-    <div>
-      <h2 className="mb-3 font-[family:var(--font-display)] text-[1.4rem] text-gray-900 dark:text-white">Featured</h2>
-      <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {withCover.map((evt) => (
-          <button
-            key={evt.id}
-            type="button"
-            onClick={() => onOpen(evt)}
-            aria-label={evt.title}
-            className="relative h-56 w-44 flex-none overflow-hidden rounded-[16px] bg-zinc-900"
-          >
-            <Image
-              src={evt.cover_image_url as string}
-              alt={evt.title}
-              fill
-              sizes="176px"
-              className="object-cover"
-              unoptimized
-            />
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent" />
-            {evt.is_live ? (
-              <span className="absolute left-2.5 top-2.5 flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-[0.55rem] font-bold uppercase tracking-wide text-white">
-                <span className="h-1 w-1 animate-pulse rounded-full bg-white" />
-                Live
-              </span>
-            ) : null}
-            <span className="absolute inset-x-2.5 bottom-2.5 line-clamp-2 text-left text-[0.72rem] font-semibold leading-4 text-white">
-              {evt.title}
-            </span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-*/
 
 /* ------------------------------------------------------------------ */
 /*  Neighborhood pulse banner                                           */
@@ -1633,9 +1570,7 @@ export function HomescreenSection({
         </div>
       ) : (
         <div className="space-y-4 px-1">
-          {/* Featured rail is disabled until the client supplies videos —
-              see the commented-out FeaturedRow above.
-          <FeaturedRow events={allEvents} onOpen={gatedEventOpen} /> */}
+          <FeaturedVideoRail />
           <div className="flex items-baseline justify-between gap-2">
             <h2 className="font-[family:var(--font-display)] text-[1.4rem] text-gray-900 dark:text-white">Your Bevy</h2>
             {showCityLabel && (
