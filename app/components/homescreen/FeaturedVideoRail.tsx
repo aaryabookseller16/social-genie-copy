@@ -185,7 +185,7 @@ export default function FeaturedVideoRail({
                 cardRefs.current[index] = node;
               }}
               onClick={() => openVideo(index)}
-              aria-label={`Play ${video.title}`}
+              aria-label={video.title ? `Play ${video.title}` : `Play video ${index + 1}`}
               className={`${cardClass} text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70`}
             >
               <video
@@ -203,7 +203,11 @@ export default function FeaturedVideoRail({
                 className="h-full w-full object-cover"
               />
 
-              <span className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent" />
+              {/* Scrim exists to keep the caption legible — without one it would
+                  only be darkening the video for no reason. */}
+              {video.title && (
+                <span className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent" />
+              )}
 
               {/* The badge marks the card as tappable and covers the case where
                   autoplay was refused, so a paused card never looks broken. */}
@@ -219,9 +223,11 @@ export default function FeaturedVideoRail({
                 </svg>
               </span>
 
-              <span className="pointer-events-none absolute inset-x-2.5 bottom-2.5 line-clamp-2 text-[0.72rem] font-semibold leading-4 text-white">
-                {video.title}
-              </span>
+              {video.title && (
+                <span className="pointer-events-none absolute inset-x-2.5 bottom-2.5 line-clamp-2 text-[0.72rem] font-semibold leading-4 text-white">
+                  {video.title}
+                </span>
+              )}
             </button>
           );
         })}

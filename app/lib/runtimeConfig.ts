@@ -98,8 +98,12 @@ export const FEATURED_HOMESCREEN_POST_ID = 1;
 export type FeaturedVideo = {
   id: string;
   url: string;
-  /** Caption shown over the card and used as the player's accessible name. */
-  title: string;
+  /**
+   * Optional caption shown over the card and used as the player's accessible
+   * name. Omit it and the card renders no caption, falling back to a positional
+   * label ("Play video 2") for screen readers.
+   */
+  title?: string;
   /**
    * Poster frame. Optional — Cloudinary-hosted videos fall back to a derived
    * first-frame JPG (see deriveVideoThumbnail in app/lib/videoUpload.ts).
@@ -120,16 +124,13 @@ export const FEATURED_HOMESCREEN_VIDEOS: FeaturedVideo[] = [
   {
     id: "featured-1",
     url: "https://res.cloudinary.com/dak7jjbdy/video/upload/v1784822776/WhatsApp_Video_2026-07-23_at_3.34.20_PM_jmhw0z.mp4",
-    title: "Live from the floor",
   },
   {
     id: "featured-2",
     url: "https://res.cloudinary.com/dak7jjbdy/video/upload/v1784822657/WhatsApp_Video_2026-07-23_at_3.36.04_PM_m1z6mw.mp4",
-    title: "Tonight in Midtown",
   },
   {
     id: "featured-3",
     url: "https://res.cloudinary.com/dak7jjbdy/video/upload/v1784822144/WhatsApp_Video_2026-07-23_at_3.31.10_PM_kl8o38.mp4",
-    title: "On the scene",
   },
 ];
