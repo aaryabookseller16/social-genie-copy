@@ -18,6 +18,10 @@ export type ConsumerAccount = {
   vendorId?: number | null;
   verified?: boolean;
   createdAt: number;
+  // Roles unlocked server-side (genie_user.roles), refreshed on every
+  // hydrate. Source of truth — see readSelectedRoles() for the pre-login
+  // onboarding-only local cache this supersedes once signed in.
+  roles?: OnboardingRole[];
 };
 
 // Additive onboarding roles. "consumer" (Discover & Go Out) is always implied.

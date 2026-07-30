@@ -192,10 +192,13 @@ export function AccountSection({
       // Entered from a gated screen, so there is no in-screen hop to retrace —
       // back must hand straight back to the caller.
       setModeHistory([]);
-      setMessage(null);
+      // `gateNotice` (above) only renders in the logged-in branch below — a
+      // guest routed here via requestedMode never reaches it, so surface the
+      // same notice through `message`, which the logged-out form does render.
+      setMessage(notice ?? null);
       onRequestedModeApplied?.();
     }
-  }, [visible, requestedMode, onRequestedModeApplied]);
+  }, [visible, requestedMode, notice, onRequestedModeApplied]);
 
   void onAccountChange;
 

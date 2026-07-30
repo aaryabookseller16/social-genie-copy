@@ -962,7 +962,19 @@ const [trialSuccess, setTrialSuccess] = useState(false);
         fetchSavedVenues(),
       ]);
 
-      const nextAccount = toConsumerAccount(user, status);
+      let nextAccount = toConsumerAccount(user, status);
+
+      // Migration: older accounts predate genie_user.roles. Fall back to the
+      // pre-login local cache once, and push it to the server so future
+      // hydrates read it back from there instead.
+      if ((nextAccount.roles?.length ?? 0) === 0) {
+        const localRoles = readSelectedRoles();
+        if (localRoles.length > 0) {
+          nextAccount = { ...nextAccount, roles: localRoles };
+          setUserRoles(localRoles).catch(() => {});
+        }
+      }
+
       setAccount(nextAccount);
       setSavedVenues(venues);
       setSavedVenueIds(syncSavedVenueIds(venues));
@@ -1105,10 +1117,12 @@ const [trialSuccess, setTrialSuccess] = useState(false);
   }, [account, producerRealtimeUnavailable, loadProducerUnread]);
 
   // User-to-user DMs are not on realtime yet, so this half still polls: fetch on
-  // load, poll while the app is open, and refetch on every screen change (so the
-  // badge clears right after reading a thread + navigating back). The unread
-  // count has no dedicated endpoint — it's derived from the thread list — so
-  // this is intentionally lightweight, not per-second.
+  // load and poll while the app is open. The unread count has no dedicated
+  // endpoint — it's derived from the thread list — so this is intentionally
+  // lightweight, not per-second. Deliberately depends on `account` only:
+  // `activeScreen` used to be in this list, restarting the effect (and firing
+  // an immediate refetch) on every navigation — doubling up with the 15s timer
+  // on every screen change.
   useEffect(() => {
     if (!account) return;
     let cancelled = false;
@@ -1125,7 +1139,7 @@ const [trialSuccess, setTrialSuccess] = useState(false);
       cancelled = true;
       clearInterval(interval);
     };
-  }, [account, activeScreen]);
+  }, [account]);
 
   const loadSocialPreferences = useCallback(async () => {
     if (profileLoadedRef.current) {
@@ -2890,13 +2904,21 @@ const [trialSuccess, setTrialSuccess] = useState(false);
 
   // Roles hang off the signed-in account, so a guest has nothing to switch
   // between — send them to sign in instead of opening an empty switcher.
+  // Ignore taps before the initial auth check resolves: `account` is briefly
+  // null while /api/auth/me is in flight, and without this guard a signed-in
+  // user tapping the bar during that window was bounced to the login screen.
   const openRoleSwitcher = useCallback(() => {
+    if (!isAuthChecked) {
+      return;
+    }
     if (!account) {
+      setAccountEntryMode("login");
+      setAccountNotice("Sign in to switch between your profiles.");
       navigateTo("account");
       return;
     }
     setIsRoleSwitcherOpen(true);
-  }, [account, navigateTo]);
+  }, [account, isAuthChecked, navigateTo, setAccountEntryMode, setAccountNotice]);
 
   const handleDrawerNavigate = useCallback(
     (target: DrawerMenuActionId) => {
@@ -3176,6 +3198,7 @@ activeScreen === "vibbee-trial" ||
 
       <RoleSwitcherDialog
         visible={isRoleSwitcherOpen}
+        unlockedRoles={account?.roles ?? []}
         onClose={() => setIsRoleSwitcherOpen(false)}
         onNavigateToRole={(role) => {
           setIsRoleSwitcherOpen(false);

@@ -1,11 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
-import {
-  readSelectedRoles,
-  type OnboardingRole,
-} from "@/app/lib/localState";
+import { type OnboardingRole } from "@/app/lib/localState";
 
 const ROLE_LABELS: Record<OnboardingRole, string> = {
   consumer: "Discover & Go Out",
@@ -22,6 +19,8 @@ const ALL_SWITCHABLE_ROLES: OnboardingRole[] = [
 
 type RoleSwitcherDialogProps = {
   visible: boolean;
+  /** Roles unlocked server-side (account.roles) — the switcher never reads storage itself. */
+  unlockedRoles: OnboardingRole[];
   onClose: () => void;
   onNavigateToRole: (role: OnboardingRole) => void;
   onUnlockNew: () => void;
@@ -29,18 +28,11 @@ type RoleSwitcherDialogProps = {
 
 export function RoleSwitcherDialog({
   visible,
+  unlockedRoles,
   onClose,
   onNavigateToRole,
   onUnlockNew,
 }: RoleSwitcherDialogProps) {
-  const [unlockedRoles, setUnlockedRoles] = useState<OnboardingRole[]>([]);
-
-  useEffect(() => {
-    if (!visible) return;
-    const stored = readSelectedRoles();
-    setUnlockedRoles(stored.length > 0 ? stored : ["consumer"]);
-  }, [visible]);
-
   useEffect(() => {
     if (!visible) return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -109,18 +101,24 @@ export function RoleSwitcherDialog({
           </div>
 
           {/* Role buttons */}
-          <div className="space-y-3.5">
-            {switchableUnlocked.map((role) => (
-              <button
-                key={role}
-                type="button"
-                onClick={() => onNavigateToRole(role)}
-                className="w-full rounded-[18px] border border-red-500 bg-red-600 hover:bg-red-700 dark:border-red-500/60 dark:bg-[linear-gradient(180deg,rgba(180,20,20,0.92),rgba(100,5,5,0.98))] px-4 py-4 text-center text-[1.1rem] font-bold text-white shadow-[0_0_0_1px_rgba(255,80,80,0.15),0_8px_24px_rgba(0,0,0,0.4)] transition hover:brightness-110 active:scale-[0.98]"
-              >
-                {ROLE_LABELS[role]}
-              </button>
-            ))}
-          </div>
+          {switchableUnlocked.length > 0 ? (
+            <div className="space-y-3.5">
+              {switchableUnlocked.map((role) => (
+                <button
+                  key={role}
+                  type="button"
+                  onClick={() => onNavigateToRole(role)}
+                  className="w-full rounded-[18px] border border-red-500 bg-red-600 hover:bg-red-700 dark:border-red-500/60 dark:bg-[linear-gradient(180deg,rgba(180,20,20,0.92),rgba(100,5,5,0.98))] px-4 py-4 text-center text-[1.1rem] font-bold text-white shadow-[0_0_0_1px_rgba(255,80,80,0.15),0_8px_24px_rgba(0,0,0,0.4)] transition hover:brightness-110 active:scale-[0.98]"
+                >
+                  {ROLE_LABELS[role]}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-center text-[0.95rem] text-gray-500 dark:text-white/60">
+              You haven&apos;t unlocked any other profiles yet.
+            </p>
+          )}
 
           {/* Unlock button */}
           {hasLockedRoles ? (
