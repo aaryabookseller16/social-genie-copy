@@ -9,6 +9,7 @@ import {
   writeSavedVenueIds,
   type ConsumerAccount,
   type ConsumerSubscriptionStatus,
+  type OnboardingRole,
 } from "./localState";
 import {
   getOrCreateDeviceId,
@@ -33,6 +34,7 @@ export type PublicApiUser = {
   subscription_status?: ConsumerSubscriptionStatus;
   vendor_id?: number | null;
   verified?: boolean;
+  roles?: string[] | null;
 };
 
 export type SocialProfile = {
@@ -229,6 +231,20 @@ export async function apiJson<T>(path: string, init: JsonInit = {}) {
   return (await response.json()) as T;
 }
 
+const VALID_ONBOARDING_ROLES: readonly OnboardingRole[] = [
+  "consumer",
+  "vendor",
+  "producer",
+  "influencer",
+];
+
+function toOnboardingRoles(raw: string[] | null | undefined): OnboardingRole[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((r): r is OnboardingRole =>
+    (VALID_ONBOARDING_ROLES as string[]).includes(r)
+  );
+}
+
 export function toConsumerAccount(
   user: PublicApiUser,
   subscriptionStatus?: ConsumerSubscriptionStatus
@@ -248,6 +264,7 @@ export function toConsumerAccount(
     vendorId: user.vendor_id ?? null,
     verified: user.verified ?? false,
     createdAt: Date.now(),
+    roles: toOnboardingRoles(user.roles),
   };
 }
 
@@ -1512,6 +1529,7 @@ export type VendorAnalyticsDailyRecord = {
   map_clicks?: number;
   reservation_clicks?: number;
   saves?: number;
+  engagement_rate?: number;
 };
 
 export async function fetchVendorAnalytics(

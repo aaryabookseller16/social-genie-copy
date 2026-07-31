@@ -30,6 +30,7 @@ export async function GET(request: NextRequest) {
       membership_active?: boolean;
       preferred_city?: string;
       vendor_id?: number | null;
+      roles?: string[] | null;
     }>("auth/me", { authToken });
 
     return NextResponse.json({
@@ -45,6 +46,7 @@ export async function GET(request: NextRequest) {
         subscription_status: user.membership_active ? "active" : "inactive",
         vendor_id: user.vendor_id ?? null,
         verified: user.verified ?? false,
+        roles: user.roles ?? [],
       },
     });
   } catch (error) {
