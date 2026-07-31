@@ -1529,6 +1529,7 @@ export type VendorAnalyticsDailyRecord = {
   map_clicks?: number;
   reservation_clicks?: number;
   saves?: number;
+  engagement_rate?: number;
 };
 
 export async function fetchVendorAnalytics(

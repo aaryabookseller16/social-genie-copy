@@ -690,6 +690,11 @@ export function VendorSection({
   const [analyticsDaily, setAnalyticsDaily] = useState<VendorAnalyticsDailyRecord[]>([]);
   const [isAnalyticsLoading, setIsAnalyticsLoading] = useState(false);
 
+  // Dashboard performance widget (Pro only) — real 7-day data behind the chart/labels
+  const [dashboardPerfTotals, setDashboardPerfTotals] = useState<VendorAnalyticsTotals | null>(null);
+  const [dashboardPerfDaily, setDashboardPerfDaily] = useState<VendorAnalyticsDailyRecord[]>([]);
+  const [isDashboardPerfLoading, setIsDashboardPerfLoading] = useState(false);
+
   // Offers screen
   const [offerMessage, setOfferMessage] = useState<string | null>(null);
 
@@ -924,6 +929,30 @@ export function VendorSection({
       .finally(() => { if (!cancelled) setIsAnalyticsLoading(false); });
     return () => { cancelled = true; };
   }, [visible, step, vendorId, account, analyticsPeriod]);
+
+  // Dashboard performance widget loader — real 7-day data behind the chart/labels,
+  // Pro only (the widget itself is Pro-gated, no point fetching for Free vendors).
+  useEffect(() => {
+    if (!visible || step !== "dashboard" || !dashboardData?.is_pro) return;
+    const vid = vendorId ?? dashboardData?.vendor_id;
+    if (!vid) return;
+    let cancelled = false;
+    setIsDashboardPerfLoading(true);
+    fetchVendorAnalytics(vid, "7_days")
+      .then((res) => {
+        if (cancelled) return;
+        setDashboardPerfTotals(res?.totals ?? null);
+        setDashboardPerfDaily(res?.daily_records ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDashboardPerfTotals(null);
+          setDashboardPerfDaily([]);
+        }
+      })
+      .finally(() => { if (!cancelled) setIsDashboardPerfLoading(false); });
+    return () => { cancelled = true; };
+  }, [visible, step, vendorId, dashboardData?.is_pro, dashboardData?.vendor_id]);
 
   // Settings — pre-load notification preferences
   useEffect(() => {
@@ -2184,20 +2213,21 @@ export function VendorSection({
               const mapClicks = d.total_map_clicks ?? 0;
               const reservationClicks = d.total_reservation_clicks ?? 0;
               const userSaved = d.total_saves ?? 0;
-              const performancePoints =
-                d.performance_points && d.performance_points.length > 0
-                  ? d.performance_points
-                  : [
-                      { value: 51 },
-                      { value: 55 },
-                      { value: 58 },
-                      { value: 70 },
-                      { value: 85 },
-                      { value: 75 },
-                      { value: 82 },
-                      { value: 95 },
-                      { value: 78 },
-                    ];
+              // Real 7-day engagement-rate trend from genie_vendor_analytics,
+              // via the dashboard performance loader above. No fallback to
+              // fake data — an empty/loading vendor just shows an empty chart.
+              const performancePoints = [...dashboardPerfDaily]
+                .sort((a, b) => a.date.localeCompare(b.date))
+                .map((record) => ({ value: (record.engagement_rate ?? 0) * 100 }));
+              const performanceMinLabel =
+                performancePoints.length > 0
+                  ? `${Math.round(Math.min(...performancePoints.map((p) => p.value)))}%`
+                  : "0%";
+              const totalActionsThisWeek = dashboardPerfTotals?.total_actions ?? 0;
+              const dailyAverageActions =
+                dashboardPerfDaily.length > 0
+                  ? Math.round(totalActionsThisWeek / dashboardPerfDaily.length)
+                  : 0;
               const boostActive = Boolean(d.boost_active);
               const boostAmount = d.boost_amount ?? 0;
               const boostPeriodLabel = d.boost_period_label || "Today";
@@ -2302,18 +2332,20 @@ export function VendorSection({
                       </div>
 
                       <div>
-                        <PerformanceChart
-                          points={performancePoints}
-                          minLabel={
-                            d.performance_min != null
-                              ? `${d.performance_min}%`
-                              : "51%"
-                          }
-                          headLabel="7 Days"
-                        />
+                        {isDashboardPerfLoading ? (
+                          <p className="py-6 text-center text-[0.85rem] text-gray-400 dark:text-white/50">
+                            Loading performance…
+                          </p>
+                        ) : (
+                          <PerformanceChart
+                            points={performancePoints}
+                            minLabel={performanceMinLabel}
+                            headLabel="7 Days"
+                          />
+                        )}
                         <div className="mt-2 flex items-center justify-between px-1 text-[0.82rem] font-semibold text-[#e8900a]">
-                          <span>312</span>
-                          <span>45</span>
+                          <span>{totalActionsThisWeek}</span>
+                          <span>{dailyAverageActions}</span>
                           <span>All Time</span>
                         </div>
                       </div>
