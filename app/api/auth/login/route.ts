@@ -1,17 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { xanoAuthFetch, XanoError } from "@/app/lib/server/xanoProxy";
+import { setAuthCookies, isSameOriginRequest } from "@/app/lib/server/authCookies";
 
 /**
  * POST /api/auth/login
- * Magic link login — exchanges magic_token from email link for authToken.
+ * Magic link login — exchanges magic_token from email link for an access +
+ * refresh token pair, set as httpOnly cookies (never returned in the body).
  * Uses Auth base URL (api:dRDS80y8) → auth/verify_email/magic_login
  *
  * Xano expects: { magic_token: "..." }
- * Xano returns flat: { authToken, user_id, external_user_id, email, verified, membership_active, flow }
- * `flow` ("signup" | "login") reflects the intent embedded in the magic-link
- * JWT when it was issued — pending backend rollout, absent until then.
+ * Xano returns flat: { access_token, refresh_token, access_expires_in, user_id,
+ * external_user_id, email, verified, membership_active, flow }
  */
 export async function POST(request: NextRequest) {
+  if (!isSameOriginRequest(request)) {
+    return NextResponse.json({ error: "Invalid origin" }, { status: 403 });
+  }
+
   try {
     const body = (await request.json().catch(() => ({}))) as Record<
       string,
@@ -28,7 +33,9 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await xanoAuthFetch<{
-      authToken: string;
+      access_token: string;
+      refresh_token: string;
+      access_expires_in: number;
       user_id: number;
       external_user_id: string;
       email: string;
@@ -42,8 +49,7 @@ export async function POST(request: NextRequest) {
       body: { magic_token: magicToken },
     });
 
-    return NextResponse.json({
-      token: result.authToken,
+    const response = NextResponse.json({
       user: {
         id: result.user_id,
         email: result.email,
@@ -55,10 +61,11 @@ export async function POST(request: NextRequest) {
         verified: result.verified ?? false,
       },
       external_user_id: result.external_user_id,
-      // Defaults to "login" (the safer fallback) until the backend ships the
-      // `flow` field on auth/verify_email/magic_login — see plan doc.
       flow: result.flow ?? "login",
     });
+
+    setAuthCookies(response, result.access_token, result.refresh_token);
+    return response;
   } catch (error) {
     if (error instanceof XanoError) {
       return NextResponse.json(

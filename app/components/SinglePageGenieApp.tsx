@@ -1814,14 +1814,11 @@ const [trialSuccess, setTrialSuccess] = useState(false);
       if (magicToken) {
         try {
           const previousExternalUserId = readExternalUserId();
-          const {
-            token: authToken,
-            user,
-            external_user_id,
-            flow,
-          } = await loginWithMagicToken(magicToken);
+          const { user, external_user_id, flow } = await loginWithMagicToken(
+            magicToken
+          );
 
-          persistAuthSession(authToken, user);
+          persistAuthSession(user);
           if (external_user_id) {
             writeExternalUserId(external_user_id);
           }

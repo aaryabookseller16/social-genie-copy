@@ -4,7 +4,6 @@ import {
   clearConsumerSession,
   readAuthToken,
   readConsumerAccount,
-  writeAuthToken,
   writeConsumerAccount,
   writeSavedVenueIds,
   type ConsumerAccount,
@@ -203,26 +202,55 @@ export class ApiError extends Error {
   }
 }
 
+// Shared across concurrent apiJson calls: if several requests 401 around the
+// same moment (the access token just expired), they must not each fire their
+// own /api/auth/refresh — the refresh token rotates on every use, so only the
+// first call would succeed and the rest would present an already-rotated
+// token and fail, logging the user out for no real reason. Everyone who hits
+// a 401 while a refresh is already in flight awaits that same promise instead
+// of starting a new one.
+let refreshInFlight: Promise<boolean> | null = null;
+
+function refreshAccessToken(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = fetch("/api/auth/refresh", { method: "POST" })
+      .then((res) => res.ok)
+      .catch(() => false)
+      .finally(() => {
+        refreshInFlight = null;
+      });
+  }
+  return refreshInFlight;
+}
+
 export async function apiJson<T>(path: string, init: JsonInit = {}) {
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json");
 
-  const token = init.auth !== false ? readAuthToken() : null;
-  if (init.auth !== false) {
-    if (token) {
-      headers.set("Authorization", `Bearer ${token}`);
-    }
-  }
-
+  // No manual Authorization header: the access/refresh cookies ride along
+  // automatically on same-origin requests.
   const response = await fetch(path, {
     ...init,
     headers,
   });
 
-  if (!response.ok) {
-    if (response.status === 401 && init.auth !== false && token) {
-      clearStoredSession();
+  if (response.status === 401 && init.auth !== false) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      const retryResponse = await fetch(path, { ...init, headers });
+      if (retryResponse.ok) {
+        return (await retryResponse.json()) as T;
+      }
+      throw new ApiError(
+        retryResponse.status,
+        await readErrorMessage(retryResponse)
+      );
     }
+    clearStoredSession();
+    throw new ApiError(response.status, await readErrorMessage(response));
+  }
+
+  if (!response.ok) {
     // ApiError extends Error, so existing `instanceof Error` / err.message
     // callers are unaffected.
     throw new ApiError(response.status, await readErrorMessage(response));
@@ -268,18 +296,22 @@ export function toConsumerAccount(
   };
 }
 
+/**
+ * The access/refresh cookies are already set server-side by the route that
+ * called this (e.g. /api/auth/login) — this only persists the display-only
+ * account object.
+ */
 export function persistAuthSession(
-  token: string,
   user: PublicApiUser,
   subscriptionStatus?: ConsumerSubscriptionStatus
 ) {
-  writeAuthToken(token);
   const account = toConsumerAccount(user, subscriptionStatus);
   writeConsumerAccount(account);
   return account;
 }
 
 export function clearStoredSession() {
+  fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
   clearConsumerSession();
 }
 
@@ -354,7 +386,6 @@ export async function signUpUser(payload: {
 
 export async function loginWithMagicToken(magicToken: string) {
   return apiJson<{
-    token: string;
     user: PublicApiUser;
     external_user_id: string;
     flow: "signup" | "login";
@@ -777,11 +808,7 @@ export async function saveVenueForUser(
   const sessionToken = readSessionToken();
   const sessionId = readSessionId();
   const externalUserId = readExternalUserId();
-  const account = readAuthToken()
-    ? (JSON.parse(
-        localStorage.getItem("genie_consumer_account_v1") ?? "null"
-      ) as ConsumerAccount | null)
-    : null;
+  const account = readConsumerAccount();
 
   return apiJson<{ success: boolean; saved?: boolean; already_saved?: boolean; prompt_signup?: boolean }>(
     "/api/user/save-venue",
@@ -805,11 +832,7 @@ export async function unsaveVenueForUser(venueId: number) {
   const sessionToken = readSessionToken();
   const sessionId = readSessionId();
   const externalUserId = readExternalUserId();
-  const account = readAuthToken()
-    ? (JSON.parse(
-        localStorage.getItem("genie_consumer_account_v1") ?? "null"
-      ) as ConsumerAccount | null)
-    : null;
+  const account = readConsumerAccount();
 
   return apiJson<{ success: boolean }>("/api/user/unsave-venue", {
     method: "POST",
@@ -828,11 +851,7 @@ export async function fetchSavedVenues() {
   const externalUserId = readExternalUserId();
   const sessionToken = readSessionToken();
   const sessionId = readSessionId();
-  const account = readAuthToken()
-    ? (JSON.parse(
-        localStorage.getItem("genie_consumer_account_v1") ?? "null"
-      ) as ConsumerAccount | null)
-    : null;
+  const account = readConsumerAccount();
 
   if (!externalUserId && !account?.id && !sessionId) return [];
 
@@ -1250,11 +1269,7 @@ export function logVendorInteraction(
   venueId: number
 ) {
   const sessionId = readSessionId();
-  const account = readAuthToken()
-    ? (JSON.parse(
-        localStorage.getItem("genie_consumer_account_v1") ?? "null"
-      ) as ConsumerAccount | null)
-    : null;
+  const account = readConsumerAccount();
 
   fetch("/api/genie/interaction", {
     method: "POST",
@@ -1281,11 +1296,7 @@ export function logVenueInteraction(
   sourceScreen?: string
 ) {
   const sessionId = readSessionId();
-  const account = readAuthToken()
-    ? (JSON.parse(
-        localStorage.getItem("genie_consumer_account_v1") ?? "null"
-      ) as ConsumerAccount | null)
-    : null;
+  const account = readConsumerAccount();
   fetch("/api/genie/log-venue-interaction", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1312,11 +1323,7 @@ export function logEventInteraction(
   sourceScreen?: string
 ) {
   const sessionId = readSessionId();
-  const account = readAuthToken()
-    ? (JSON.parse(
-        localStorage.getItem("genie_consumer_account_v1") ?? "null"
-      ) as ConsumerAccount | null)
-    : null;
+  const account = readConsumerAccount();
   fetch("/api/genie/log-event-interaction", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1445,14 +1452,6 @@ export async function trackAnalyticsEvent(payload: {
   venue_id?: number | string;
   metadata?: Record<string, unknown>;
 }) {
-  const token = readAuthToken();
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-
   const metadata = payload.metadata ?? {};
   const venueIdCandidate =
     payload.venue_id ?? metadata.venue_id ?? metadata.venueId;
@@ -1461,7 +1460,7 @@ export async function trackAnalyticsEvent(payload: {
 
   await fetch("/api/analytics/track", {
     method: "POST",
-    headers,
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       event: payload.event,
       venue_id: venueId,
@@ -1488,16 +1487,11 @@ export function syncSavedVenueIds(venues: GenieVenue[]) {
 }
 
 export function persistSessionState(payload: {
-  token: string;
   user: PublicApiUser;
   subscriptionStatus?: ConsumerSubscriptionStatus;
   savedVenues?: GenieVenue[];
 }) {
-  const account = persistAuthSession(
-    payload.token,
-    payload.user,
-    payload.subscriptionStatus
-  );
+  const account = persistAuthSession(payload.user, payload.subscriptionStatus);
 
   if (payload.savedVenues) {
     syncSavedVenueIds(payload.savedVenues);
