@@ -38,7 +38,10 @@ export type OnboardingPendingState = {
 
 const SAVED_VENUES_STORAGE_KEY = "genie_saved_venues_v1";
 const CONSUMER_ACCOUNT_STORAGE_KEY = "genie_consumer_account_v1";
-const AUTH_TOKEN_STORAGE_KEY = "genie_auth_token_v1";
+// Matches ACCESS_COOKIE in app/lib/server/authCookies.ts — kept in sync
+// manually since that file is server-only (imports next/server) and can't be
+// imported from client code.
+const ACCESS_TOKEN_COOKIE = "genie_access_token";
 const ONBOARDING_ROLES_STORAGE_KEY = "genie_onboarding_roles_v1";
 const ACTIVE_ROLE_STORAGE_KEY = "genie_active_role_v1";
 const ONBOARDING_PENDING_STORAGE_KEY = "genie_onboarding_pending_v1";
@@ -115,26 +118,40 @@ export function writeConsumerAccount(account: ConsumerAccount | null) {
   );
 }
 
+/**
+ * Reads the access token cookie set by app/api/auth/login and
+ * app/api/auth/refresh. The refresh token is httpOnly and never touches JS —
+ * this is only ever the short-lived (24h) access token, kept JS-readable
+ * specifically so realtimeMessaging.ts can hand it to the Xano realtime SDK.
+ */
 export function readAuthToken(): string | null {
-  if (typeof window === "undefined") {
+  if (typeof document === "undefined") {
     return null;
   }
 
-  const value = window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
-  return value?.trim() ? value : null;
+  const match = document.cookie
+    .split("; ")
+    .find((row) => row.startsWith(`${ACCESS_TOKEN_COOKIE}=`));
+  if (!match) return null;
+
+  const value = decodeURIComponent(match.slice(ACCESS_TOKEN_COOKIE.length + 1));
+  return value.trim() ? value : null;
 }
 
+/**
+ * Normally the server sets this cookie via Set-Cookie (see
+ * app/lib/server/authCookies.ts) — this client-side setter only exists as a
+ * defensive clear (token: null) for callers that want to drop local auth
+ * state without waiting on a round trip to /api/auth/logout.
+ */
 export function writeAuthToken(token: string | null) {
-  if (typeof window === "undefined") {
+  if (typeof document === "undefined") {
     return;
   }
 
   if (!token) {
-    window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
-    return;
+    document.cookie = `${ACCESS_TOKEN_COOKIE}=; path=/; max-age=0`;
   }
-
-  window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
 }
 
 export function readSelectedRoles(): OnboardingRole[] {

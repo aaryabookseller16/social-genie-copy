@@ -7,6 +7,8 @@
  *   Stripe: /api:jQf3GatY  — native Stripe products/sessions
  */
 
+import { ACCESS_COOKIE } from "./authCookies";
+
 const XANO_ORIGIN =
   process.env.XANO_BASE_URL || "https://xwpg-kuah-brlj.n7d.xano.io";
 
@@ -152,13 +154,13 @@ export async function xanoStripeFetch<T = unknown>(
   return baseFetch<T>(STRIPE_BASE, path, init);
 }
 
-/** Helper to extract Bearer token from request headers */
+/** Helper to extract the access token from the Authorization header or, failing that, the httpOnly cookie. */
 export function extractBearerToken(
-  request: Request
+  request: Request & { cookies?: { get(name: string): { value: string } | undefined } }
 ): string | undefined {
   const auth = request.headers.get("Authorization");
-  if (!auth?.startsWith("Bearer ")) return undefined;
-  return auth.slice(7);
+  if (auth?.startsWith("Bearer ")) return auth.slice(7);
+  return request.cookies?.get(ACCESS_COOKIE)?.value;
 }
 
 /**
