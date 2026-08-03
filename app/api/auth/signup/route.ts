@@ -8,7 +8,7 @@ function isEmailValid(email: string) {
 /**
  * POST /api/auth/signup
  * Magic link signup — sends email with magic link.
- * Uses Auth base URL (api:dRDS80y8) → auth/verify_email/signup
+ * Uses Auth base URL (api:q_bU9d5K) → auth/verify_email/signup
  */
 export async function POST(request: NextRequest) {
   try {
@@ -21,6 +21,7 @@ export async function POST(request: NextRequest) {
     const lastName = String(body.last_name ?? "").trim();
     const email = String(body.email ?? "").trim().toLowerCase();
     const intent = body.intent === "login" ? "login" : "signup";
+    const referralCode = String(body.referral_code ?? "").trim() || undefined;
 
     if (!email) {
       return NextResponse.json(
@@ -45,6 +46,7 @@ export async function POST(request: NextRequest) {
           first_name: firstName || undefined,
           last_name: lastName || undefined,
           intent,
+          referral_code: referralCode,
         },
       }
     );

@@ -23,6 +23,7 @@ import { VerifyEmailGate } from "@/app/components/single-page/VerifyEmailGate";
 import { InfluencerSection } from "@/app/components/single-page/InfluencerSection";
 import { NotificationsScreen } from "@/app/components/single-page/NotificationsScreen";
 import { MessagesScreen } from "@/app/components/single-page/MessagesScreen";
+import { ReferralScreen } from "@/app/components/single-page/ReferralScreen";
 import { ConversationScreen } from "@/app/components/single-page/ConversationScreen";
 import { HomescreenSection } from "@/app/components/homescreen/HomescreenSection";
 import { EventDetailSection } from "@/app/components/event-detail/EventDetailSection";
@@ -2415,6 +2416,7 @@ const [trialSuccess, setTrialSuccess] = useState(false);
       "role-setup",
       "onboarding-complete",
       "messages",
+      "referrals",
     ];
     if (screen === "conversation") {
       const threadType = url.searchParams.get("thread_type");
@@ -2949,6 +2951,9 @@ const [trialSuccess, setTrialSuccess] = useState(false);
           break;
         case "messages":
           navigateTo("messages");
+          break;
+        case "referrals":
+          navigateTo("referrals");
           break;
         case "membership":
           navigateTo("membership");
@@ -6375,6 +6380,10 @@ activeScreen === "vibbee-trial" ||
       navigateTo("conversation");
     }}
   />
+) : null}
+
+{activeScreen === "referrals" ? (
+  <ReferralScreen onBack={() => goBack("homescreen")} />
 ) : null}
 
 {activeScreen === "conversation" && activeConversation ? (

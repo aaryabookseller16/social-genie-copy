@@ -14,6 +14,8 @@ const XANO_ORIGIN =
 
 const GENIE_DEV_BASE = process.env.XANO_GENIE_DEV_BASE as string;
 
+const GENIE_V15_BASE = process.env.XANO_GENIE_V15_BASE as string;
+
 const AUTH_BASE =
   process.env.XANO_AUTH_BASE || `${XANO_ORIGIN}/api:dRDS80y8`;
 
@@ -136,6 +138,14 @@ export async function xanoFetch<T = unknown>(
   init: XanoRequestInit = {}
 ): Promise<T> {
   return baseFetch<T>(GENIE_DEV_BASE, path, init);
+}
+
+/** Genie v1.5 endpoints — /api:q_bU9d5K (endpoints not yet mirrored into genie_dev) */
+export async function xanoGenieV15Fetch<T = unknown>(
+  path: string,
+  init: XanoRequestInit = {}
+): Promise<T> {
+  return baseFetch<T>(GENIE_V15_BASE, path, init);
 }
 
 /** Auth (Magic Link) endpoints — /api:dRDS80y8 */

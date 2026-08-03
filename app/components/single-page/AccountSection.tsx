@@ -4,7 +4,11 @@ import { type FormEvent, type RefObject, useEffect, useState } from "react";
 
 import { trackEvent } from "@/app/lib/analytics";
 import { analyticsEvents } from "@/app/lib/analyticsEvents";
-import { type ConsumerAccount } from "@/app/lib/localState";
+import {
+  type ConsumerAccount,
+  readReferralCode,
+  writeReferralCode,
+} from "@/app/lib/localState";
 import {
   createSubscriptionCheckout,
   signUpUser,
@@ -294,12 +298,19 @@ export function AccountSection({
     setMessage(null);
 
     try {
+      const referralCode = readReferralCode() ?? undefined;
       const result = await signUpUser({
         first_name: form.firstName.trim(),
         last_name: form.lastName.trim(),
         email: form.email.trim(),
         intent: "signup",
+        referral_code: referralCode,
       });
+      // One-shot: don't attribute the same stored code to a second signup
+      // from this browser (e.g. a different account created later).
+      if (referralCode) {
+        writeReferralCode(null);
+      }
       trackEvent(analyticsEvents.freeSignupSubmitted, { email: form.email });
       trackEvent(analyticsEvents.signupCompleted);
 

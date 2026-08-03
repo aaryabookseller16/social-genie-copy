@@ -376,6 +376,7 @@ export async function signUpUser(payload: {
   last_name?: string;
   email: string;
   intent?: "signup" | "login";
+  referral_code?: string;
 }) {
   return apiJson<{ message: string; success?: boolean }>("/api/auth/signup", {
     method: "POST",
@@ -1770,6 +1771,33 @@ export async function createInfluencerProfile(payload: {
 
 export async function fetchInfluencerDashboard() {
   return apiJson<InfluencerDashboardData>("/api/genie/influencer-dashboard");
+}
+
+export interface ReferralEntry {
+  first_name?: string;
+  last_name?: string;
+  email_masked?: string;
+  created_at?: number | string;
+  verified?: boolean;
+  membership_active?: boolean;
+}
+
+export interface ReferralDashboardData {
+  code: string;
+  referrals: ReferralEntry[];
+  referral_count: number;
+}
+
+/** Get-or-create the logged-in user's personal referral code. */
+export async function fetchOrCreateReferralCode() {
+  return apiJson<{ code: string; created_at: number | string }>(
+    "/api/genie/referral-code",
+    { method: "POST" }
+  );
+}
+
+export async function fetchReferralDashboard() {
+  return apiJson<ReferralDashboardData>("/api/genie/referral-dashboard");
 }
 
 export async function fetchInfluencerOffers(handle: string) {

@@ -41,7 +41,8 @@ export type FlowAnchor =
   | "notifications"
   | "notification-settings"
   | "messages"
-  | "conversation";
+  | "conversation"
+  | "referrals";
 
 function normalizeBenefitLabel(value: string) {
   return value.replace(" and ", " & ");
