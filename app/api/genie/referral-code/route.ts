@@ -21,6 +21,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const { code } = await request.json().catch(() => ({ code: undefined }));
+
     const result = await xanoGenieV15Fetch<{
       success: boolean;
       code: string;
@@ -28,6 +30,7 @@ export async function POST(request: NextRequest) {
     }>("genie/ep_referral_code_get_or_create", {
       method: "POST",
       authToken,
+      body: code ? { code } : undefined,
     });
 
     return NextResponse.json({

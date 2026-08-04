@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ScrollUnlock } from "@/app/p/[id]/ScrollUnlock";
 import {
+  ApiError,
   fetchOrCreateReferralCode,
   fetchReferralDashboard,
   type ReferralEntry,
@@ -22,24 +23,69 @@ function formatDate(value?: number | string): string {
 
 function ReferralRow({ entry }: { entry: ReferralEntry }) {
   const name = [entry.first_name, entry.last_name].filter(Boolean).join(" ") || "New user";
-  const status = entry.verified ? "Verified" : "Pending verification";
+  const initial = (entry.first_name || entry.email_masked || "?").charAt(0).toUpperCase();
 
   return (
-    <div className="flex items-start justify-between gap-3 px-4 py-3">
+    <div className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white/80 px-4 py-3 dark:border-white/10 dark:bg-white/5">
+      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-red-600/10 text-[0.9rem] font-bold text-red-600 dark:bg-white/10 dark:text-white">
+        {initial}
+      </div>
       <div className="min-w-0 flex-1">
-        <p className="text-[0.85rem] font-semibold leading-snug text-gray-900 dark:text-white">
+        <p className="truncate text-[0.85rem] font-semibold leading-snug text-gray-900 dark:text-white">
           {name}
         </p>
-        <p className="mt-0.5 text-[0.78rem] leading-snug text-gray-600 dark:text-white/60">
+        <p className="mt-0.5 truncate text-[0.78rem] leading-snug text-gray-600 dark:text-white/60">
           {entry.email_masked}
         </p>
         <p className="mt-1 text-[0.68rem] text-gray-400 dark:text-white/35">
-          {formatDate(entry.created_at)} · {status}
-          {entry.membership_active ? " · V.I.Bee" : ""}
+          {formatDate(entry.created_at)}
         </p>
+      </div>
+      <div className="flex flex-shrink-0 flex-col items-end gap-1">
+        {entry.membership_active ? (
+          <span className="rounded-full bg-red-600 px-2 py-0.5 text-[0.65rem] font-semibold text-white">
+            V.I.Bee
+          </span>
+        ) : null}
+        <span
+          className={`rounded-full px-2 py-0.5 text-[0.65rem] font-semibold ${
+            entry.verified
+              ? "bg-green-600/10 text-green-600 dark:bg-green-400/10 dark:text-green-400"
+              : "bg-gray-200 text-gray-500 dark:bg-white/10 dark:text-white/50"
+          }`}
+        >
+          {entry.verified ? "Verified" : "Pending"}
+        </span>
       </div>
     </div>
   );
+}
+
+// ponytail: payout backend doesn't exist yet — $/referral rate and stat cards
+// are placeholder economics ($0.25/verified referral, nothing withdrawable),
+// wired to the real referral/verification counts we already have. Replace
+// with real payout data once that system ships.
+const DOLLARS_PER_REFERRAL = 0.25;
+
+function formatDollars(value: number): string {
+  return `$${value.toFixed(2)}`;
+}
+
+function StatCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-white/80 p-3 dark:border-white/10 dark:bg-white/5">
+      <p className="text-[0.68rem] font-medium uppercase tracking-wide text-gray-500 dark:text-white/40">
+        {label}
+      </p>
+      <p className="mt-1 text-[1.1rem] font-bold text-gray-900 dark:text-white">{value}</p>
+    </div>
+  );
+}
+
+const CODE_LENGTH = 8;
+
+function isValidCode(value: string): boolean {
+  return new RegExp(`^[A-Z0-9]{${CODE_LENGTH}}$`).test(value);
 }
 
 export function ReferralScreen({ onBack }: Props) {
@@ -49,6 +95,11 @@ export function ReferralScreen({ onBack }: Props) {
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Onboarding (no code yet) state
+  const [customCode, setCustomCode] = useState("");
+  const [claiming, setClaiming] = useState(false);
+  const [claimError, setClaimError] = useState<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -56,13 +107,12 @@ export function ReferralScreen({ onBack }: Props) {
       setLoading(true);
       setError(null);
       try {
-        const created = await fetchOrCreateReferralCode();
-        if (cancelled) return;
-        setCode(created.code);
-
         const dashboard = await fetchReferralDashboard();
         if (cancelled) return;
-        setReferrals(dashboard.referrals ?? []);
+        if (dashboard.code) {
+          setCode(dashboard.code);
+          setReferrals(dashboard.referrals ?? []);
+        }
       } catch {
         if (!cancelled) {
           setError("Could not load your referral code. Please try again.");
@@ -77,6 +127,40 @@ export function ReferralScreen({ onBack }: Props) {
       cancelled = true;
     };
   }, []);
+
+  async function claimCode(desiredCode?: string) {
+    setClaiming(true);
+    setClaimError(null);
+    try {
+      const created = await fetchOrCreateReferralCode(desiredCode);
+      setCode(created.code);
+      const dashboard = await fetchReferralDashboard();
+      setReferrals(dashboard.referrals ?? []);
+    } catch (err) {
+      setClaimError(
+        err instanceof ApiError ? err.message : "Could not set your referral code. Please try again."
+      );
+    } finally {
+      setClaiming(false);
+    }
+  }
+
+  function handleCustomCodeSubmit() {
+    const value = customCode.trim().toUpperCase();
+    if (!isValidCode(value)) {
+      setClaimError(`Code must be exactly ${CODE_LENGTH} letters/numbers.`);
+      return;
+    }
+    void claimCode(value);
+  }
+
+  const referralStats = {
+    totalReferrals: referrals.length,
+    vibeeMembers: referrals.filter((r) => r.membership_active).length,
+    earned: referrals.filter((r) => r.verified).length * DOLLARS_PER_REFERRAL,
+    pending: referrals.filter((r) => !r.verified).length * DOLLARS_PER_REFERRAL,
+    withdrawable: 0,
+  };
 
   const referralUrl = code
     ? `${typeof window !== "undefined" ? window.location.origin : "https://socialgenie.app"}/join?ref=${code}`
@@ -120,10 +204,75 @@ export function ReferralScreen({ onBack }: Props) {
           <div className="px-4 py-10 text-center text-[0.85rem] text-gray-500 dark:text-white/50">
             {error}
           </div>
+        ) : !code ? (
+          <div className="mx-4 mt-6">
+            <p className="text-[0.9rem] font-semibold text-gray-900 dark:text-white">
+              Set up your referral code
+            </p>
+            <p className="mt-1 text-[0.8rem] text-gray-500 dark:text-white/50">
+              Pick your own {CODE_LENGTH}-character code, or generate one automatically.
+            </p>
+
+            <input
+              type="text"
+              value={customCode}
+              onChange={(e) => setCustomCode(e.target.value.toUpperCase().slice(0, CODE_LENGTH))}
+              placeholder="YOURCODE"
+              maxLength={CODE_LENGTH}
+              disabled={claiming}
+              className="mt-4 w-full rounded-xl border border-gray-200 bg-white/80 px-4 py-2.5 text-[0.9rem] font-semibold uppercase tracking-wide text-gray-900 outline-none focus:border-red-400 dark:border-white/10 dark:bg-white/5 dark:text-white"
+            />
+
+            {claimError && (
+              <p className="mt-2 text-[0.78rem] text-red-600 dark:text-red-400">{claimError}</p>
+            )}
+
+            <button
+              type="button"
+              onClick={handleCustomCodeSubmit}
+              disabled={claiming || customCode.length === 0}
+              className="mt-3 w-full rounded-xl bg-red-600 px-4 py-2 text-[0.85rem] font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
+            >
+              {claiming ? "Setting up…" : "Set my code"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => claimCode()}
+              disabled={claiming}
+              className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-2 text-[0.85rem] font-semibold text-gray-700 transition hover:bg-gray-100 disabled:opacity-50 dark:border-white/10 dark:text-white dark:hover:bg-white/10"
+            >
+              Auto-generate
+            </button>
+          </div>
         ) : (
           <>
+            {/* Stats */}
+            <div className="mx-4 mt-4 grid grid-cols-2 gap-3">
+              <StatCard label="Total referrals" value={String(referralStats.totalReferrals)} />
+              <StatCard label="V.I.Bee members" value={String(referralStats.vibeeMembers)} />
+              <StatCard label="Total earned" value={formatDollars(referralStats.earned)} />
+              <StatCard label="Pending" value={formatDollars(referralStats.pending)} />
+            </div>
+            <div className="mx-4 mt-3 rounded-2xl border border-gray-200 bg-white/80 p-3 dark:border-white/10 dark:bg-white/5">
+              <p className="text-[0.68rem] font-medium uppercase tracking-wide text-gray-500 dark:text-white/40">
+                Available to withdraw
+              </p>
+              <p className="mt-1 text-[1.1rem] font-bold text-gray-900 dark:text-white">
+                {formatDollars(referralStats.withdrawable)}
+              </p>
+              {/* ponytail: payout backend doesn't exist yet — no-op stub */}
+              <button
+                type="button"
+                onClick={() => {}}
+                className="mt-3 w-full rounded-xl bg-red-600 px-4 py-2 text-[0.85rem] font-semibold text-white transition hover:bg-red-700"
+              >
+                Request payout
+              </button>
+            </div>
+
             {/* Referral link card */}
-            <div className="mx-4 mt-4 rounded-2xl border border-gray-200 bg-white/80 p-4 dark:border-white/10 dark:bg-white/5">
+            <div className="mx-4 mt-3 rounded-2xl border border-gray-200 bg-white/80 p-4 dark:border-white/10 dark:bg-white/5">
               <p className="text-[0.75rem] font-medium uppercase tracking-wide text-gray-500 dark:text-white/40">
                 Your referral link
               </p>
@@ -140,7 +289,7 @@ export function ReferralScreen({ onBack }: Props) {
             </div>
 
             {/* Referral count */}
-            <div className="mx-4 mt-4 flex items-center justify-between">
+            <div className="mx-4 mt-5 flex items-center justify-between">
               <p className="text-[0.85rem] font-semibold text-gray-900 dark:text-white">
                 People you referred
               </p>
@@ -157,7 +306,7 @@ export function ReferralScreen({ onBack }: Props) {
                 </p>
               </div>
             ) : (
-              <div className="mt-2 divide-y divide-gray-200 dark:divide-white/[0.08]">
+              <div className="mx-4 mt-2 flex flex-col gap-2 pb-6">
                 {referrals.map((entry, index) => (
                   <ReferralRow key={index} entry={entry} />
                 ))}

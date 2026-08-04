@@ -3141,6 +3141,7 @@ activeScreen !== "vibbee-trial" &&
     activeScreen !== "notifications" &&
     activeScreen !== "messages" &&
     activeScreen !== "conversation" &&
+    activeScreen !== "referrals" &&
     activeScreen !== "detail";
 
   const isAiFallbackLayout =

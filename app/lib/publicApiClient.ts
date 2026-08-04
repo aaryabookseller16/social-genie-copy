@@ -1788,11 +1788,11 @@ export interface ReferralDashboardData {
   referral_count: number;
 }
 
-/** Get-or-create the logged-in user's personal referral code. */
-export async function fetchOrCreateReferralCode() {
+/** Get-or-create the logged-in user's personal referral code. Pass `code` to claim a custom 8-char code instead of auto-generating one. */
+export async function fetchOrCreateReferralCode(code?: string) {
   return apiJson<{ code: string; created_at: number | string }>(
     "/api/genie/referral-code",
-    { method: "POST" }
+    { method: "POST", body: JSON.stringify(code ? { code } : {}) }
   );
 }
 
