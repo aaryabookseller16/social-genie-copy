@@ -5,7 +5,7 @@
 
 ---
 
-## Architecture Summary
+## Architecture Summary.
 
 ```
 Browser / PWA
