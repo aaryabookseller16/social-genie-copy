@@ -1,24 +1,16 @@
 /**
  * Xano proxy helper — all backend calls go through here.
  *
- * Three base URLs:
- *   Genie:  /api:pgMKWi2e  — venues, vendor, dashboard
- *   Auth:   /api:dRDS80y8  — magic-link signup/login/me
- *   Stripe: /api:jQf3GatY  — native Stripe products/sessions
+ * All requests (genie, auth, stripe) share one base URL from XANO_BASE_URL.
  */
 
 import { ACCESS_COOKIE } from "./authCookies";
 
-const XANO_ORIGIN =
-  process.env.XANO_BASE_URL || "https://xwpg-kuah-brlj.n7d.xano.io";
+const XANO_BASE_URL = process.env.XANO_BASE_URL as string;
 
-const GENIE_DEV_BASE = process.env.XANO_GENIE_DEV_BASE as string;
-
-const AUTH_BASE =
-  process.env.XANO_AUTH_BASE || `${XANO_ORIGIN}/api:dRDS80y8`;
-
-const STRIPE_BASE =
-  process.env.XANO_STRIPE_BASE || `${XANO_ORIGIN}/api:jQf3GatY`;
+const GENIE_DEV_BASE = XANO_BASE_URL;
+const AUTH_BASE = XANO_BASE_URL;
+const STRIPE_BASE = XANO_BASE_URL;
 
 type XanoRequestInit = {
   method?: string;
@@ -138,7 +130,7 @@ export async function xanoFetch<T = unknown>(
   return baseFetch<T>(GENIE_DEV_BASE, path, init);
 }
 
-/** Auth (Magic Link) endpoints — /api:dRDS80y8 */
+/** Auth (Magic Link) endpoints */
 export async function xanoAuthFetch<T = unknown>(
   path: string,
   init: XanoRequestInit = {}
@@ -146,7 +138,7 @@ export async function xanoAuthFetch<T = unknown>(
   return baseFetch<T>(AUTH_BASE, path, init);
 }
 
-/** Stripe endpoints — /api:jQf3GatY */
+/** Stripe endpoints */
 export async function xanoStripeFetch<T = unknown>(
   path: string,
   init: XanoRequestInit = {}

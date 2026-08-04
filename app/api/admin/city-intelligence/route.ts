@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const XANO_BASE = "https://xwpg-kuah-brlj.n7d.xano.io/api:pgMKWi2e";
+const XANO_BASE = process.env.XANO_BASE_URL as string;
 
 export async function GET(request: NextRequest) {
   try {
