@@ -1,8 +1,6 @@
 import { type RawGenieVenue } from "../genieTypes";
 
-const GENIE_VENUES_URL =
-  process.env.XANO_GENIE_VENUES_URL ||
-  "https://xwpg-kuah-brlj.n7d.xano.io/api:mY7zYhwk/genie_v1";
+const GENIE_VENUES_URL = `${process.env.XANO_BASE_URL}/genie_v1`;
 
 export async function fetchCatalogVenues(limit = 200): Promise<RawGenieVenue[]> {
   const url = new URL(GENIE_VENUES_URL);
