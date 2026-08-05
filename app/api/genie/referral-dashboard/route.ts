@@ -34,12 +34,20 @@ export async function GET(request: NextRequest) {
         membership_active?: boolean;
       }>;
       referral_count: number;
+      pending_amount: number;
+      available_amount: number;
+      paid_out_amount: number;
+      total_earned: number;
     }>("genie/ep_referral_dashboard", { authToken });
 
     return NextResponse.json({
       code: result.code,
       referrals: result.referrals ?? [],
       referral_count: result.referral_count ?? 0,
+      pending_amount: result.pending_amount ?? 0,
+      available_amount: result.available_amount ?? 0,
+      paid_out_amount: result.paid_out_amount ?? 0,
+      total_earned: result.total_earned ?? 0,
     });
   } catch (error) {
     if (error instanceof XanoError) {

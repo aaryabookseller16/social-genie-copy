@@ -4,10 +4,15 @@ import { useEffect, useState } from "react";
 import { ScrollUnlock } from "@/app/p/[id]/ScrollUnlock";
 import {
   ApiError,
+  createConnectOnboardingLink,
+  fetchConnectStatus,
   fetchOrCreateReferralCode,
   fetchReferralDashboard,
+  requestReferralWithdraw,
   type ReferralEntry,
 } from "@/app/lib/publicApiClient";
+
+const MIN_WITHDRAWAL = 5;
 
 type Props = {
   onBack: () => void;
@@ -61,12 +66,6 @@ function ReferralRow({ entry }: { entry: ReferralEntry }) {
   );
 }
 
-// ponytail: payout backend doesn't exist yet — $/referral rate and stat cards
-// are placeholder economics ($0.25/verified referral, nothing withdrawable),
-// wired to the real referral/verification counts we already have. Replace
-// with real payout data once that system ships.
-const DOLLARS_PER_REFERRAL = 0.25;
-
 function formatDollars(value: number): string {
   return `$${value.toFixed(2)}`;
 }
@@ -92,8 +91,18 @@ export function ReferralScreen({ onBack }: Props) {
   const [loading, setLoading] = useState(true);
   const [code, setCode] = useState<string | null>(null);
   const [referrals, setReferrals] = useState<ReferralEntry[]>([]);
+  const [earnings, setEarnings] = useState({
+    pending_amount: 0,
+    available_amount: 0,
+    total_earned: 0,
+  });
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [payoutsEnabled, setPayoutsEnabled] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
+  const [withdrawMessage, setWithdrawMessage] = useState<string | null>(null);
+  const [withdrawError, setWithdrawError] = useState<string | null>(null);
 
   // Onboarding (no code yet) state
   const [customCode, setCustomCode] = useState("");
@@ -112,6 +121,17 @@ export function ReferralScreen({ onBack }: Props) {
         if (dashboard.code) {
           setCode(dashboard.code);
           setReferrals(dashboard.referrals ?? []);
+          setEarnings({
+            pending_amount: dashboard.pending_amount ?? 0,
+            available_amount: dashboard.available_amount ?? 0,
+            total_earned: dashboard.total_earned ?? 0,
+          });
+          try {
+            const status = await fetchConnectStatus();
+            if (!cancelled) setPayoutsEnabled(status.payouts_enabled);
+          } catch {
+            // Non-fatal — button falls back to "set up payout account" flow.
+          }
         }
       } catch {
         if (!cancelled) {
@@ -136,6 +156,11 @@ export function ReferralScreen({ onBack }: Props) {
       setCode(created.code);
       const dashboard = await fetchReferralDashboard();
       setReferrals(dashboard.referrals ?? []);
+      setEarnings({
+        pending_amount: dashboard.pending_amount ?? 0,
+        available_amount: dashboard.available_amount ?? 0,
+        total_earned: dashboard.total_earned ?? 0,
+      });
     } catch (err) {
       setClaimError(
         err instanceof ApiError ? err.message : "Could not set your referral code. Please try again."
@@ -157,14 +182,44 @@ export function ReferralScreen({ onBack }: Props) {
   const referralStats = {
     totalReferrals: referrals.length,
     vibeeMembers: referrals.filter((r) => r.membership_active).length,
-    earned: referrals.filter((r) => r.verified).length * DOLLARS_PER_REFERRAL,
-    pending: referrals.filter((r) => !r.verified).length * DOLLARS_PER_REFERRAL,
-    withdrawable: 0,
+    earned: earnings.total_earned,
+    pending: earnings.pending_amount,
+    withdrawable: earnings.available_amount,
   };
 
   const referralUrl = code
     ? `${typeof window !== "undefined" ? window.location.origin : "https://socialgenie.app"}/join?ref=${code}`
     : "";
+
+  async function handleWithdraw() {
+    setWithdrawing(true);
+    setWithdrawError(null);
+    setWithdrawMessage(null);
+    try {
+      if (!payoutsEnabled) {
+        const origin = typeof window !== "undefined" ? window.location.origin : "";
+        const returnUrl = `${origin}/?screen=referrals`;
+        const { url } = await createConnectOnboardingLink(returnUrl, returnUrl);
+        window.location.href = url;
+        return;
+      }
+
+      const result = await requestReferralWithdraw();
+      setWithdrawMessage(`$${result.amount.toFixed(2)} is on its way to your bank.`);
+      const dashboard = await fetchReferralDashboard();
+      setEarnings({
+        pending_amount: dashboard.pending_amount ?? 0,
+        available_amount: dashboard.available_amount ?? 0,
+        total_earned: dashboard.total_earned ?? 0,
+      });
+    } catch (err) {
+      setWithdrawError(
+        err instanceof ApiError ? err.message : "Could not process your withdrawal. Please try again."
+      );
+    } finally {
+      setWithdrawing(false);
+    }
+  }
 
   function handleCopy() {
     if (!referralUrl) return;
@@ -261,13 +316,27 @@ export function ReferralScreen({ onBack }: Props) {
               <p className="mt-1 text-[1.1rem] font-bold text-gray-900 dark:text-white">
                 {formatDollars(referralStats.withdrawable)}
               </p>
-              {/* ponytail: payout backend doesn't exist yet — no-op stub */}
+              {withdrawMessage && (
+                <p className="mt-3 text-[0.78rem] text-green-600 dark:text-green-400">{withdrawMessage}</p>
+              )}
+              {withdrawError && (
+                <p className="mt-3 text-[0.78rem] text-red-600 dark:text-red-400">{withdrawError}</p>
+              )}
               <button
                 type="button"
-                onClick={() => {}}
-                className="mt-3 w-full rounded-xl bg-red-600 px-4 py-2 text-[0.85rem] font-semibold text-white transition hover:bg-red-700"
+                onClick={handleWithdraw}
+                disabled={
+                  withdrawing || (payoutsEnabled && referralStats.withdrawable < MIN_WITHDRAWAL)
+                }
+                className="mt-3 w-full rounded-xl bg-red-600 px-4 py-2 text-[0.85rem] font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
               >
-                Request payout
+                {withdrawing
+                  ? "Working…"
+                  : !payoutsEnabled
+                    ? "Set up payout account"
+                    : referralStats.withdrawable < MIN_WITHDRAWAL
+                      ? `Minimum withdrawal $${MIN_WITHDRAWAL.toFixed(2)}`
+                      : "Request payout"}
               </button>
             </div>
 
