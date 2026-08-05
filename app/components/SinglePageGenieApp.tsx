@@ -643,8 +643,6 @@ const [trialSuccess, setTrialSuccess] = useState(false);
   const [onboardingRoles, setOnboardingRoles] = useState<OnboardingRole[]>([]);
   const [verifyGateOpen, setVerifyGateOpen] = useState(false);
   const [mapPreviewFailed, setMapPreviewFailed] = useState(false);
-  // /join?signup=... deep link: tells AccountSection which form to open.
-  const [signupIntent, setSignupIntent] = useState<AccountScreenMode>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [contactForm, setContactForm] = useState({
@@ -2506,7 +2504,7 @@ const [trialSuccess, setTrialSuccess] = useState(false);
       // post-verification) — old shared /join links still send it, so map
       // it to "free" rather than breaking them.
       if (signup === "free" || signup === "vibee") {
-        setSignupIntent("free");
+        setAccountEntryMode("free");
       }
       navigateTo("account");
     } else if (allowed.includes(screen as FlowAnchor)) {
@@ -5587,7 +5585,6 @@ activeScreen === "vibbee-trial" ||
           visible={activeScreen === "account"}
           account={account}
           onDismiss={dismissAccount}
-          initialMode={signupIntent}
           onOpenVendor={() => navigateTo("vendor")}
           onOpenOffers={() => navigateTo("offers")}
           onOpenPreferences={() => navigateTo("preferences")}
