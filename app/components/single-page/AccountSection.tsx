@@ -63,6 +63,7 @@ export function AccountSection({
   onRequestedModeApplied,
   notice,
   onNoticeShown,
+  initialMode,
 }: {
   sectionRef: RefObject<HTMLElement | null>;
   visible: boolean;
@@ -79,10 +80,9 @@ export function AccountSection({
   // the failure isn't silent — see SinglePageGenieApp's token-exchange catch.
   authError?: string | null;
   onAuthErrorShown?: () => void;
-  // Opens a specific auth form when a gated screen — or the /join?signup=...
-  // deep link — sends the user here, rather than always landing on login.
-  // Cleared via onRequestedModeApplied once used, so it does not force the
-  // same form on an unrelated later visit.
+  // Opens a specific auth form when a gated screen sends the user here, rather
+  // than always landing on login. Cleared via onRequestedModeApplied once used,
+  // so it does not force the same form on an unrelated later visit.
   requestedMode?: AccountScreenMode;
   onRequestedModeApplied?: () => void;
   // Explains why a gated action sent the user here (e.g. tapping a V.I.Bee
@@ -90,6 +90,10 @@ export function AccountSection({
   // the user opens the account screen on their own later.
   notice?: string | null;
   onNoticeShown?: () => void;
+  // /join?signup=... deep link: opens straight on the given form. "vibee" is
+  // no longer a distinct signup mode (tier is chosen post-verification), so
+  // the caller maps it to "free" before passing it in.
+  initialMode?: AccountScreenMode;
 }) {
   const [mode, setMode] = useState<AccountScreenMode>("login");
   // Modes the user passed through to reach `mode`, so the back arrow can retrace
@@ -173,8 +177,14 @@ export function AccountSection({
       setMessage(null);
       setGateNotice(null);
       setForm(createEmptyConsumerForm());
+      return;
     }
-  }, [visible]);
+    if (initialMode) {
+      setMode(initialMode);
+      setForm(createEmptyConsumerForm());
+      setMessage(null);
+    }
+  }, [visible, initialMode]);
 
   useEffect(() => {
     if (visible && authError) {
