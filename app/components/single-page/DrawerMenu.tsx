@@ -21,7 +21,8 @@ export type DrawerMenuActionId =
   | "contact"
   | "privacy"
   | "terms"
-  | "messages";
+  | "messages"
+  | "referrals";
 
 type DrawerMenuProps = {
   visible: boolean;
@@ -52,6 +53,7 @@ function isActiveItem(id: DrawerMenuActionId, activeScreen: FlowAnchor) {
   if (id === "messages") return activeScreen === "messages" || activeScreen === "conversation";
   if (id === "vendor") return activeScreen === "vendor";
   if (id === "home") return activeScreen === "home";
+  if (id === "referrals") return activeScreen === "referrals";
   return false;
 }
 
@@ -121,6 +123,7 @@ export function DrawerMenu({
     { id: "profile", label: "My Profile" },
     { id: "dashboard", label: "My Dashboard" },
     { id: "switch-role", label: "My Roles" },
+    { id: "referrals", label: "Referrals" },
     { id: "how-genie-works", label: "How Genie Works" },
     {
       id: "vendor",

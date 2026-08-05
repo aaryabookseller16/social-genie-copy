@@ -4,7 +4,11 @@ import { type FormEvent, type RefObject, useEffect, useState } from "react";
 
 import { trackEvent } from "@/app/lib/analytics";
 import { analyticsEvents } from "@/app/lib/analyticsEvents";
-import { type ConsumerAccount } from "@/app/lib/localState";
+import {
+  type ConsumerAccount,
+  readReferralCode,
+  writeReferralCode,
+} from "@/app/lib/localState";
 import {
   createSubscriptionCheckout,
   signUpUser,
@@ -75,9 +79,10 @@ export function AccountSection({
   // the failure isn't silent — see SinglePageGenieApp's token-exchange catch.
   authError?: string | null;
   onAuthErrorShown?: () => void;
-  // Opens a specific auth form when a gated screen sends the user here, rather
-  // than always landing on login. Cleared via onRequestedModeApplied once used,
-  // so it does not force the same form on an unrelated later visit.
+  // Opens a specific auth form when a gated screen — or the /join?signup=...
+  // deep link — sends the user here, rather than always landing on login.
+  // Cleared via onRequestedModeApplied once used, so it does not force the
+  // same form on an unrelated later visit.
   requestedMode?: AccountScreenMode;
   onRequestedModeApplied?: () => void;
   // Explains why a gated action sent the user here (e.g. tapping a V.I.Bee
@@ -283,12 +288,19 @@ export function AccountSection({
     setMessage(null);
 
     try {
+      const referralCode = readReferralCode() ?? undefined;
       const result = await signUpUser({
         first_name: form.firstName.trim(),
         last_name: form.lastName.trim(),
         email: form.email.trim(),
         intent: "signup",
+        referral_code: referralCode,
       });
+      // One-shot: don't attribute the same stored code to a second signup
+      // from this browser (e.g. a different account created later).
+      if (referralCode) {
+        writeReferralCode(null);
+      }
       trackEvent(analyticsEvents.freeSignupSubmitted, { email: form.email });
       trackEvent(analyticsEvents.signupCompleted);
 

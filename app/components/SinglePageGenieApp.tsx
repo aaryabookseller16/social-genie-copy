@@ -23,6 +23,7 @@ import { VerifyEmailGate } from "@/app/components/single-page/VerifyEmailGate";
 import { InfluencerSection } from "@/app/components/single-page/InfluencerSection";
 import { NotificationsScreen } from "@/app/components/single-page/NotificationsScreen";
 import { MessagesScreen } from "@/app/components/single-page/MessagesScreen";
+import { ReferralScreen } from "@/app/components/single-page/ReferralScreen";
 import { ConversationScreen } from "@/app/components/single-page/ConversationScreen";
 import { HomescreenSection } from "@/app/components/homescreen/HomescreenSection";
 import { EventDetailSection } from "@/app/components/event-detail/EventDetailSection";
@@ -2413,6 +2414,7 @@ const [trialSuccess, setTrialSuccess] = useState(false);
       "role-setup",
       "onboarding-complete",
       "messages",
+      "referrals",
     ];
     if (screen === "conversation") {
       const threadType = url.searchParams.get("thread_type");
@@ -2496,6 +2498,15 @@ const [trialSuccess, setTrialSuccess] = useState(false);
         setSelectedEvent({ id: eventId });
         navigateTo("event-detail");
       }
+    } else if (screen === "account") {
+      const signup = url.searchParams.get("signup");
+      // "vibee" is no longer a distinct signup mode (tier is chosen
+      // post-verification) — old shared /join links still send it, so map
+      // it to "free" rather than breaking them.
+      if (signup === "free" || signup === "vibee") {
+        setAccountEntryMode("free");
+      }
+      navigateTo("account");
     } else if (allowed.includes(screen as FlowAnchor)) {
       navigateTo(screen as FlowAnchor);
     }
@@ -2506,6 +2517,7 @@ const [trialSuccess, setTrialSuccess] = useState(false);
     url.searchParams.delete("thread_id");
     url.searchParams.delete("counterpart_name");
     url.searchParams.delete("event_id");
+    url.searchParams.delete("signup");
     window.history.replaceState(
       {},
       "",
@@ -2938,6 +2950,9 @@ const [trialSuccess, setTrialSuccess] = useState(false);
         case "messages":
           navigateTo("messages");
           break;
+        case "referrals":
+          navigateTo("referrals");
+          break;
         case "membership":
           navigateTo("membership");
           break;
@@ -3124,6 +3139,7 @@ activeScreen !== "vibbee-trial" &&
     activeScreen !== "notifications" &&
     activeScreen !== "messages" &&
     activeScreen !== "conversation" &&
+    activeScreen !== "referrals" &&
     activeScreen !== "detail";
 
   const isAiFallbackLayout =
@@ -6362,6 +6378,10 @@ activeScreen === "vibbee-trial" ||
       navigateTo("conversation");
     }}
   />
+) : null}
+
+{activeScreen === "referrals" ? (
+  <ReferralScreen onBack={() => goBack("homescreen")} />
 ) : null}
 
 {activeScreen === "conversation" && activeConversation ? (

@@ -9,6 +9,7 @@ import { ACCESS_COOKIE } from "./authCookies";
 const XANO_BASE_URL = process.env.XANO_BASE_URL as string;
 
 const GENIE_DEV_BASE = XANO_BASE_URL;
+const GENIE_V15_BASE = XANO_BASE_URL;
 const AUTH_BASE = XANO_BASE_URL;
 const STRIPE_BASE = XANO_BASE_URL;
 
@@ -128,6 +129,14 @@ export async function xanoFetch<T = unknown>(
   init: XanoRequestInit = {}
 ): Promise<T> {
   return baseFetch<T>(GENIE_DEV_BASE, path, init);
+}
+
+/** Genie v1.5 endpoints — same single base URL as everything else now, kept as its own function since callers already reference it by name */
+export async function xanoGenieV15Fetch<T = unknown>(
+  path: string,
+  init: XanoRequestInit = {}
+): Promise<T> {
+  return baseFetch<T>(GENIE_V15_BASE, path, init);
 }
 
 /** Auth (Magic Link) endpoints */

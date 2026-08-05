@@ -45,6 +45,7 @@ const ACCESS_TOKEN_COOKIE = "genie_access_token";
 const ONBOARDING_ROLES_STORAGE_KEY = "genie_onboarding_roles_v1";
 const ACTIVE_ROLE_STORAGE_KEY = "genie_active_role_v1";
 const ONBOARDING_PENDING_STORAGE_KEY = "genie_onboarding_pending_v1";
+const REFERRAL_CODE_STORAGE_KEY = "genie_referral_code_v1";
 
 export function readSavedVenueIds(): string[] {
   if (typeof window === "undefined") {
@@ -152,6 +153,30 @@ export function writeAuthToken(token: string | null) {
   if (!token) {
     document.cookie = `${ACCESS_TOKEN_COOKIE}=; path=/; max-age=0`;
   }
+}
+
+// Captured on /join?ref=CODE, consumed once by the signup form so the new
+// account gets attributed to whoever's link they came from.
+export function readReferralCode(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const value = window.localStorage.getItem(REFERRAL_CODE_STORAGE_KEY);
+  return value?.trim() ? value : null;
+}
+
+export function writeReferralCode(code: string | null) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (!code) {
+    window.localStorage.removeItem(REFERRAL_CODE_STORAGE_KEY);
+    return;
+  }
+
+  window.localStorage.setItem(REFERRAL_CODE_STORAGE_KEY, code);
 }
 
 export function readSelectedRoles(): OnboardingRole[] {

@@ -376,6 +376,7 @@ export async function signUpUser(payload: {
   last_name?: string;
   email: string;
   intent?: "signup" | "login";
+  referral_code?: string;
 }) {
   return apiJson<{ message: string; success?: boolean }>("/api/auth/signup", {
     method: "POST",
@@ -1770,6 +1771,61 @@ export async function createInfluencerProfile(payload: {
 
 export async function fetchInfluencerDashboard() {
   return apiJson<InfluencerDashboardData>("/api/genie/influencer-dashboard");
+}
+
+export interface ReferralEntry {
+  first_name?: string;
+  last_name?: string;
+  email_masked?: string;
+  created_at?: number | string;
+  verified?: boolean;
+  membership_active?: boolean;
+}
+
+export interface ReferralDashboardData {
+  code: string;
+  referrals: ReferralEntry[];
+  referral_count: number;
+  pending_amount: number;
+  available_amount: number;
+  paid_out_amount: number;
+  total_earned: number;
+}
+
+/** Get-or-create the logged-in user's personal referral code. Pass `code` to claim a custom 8-char code instead of auto-generating one. */
+export async function fetchOrCreateReferralCode(code?: string) {
+  return apiJson<{ code: string; created_at: number | string }>(
+    "/api/genie/referral-code",
+    { method: "POST", body: JSON.stringify(code ? { code } : {}) }
+  );
+}
+
+export async function fetchReferralDashboard() {
+  return apiJson<ReferralDashboardData>("/api/genie/referral-dashboard");
+}
+
+export interface ConnectStatus {
+  has_account: boolean;
+  payouts_enabled: boolean;
+}
+
+export async function fetchConnectStatus() {
+  return apiJson<ConnectStatus>("/api/genie/connect-status");
+}
+
+/** Returns a fresh Stripe-hosted onboarding URL, creating a Connect account first if needed. */
+export async function createConnectOnboardingLink(returnUrl: string, refreshUrl: string) {
+  return apiJson<{ url: string }>("/api/genie/connect-onboarding", {
+    method: "POST",
+    body: JSON.stringify({ return_url: returnUrl, refresh_url: refreshUrl }),
+  });
+}
+
+export async function requestReferralWithdraw() {
+  return apiJson<{ success: boolean; amount: number; transfer_id: string }>(
+    "/api/genie/referral-withdraw",
+    { method: "POST" }
+  );
 }
 
 export async function fetchInfluencerOffers(handle: string) {
