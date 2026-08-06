@@ -4,7 +4,12 @@
       "Bash(grep -n \"type.*Vendor\\\\|interface.*Vendor\" /c/Users/defaultuser0/OneDrive/Desktop/social-genie/app/lib/*.ts)",
       "Bash(npx tsc:*)",
       "Bash(npx eslint *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "PowerShell(Get-Process *)",
+      "mcp__xano__xano_xanoscript_docs",
+      "mcp__xano__xano_validate_xanoscript",
+      "mcp__xano__xano_meta_api_docs",
+      "mcp__xano__xano_cli_docs"
     ]
   }
 }

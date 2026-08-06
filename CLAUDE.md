@@ -14,9 +14,19 @@ source of truth for the backend.** When you need an endpoint path, input paramet
 response shape, or auth requirement, **read the endpoint's `.xs` file first.** Do not ask another
 agent, and do not block waiting on one.
 
+### Only use the `genie_v15` API group — ignore all others
+
+The backend repo contains several API groups: `genie`, `genie_dev`, `genie_v_15`, `genie_v_2`. **Only
+`genie_v_15` (internal name `genie_v15`) is relevant.** Its own header comment says it plainly:
+*"This API Group has only apis that are currently in use by frontend."* The other groups
+(`genie`, `genie_dev`, `genie_v_2`) are legacy/unused from the frontend's perspective — do not read,
+cite, or wire up endpoints from them. If an endpoint you need isn't in `genie_v_15`, stop and ask
+the user rather than falling back to another group.
+
 Useful paths:
 
-- `api/genie_dev/genie/<name>_<VERB>.xs` — one file per endpoint, e.g. `vendor_create_offer_POST.xs`
+- `api/genie_v_15/genie/<name>_<VERB>.xs` — one file per endpoint, e.g. `vendor_create_offer_POST.xs`
+- `api/genie_v_15/auth/`, `api/genie_v_15/admin/`, `api/genie_v_15/sessions/`, `api/genie_v_15/stripe/` — the other endpoint subfolders in this group
 - `table/<table>.xs` — column definitions and comments, e.g. `genie_offers.xs`
 - `database.xs` — table schemas only. It does **not** contain endpoint logic; prefer the
   per-endpoint `.xs` files for anything behavioral.

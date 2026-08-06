@@ -57,7 +57,124 @@ export function toMonthlyPriceLabel(value: string) {
     return value.replace("/month", " / month");
   }
 
+  if (value.includes("/yr")) {
+    return value.replace("/yr", " / year");
+  }
+
+  if (value.includes("/year")) {
+    return value.replace("/year", " / year");
+  }
+
   return value;
+}
+
+export type BillingInterval = "monthly" | "yearly";
+
+/**
+ * Percent saved by paying yearly instead of 12x monthly, rounded to the
+ * nearest whole percent. Returns null when either price can't be parsed or
+ * yearly isn't actually cheaper (so callers can hide the badge instead of
+ * showing "Save 0%" or a negative number).
+ */
+export function getYearlySavingsPercent(
+  monthlyPrice: string,
+  yearlyPrice: string
+): number | null {
+  const monthlyValue = parseFloat(monthlyPrice.replace(/[^0-9.]/g, ""));
+  const yearlyValue = parseFloat(yearlyPrice.replace(/[^0-9.]/g, ""));
+
+  if (!(monthlyValue > 0) || !(yearlyValue > 0)) {
+    return null;
+  }
+
+  const yearlyAtMonthlyRate = monthlyValue * 12;
+  if (yearlyAtMonthlyRate <= yearlyValue) {
+    return null;
+  }
+
+  return Math.round(
+    ((yearlyAtMonthlyRate - yearlyValue) / yearlyAtMonthlyRate) * 100
+  );
+}
+
+/**
+ * Yearly price expressed as an effective monthly rate (e.g. "$29/yr" ->
+ * "$2.42/mo"), for leading with the smaller number the way most subscription
+ * apps present an annual plan. Returns null if the price can't be parsed.
+ */
+export function getEffectiveMonthlyPriceLabel(yearlyPrice: string): string | null {
+  const yearlyValue = parseFloat(yearlyPrice.replace(/[^0-9.]/g, ""));
+  if (!(yearlyValue > 0)) {
+    return null;
+  }
+
+  return `$${(yearlyValue / 12).toFixed(2)}/mo`;
+}
+
+/**
+ * The actual once-a-year charge, spelled out for the secondary disclosure
+ * line under the effective-monthly headline price (e.g. "Billed $29 / year").
+ * Kept legible, not fine print — app-store subscription guidelines and
+ * chargeback risk both require the real charge to be clear before checkout.
+ */
+export function toYearlyBilledLabel(value: string) {
+  if (value.includes("/yr")) {
+    return `Billed ${value.replace("/yr", "")} / year`;
+  }
+
+  if (value.includes("/year")) {
+    return `Billed ${value.replace("/year", "")} / year`;
+  }
+
+  return `Billed ${value} / year`;
+}
+
+export function BillingIntervalToggle({
+  interval,
+  onChange,
+  savingsPercent,
+}: {
+  interval: BillingInterval;
+  onChange: (interval: BillingInterval) => void;
+  savingsPercent: number | null;
+}) {
+  return (
+    <div className="inline-flex items-center gap-0.5 rounded-full border border-red-400 bg-transparent p-1 dark:border-white/20 dark:bg-black/30">
+      <button
+        type="button"
+        onClick={() => onChange("monthly")}
+        className={`rounded-full px-3 py-1.5 text-[12px] font-semibold transition ${
+          interval === "monthly"
+            ? "bg-red-600 text-white dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+            : "text-red-600 dark:text-white/65"
+        }`}
+      >
+        Monthly
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange("yearly")}
+        className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold transition ${
+          interval === "yearly"
+            ? "bg-red-600 text-white dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+            : "text-red-600 dark:text-white/65"
+        }`}
+      >
+        Yearly
+        {savingsPercent ? (
+          <span
+            className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+              interval === "yearly"
+                ? "bg-white/20 text-white"
+                : "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300"
+            }`}
+          >
+            Save {savingsPercent}%
+          </span>
+        ) : null}
+      </button>
+    </div>
+  );
 }
 
 export function BenefitList({ benefits }: { benefits: string[] }) {
@@ -92,6 +209,7 @@ export function PlanCards({
   freeBenefits,
   vibeeBenefits,
   vibeeMonthlyPrice,
+  vibeeYearlyPrice,
   onSelectFree,
   onSelectVibee,
   disabled = false,
@@ -99,10 +217,18 @@ export function PlanCards({
   freeBenefits: string[];
   vibeeBenefits: string[];
   vibeeMonthlyPrice: string;
+  vibeeYearlyPrice: string;
   onSelectFree: () => void;
-  onSelectVibee: () => void;
+  onSelectVibee: (interval: BillingInterval) => void;
   disabled?: boolean;
 }) {
+  const [interval, setInterval] = useState<BillingInterval>("yearly");
+  const savingsPercent = getYearlySavingsPercent(
+    vibeeMonthlyPrice,
+    vibeeYearlyPrice
+  );
+  const activePrice = interval === "yearly" ? vibeeYearlyPrice : vibeeMonthlyPrice;
+
   return (
     <>
       <div className="rounded-[22px] border border-red-400 bg-transparent px-3 py-2.5 dark:border-white/20 dark:bg-black/25 dark:backdrop-blur-sm">
@@ -157,12 +283,7 @@ export function PlanCards({
           </div>
         </button>
 
-        <button
-          type="button"
-          onClick={onSelectVibee}
-          disabled={disabled}
-          className="w-full rounded-[22px] border border-red-400 bg-transparent px-4 py-3.5 text-left transition hover:bg-white/30 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/20 dark:bg-black/25 dark:backdrop-blur-sm dark:hover:bg-black/35"
-        >
+        <div className="w-full rounded-[22px] border border-red-400 bg-transparent px-4 py-3.5 text-left dark:border-white/20 dark:bg-black/25 dark:backdrop-blur-sm">
           <div className="flex items-start gap-3">
             <div className="mt-0.5 flex h-14 w-14 flex-none items-center justify-center rounded-xl border-2 border-red-500 dark:border-0 dark:bg-transparent dark:p-0">
               <Image
@@ -180,17 +301,53 @@ export function PlanCards({
                 className="hidden h-11 w-11 object-contain dark:block"
               />
             </div>
-            <div>
+            <div className="flex-1">
               <p className="text-[16px] font-semibold text-red-600 dark:text-[#ff7b7b]">
                 Become a V.I. Bee
               </p>
-              <p className="mt-0.5 text-[16px]">
-                {toMonthlyPriceLabel(vibeeMonthlyPrice)}
-              </p>
+
+              <div className="mt-2">
+                <BillingIntervalToggle
+                  interval={interval}
+                  onChange={setInterval}
+                  savingsPercent={savingsPercent}
+                />
+              </div>
+
+              {interval === "yearly" ? (
+                <>
+                  <p className="mt-2 text-[16px]">
+                    {getEffectiveMonthlyPriceLabel(vibeeYearlyPrice) ??
+                      toMonthlyPriceLabel(vibeeYearlyPrice)}
+                    {savingsPercent ? (
+                      <span className="ml-1.5 align-middle text-[11px] font-bold text-green-600 dark:text-green-400">
+                        Save {savingsPercent}%
+                      </span>
+                    ) : null}
+                  </p>
+                  <p className="mt-0.5 text-[12px] text-gray-500 dark:text-white/55">
+                    {toYearlyBilledLabel(vibeeYearlyPrice)}
+                  </p>
+                </>
+              ) : (
+                <p className="mt-2 text-[16px]">
+                  {toMonthlyPriceLabel(vibeeMonthlyPrice)}
+                </p>
+              )}
+
               <BenefitList benefits={vibeeBenefits} />
+
+              <button
+                type="button"
+                onClick={() => onSelectVibee(interval)}
+                disabled={disabled}
+                className="mt-3.5 w-full rounded-[16px] border border-red-500 bg-red-600 py-2.5 text-[13px] font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+              >
+                Get V.I.Bee — {activePrice}
+              </button>
             </div>
           </div>
-        </button>
+        </div>
       </div>
     </>
   );

@@ -37,6 +37,11 @@ import {
   ResultCard,
   EventResultCard,
   SectionShell,
+  BillingIntervalToggle,
+  getYearlySavingsPercent,
+  getEffectiveMonthlyPriceLabel,
+  toYearlyBilledLabel,
+  type BillingInterval,
   type FlowAnchor,
   buildVenueTags,
   getVenueDistance,
@@ -93,6 +98,8 @@ import {
   fetchVenueById,
   fetchSubscriptionStatus,
   fetchSubscriptionStatusForSession,
+  fetchSubscriptionDetails,
+  type SubscriptionDetails,
   initGuestSession,
   initDeviceProfile,
   loginWithMagicToken,
@@ -615,6 +622,12 @@ const [surveySubmitted, setSurveySubmitted] = useState(false);
 const [trialLoading, setTrialLoading] = useState(false);
 const [trialError, setTrialError] = useState<string | null>(null);
 const [trialSuccess, setTrialSuccess] = useState(false);
+const [membershipBillingInterval, setMembershipBillingInterval] =
+  useState<BillingInterval>("yearly");
+const [subscriptionDetails, setSubscriptionDetails] =
+  useState<SubscriptionDetails | null>(null);
+const [subscriptionDetailsLoading, setSubscriptionDetailsLoading] =
+  useState(false);
 
   const [sharedVenue, setSharedVenue] = useState<GenieVenue | null>(null);
   const [sharedVenueLoading, setSharedVenueLoading] = useState(false);
@@ -1934,6 +1947,35 @@ const [trialSuccess, setTrialSuccess] = useState(false);
   }, [activeScreen, loadOffersAndRedemptions]);
 
   useEffect(() => {
+    if (activeScreen !== "membership" || account?.membership !== "vibee") {
+      return;
+    }
+
+    let cancelled = false;
+    setSubscriptionDetailsLoading(true);
+    fetchSubscriptionDetails()
+      .then((details) => {
+        if (!cancelled) {
+          setSubscriptionDetails(details);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSubscriptionDetails(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setSubscriptionDetailsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeScreen, account?.membership]);
+
+  useEffect(() => {
     if (activeScreen === "preferences" || activeScreen === "profile") {
       void loadSocialPreferences();
     }
@@ -2760,7 +2802,7 @@ const [trialSuccess, setTrialSuccess] = useState(false);
   // Uber deeplink — same construction as the standalone venue page (VenueDetailClient.tsx).
   const uberUrl =
     selectedVenue && selectedVenue.latitude != null && selectedVenue.longitude != null
-      ? `uber://?dropoff[lat]=${selectedVenue.latitude}&dropoff[lng]=${selectedVenue.longitude}&dropoff[nickname]=${encodeURIComponent(selectedVenue.venue_name)}`
+      ? `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[latitude]=${selectedVenue.latitude}&dropoff[longitude]=${selectedVenue.longitude}&dropoff[nickname]=${encodeURIComponent(selectedVenue.venue_name)}&dropoff[formatted_address]=${encodeURIComponent(selectedVenue.venue_name)}`
       : null;
   const detailActions: Array<{
     id: string;
@@ -6172,7 +6214,11 @@ activeScreen === "vibbee-trial" ||
         {activeScreen === "membership" ? (() => {
           const isVibee = account?.membership === "vibee";
           const isActive = account?.subscriptionStatus === "active";
-          const wasVibee = !isVibee && (account?.subscriptionStatus === "cancelled" || account?.subscriptionStatus === "inactive" || account?.subscriptionStatus === "past_due");
+          // hasSubscribedBefore distinguishes a lapsed member from a user who
+          // has never subscribed — both otherwise read as subscriptionStatus
+          // "inactive", which used to route brand-new free accounts into the
+          // "Renew" flow instead of "Become a V.I.Bee".
+          const wasVibee = !isVibee && Boolean(account?.hasSubscribedBefore) && (account?.subscriptionStatus === "cancelled" || account?.subscriptionStatus === "inactive" || account?.subscriptionStatus === "past_due");
           return (
             <section className="pb-8">
               <div className="mb-5 flex items-center">
@@ -6213,7 +6259,38 @@ activeScreen === "vibbee-trial" ||
                     </div>
                     <div>
                       <p className="text-base font-semibold text-white">V.I.Bee Member</p>
-                      <p className="mt-0.5 text-[0.78rem] text-white/55">Next Payment: —</p>
+                      <p className="mt-0.5 text-[0.78rem] text-white/55">
+                        {(() => {
+                          if (subscriptionDetailsLoading) {
+                            return "Loading next payment…";
+                          }
+                          if (!subscriptionDetails?.has_subscription) {
+                            return "Next Payment: —";
+                          }
+                          const { next_payment_date, next_payment_amount, currency, cancel_at_period_end } =
+                            subscriptionDetails;
+                          const dateLabel = next_payment_date
+                            ? new Date(next_payment_date * 1000).toLocaleDateString(undefined, {
+                                month: "short",
+                                day: "numeric",
+                                year: "numeric",
+                              })
+                            : "—";
+                          const amountLabel =
+                            typeof next_payment_amount === "number"
+                              ? (next_payment_amount / 100).toLocaleString(undefined, {
+                                  style: "currency",
+                                  currency: (currency ?? "usd").toUpperCase(),
+                                })
+                              : null;
+                          if (cancel_at_period_end) {
+                            return `Cancels on ${dateLabel}`;
+                          }
+                          return amountLabel
+                            ? `Next Payment: ${amountLabel} on ${dateLabel}`
+                            : `Next Payment: ${dateLabel}`;
+                        })()}
+                      </p>
                     </div>
                   </div>
                 ) : null}
@@ -6243,7 +6320,16 @@ activeScreen === "vibbee-trial" ||
                 ) : null}
 
                 {/* Upgrade prompt — free with no prior vibee */}
-                {!isVibee && !wasVibee ? (
+                {!isVibee && !wasVibee ? (() => {
+                  const membershipSavingsPercent = getYearlySavingsPercent(
+                    config.vibeeMonthlyPrice,
+                    config.vibeeYearlyPrice
+                  );
+                  const membershipActivePrice =
+                    membershipBillingInterval === "yearly"
+                      ? (config.vibeeYearlyPrice ?? "$29/yr")
+                      : (config.vibeeMonthlyPrice ?? "$2.99/mo");
+                  return (
                   <>
                     <div className="rounded-[20px] border border-red-500/30 bg-[rgba(80,5,5,0.60)] px-4 py-4">
                       <div className="flex items-center gap-3">
@@ -6254,9 +6340,33 @@ activeScreen === "vibbee-trial" ||
                         </div>
                         <div>
                           <p className="text-base font-semibold text-white">Become a V.I.Bee</p>
-                          <p className="mt-0.5 text-[0.82rem] font-medium text-red-300">{config.vibeeMonthlyPrice ?? "$2.99"} / month</p>
+                          <p className="mt-0.5 text-[0.82rem] font-medium text-red-300">
+                            {membershipBillingInterval === "yearly"
+                              ? (getEffectiveMonthlyPriceLabel(config.vibeeYearlyPrice) ??
+                                membershipActivePrice)
+                              : membershipActivePrice}
+                            {membershipBillingInterval === "yearly" && membershipSavingsPercent ? (
+                              <span className="ml-1.5 text-[0.72rem] font-bold text-green-400">
+                                Save {membershipSavingsPercent}%
+                              </span>
+                            ) : null}
+                          </p>
+                          {membershipBillingInterval === "yearly" ? (
+                            <p className="mt-0.5 text-[0.68rem] text-white/50">
+                              {toYearlyBilledLabel(config.vibeeYearlyPrice ?? "$29/yr")}
+                            </p>
+                          ) : null}
                         </div>
                       </div>
+
+                      <div className="mt-3.5">
+                        <BillingIntervalToggle
+                          interval={membershipBillingInterval}
+                          onChange={setMembershipBillingInterval}
+                          savingsPercent={membershipSavingsPercent}
+                        />
+                      </div>
+
                       <ul className="mt-4 space-y-2">
                         {(config.vibeeBenefits ?? ["Exclusive event access", "Early invites & giveaways", "Hidden gems & VIP deals"]).map((benefit) => (
                           <li key={benefit} className="flex items-center gap-2 text-[0.85rem] text-white/80">
@@ -6283,7 +6393,9 @@ activeScreen === "vibbee-trial" ||
   onClick={async () => {
     try {
       setTrialLoading(true);
-      const { checkout_url } = await createSubscriptionCheckout({});
+      const { checkout_url } = await createSubscriptionCheckout({
+        plan_type: membershipBillingInterval,
+      });
       window.location.href = checkout_url;
     } catch {
       setTrialError("Something went wrong. Please try again.");
@@ -6294,10 +6406,11 @@ activeScreen === "vibbee-trial" ||
   disabled={trialLoading}
   className="w-full rounded-[18px] border border-red-500 bg-red-600 py-4 text-sm font-semibold text-white disabled:opacity-60 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
 >
-  {trialLoading ? "Loading..." : "Become a V.I.Bee — $2.99/mo"}
+  {trialLoading ? "Loading..." : `Become a V.I.Bee — ${membershipActivePrice}`}
 </button>
                   </>
-                ) : null}
+                  );
+                })() : null}
               </div>
             </section>
           );

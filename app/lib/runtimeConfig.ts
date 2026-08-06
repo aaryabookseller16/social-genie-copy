@@ -48,6 +48,7 @@ export const runtimeConfig: RuntimeConfig = {
   ],
   signupPromptSuppressAfter: 3,
   vibeeMonthlyPrice: "$2.99/mo",
+  vibeeYearlyPrice: "$29/yr",
   freeBenefits: [
     "Explore city spots",
     "Discover local events",

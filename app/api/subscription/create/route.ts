@@ -58,6 +58,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const planType = body.plan_type === "yearly" ? "yearly" : "monthly";
     const result = await xanoFetch<{
       checkout_url: string;
       session_id: string;
@@ -66,6 +67,7 @@ export async function POST(request: NextRequest) {
       body: {
         external_user_id: body.external_user_id ?? "",
         email,
+        plan_type: planType,
         success_url:
           body.success_url ??
           `${appBase}/vibee/success?session_id={CHECKOUT_SESSION_ID}`,

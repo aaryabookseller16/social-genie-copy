@@ -31,6 +31,7 @@ export type PublicApiUser = {
   avatar_url?: string | null;
   membership: "free" | "vibee";
   subscription_status?: ConsumerSubscriptionStatus;
+  has_subscribed_before?: boolean;
   vendor_id?: number | null;
   verified?: boolean;
   roles?: string[] | null;
@@ -289,6 +290,7 @@ export function toConsumerAccount(
     avatarUrl: user.avatar_url ?? undefined,
     membership: status === "active" ? "vibee" : user.membership,
     subscriptionStatus: status,
+    hasSubscribedBefore: user.has_subscribed_before ?? false,
     vendorId: user.vendor_id ?? null,
     verified: user.verified ?? false,
     createdAt: Date.now(),
@@ -555,6 +557,21 @@ export async function fetchSubscriptionStatusForSession(sessionId: string) {
   );
 }
 
+export type SubscriptionDetails = {
+  has_subscription: boolean;
+  // Unix seconds (Stripe's native format) — multiply by 1000 for a JS Date.
+  next_payment_date: number | null;
+  // Smallest currency unit (cents for USD) — divide by 100 to display.
+  next_payment_amount: number | null;
+  currency: string | null;
+  interval: string | null;
+  cancel_at_period_end: boolean;
+};
+
+export async function fetchSubscriptionDetails() {
+  return apiJson<SubscriptionDetails>("/api/subscription/details");
+}
+
 export async function createSubscriptionCheckout(payload: {
   email?: string;
   user_id?: number;
@@ -601,6 +618,7 @@ export async function createSubscriptionCheckout(payload: {
     body: JSON.stringify({
       email,
       external_user_id: payload.external_user_id || externalUserId || undefined,
+      plan_type: payload.plan_type,
       success_url: payload.success_url,
       cancel_url: payload.cancel_url,
     }),

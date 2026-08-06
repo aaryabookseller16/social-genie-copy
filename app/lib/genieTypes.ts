@@ -174,6 +174,7 @@ export type RuntimeConfig = {
   quickChips: RuntimeQuickChip[];
   signupPromptSuppressAfter: number;
   vibeeMonthlyPrice: string;
+  vibeeYearlyPrice: string;
   freeBenefits: string[];
   vibeeBenefits: string[];
   vendorPlans: {

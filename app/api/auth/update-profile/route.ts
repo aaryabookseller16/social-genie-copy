@@ -67,6 +67,7 @@ export async function POST(request: NextRequest) {
       avatar_url?: string;
       verified?: boolean;
       membership_active?: boolean;
+      membership_started_at?: string | null;
       vendor_id?: number | null;
     }>("auth/update_profile", {
       method: "POST",
@@ -85,6 +86,7 @@ export async function POST(request: NextRequest) {
         avatar_url: user.avatar_url ?? null,
         membership: user.membership_active ? "vibee" : "free",
         subscription_status: user.membership_active ? "active" : "inactive",
+        has_subscribed_before: Boolean(user.membership_started_at),
         vendor_id: user.vendor_id ?? null,
         verified: user.verified ?? false,
       },

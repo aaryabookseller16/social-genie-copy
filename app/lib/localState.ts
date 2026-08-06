@@ -15,6 +15,10 @@ export type ConsumerAccount = {
   avatarUrl?: string;
   membership: ConsumerMembership;
   subscriptionStatus?: ConsumerSubscriptionStatus;
+  // True once genie_user.membership_started_at has ever been set — the only
+  // way to tell "never subscribed" apart from "subscribed once, now lapsed"
+  // when both collapse to subscriptionStatus === "inactive".
+  hasSubscribedBefore?: boolean;
   vendorId?: number | null;
   verified?: boolean;
   createdAt: number;

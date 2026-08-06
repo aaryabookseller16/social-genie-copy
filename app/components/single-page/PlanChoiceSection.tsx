@@ -6,7 +6,7 @@ import { trackEvent } from "@/app/lib/analytics";
 import { analyticsEvents } from "@/app/lib/analyticsEvents";
 import { type RuntimeConfig } from "@/app/lib/genieTypes";
 import { createSubscriptionCheckout } from "@/app/lib/publicApiClient";
-import { PlanCards } from "./ui";
+import { PlanCards, type BillingInterval } from "./ui";
 
 /**
  * Post-verification plan chooser — the only place a tier is committed.
@@ -36,19 +36,23 @@ export function PlanChoiceSection({
     return null;
   }
 
-  const chooseVibee = async () => {
+  const chooseVibee = async (interval: BillingInterval) => {
     if (isSubmitting) {
       return;
     }
 
     setIsSubmitting(true);
     setMessage("Redirecting to secure checkout...");
-    trackEvent(analyticsEvents.vibeeCtaTapped, { email });
-    trackEvent(analyticsEvents.vibeeCheckoutStarted, { email });
+    trackEvent(analyticsEvents.vibeeCtaTapped, { email, plan_type: interval });
+    trackEvent(analyticsEvents.vibeeCheckoutStarted, {
+      email,
+      plan_type: interval,
+    });
 
     try {
       const { checkout_url } = await createSubscriptionCheckout({
         email,
+        plan_type: interval,
         // `onboarding=1` tells the checkout-return handler to resume the
         // wizard at preferences rather than dropping the user on home.
         success_url: `${window.location.origin}?checkout=success&onboarding=1`,
@@ -75,11 +79,12 @@ export function PlanChoiceSection({
           freeBenefits={config.freeBenefits}
           vibeeBenefits={config.vibeeBenefits}
           vibeeMonthlyPrice={config.vibeeMonthlyPrice}
+          vibeeYearlyPrice={config.vibeeYearlyPrice}
           onSelectFree={() => {
             trackEvent(analyticsEvents.freeAccountCtaTapped, { email });
             onChooseFree();
           }}
-          onSelectVibee={() => void chooseVibee()}
+          onSelectVibee={(interval) => void chooseVibee(interval)}
           disabled={isSubmitting}
         />
 

@@ -338,6 +338,7 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
   const [vibbeeOffers, setVibbeeOffers] = useState<VibbeeEventOffer[]>([]);
   const [influencerOffers, setInfluencerOffers] = useState<InfluencerEventOffer[]>([]);
   const [showCalendarMenu, setShowCalendarMenu] = useState(false);
+  const [rideError, setRideError] = useState(false);
   const calendarMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -460,6 +461,12 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
   const dateStr    = fmtDate(ev.event_date);
   const venueName  = (ev.venue_name as string) || "";
   const venueAddr  = (ev.venue_address as string) || "";
+  // `ev.venue` is the full genie_venues row nested in the ep_get_event_detail_dev
+  // response (see mergedEvent above) — the flat venue_name/venue_address fields
+  // it's spread from don't carry coordinates.
+  const venueRecord = ev.venue as Record<string, unknown> | undefined;
+  const venueLat = typeof venueRecord?.latitude === "number" ? venueRecord.latitude : null;
+  const venueLng = typeof venueRecord?.longitude === "number" ? venueRecord.longitude : null;
   const description = (ev.description as string) || "";
   const category   = (ev.category as string) || (ev.event_category as string) || "";
   const producer   = ev.producer as { id?: number; name?: string; image_url?: string; event_count?: number; is_verified?: boolean; is_following?: boolean } | undefined;
@@ -694,10 +701,24 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
           <button
             type="button"
             onClick={() => {
+              // Only a lat/lng dropoff reliably preselects in Uber — a
+              // formatted-address-only link routinely opens with nothing
+              // preselected. Without coordinates, fail loudly instead of
+              // shipping that broken experience.
+              if (venueLat == null || venueLng == null) {
+                console.log("[ride_click] no venue coordinates available", {
+                  event_id: ev.id,
+                  venue_name: venueName,
+                  venue_address: venueAddr,
+                });
+                setRideError(true);
+                window.setTimeout(() => setRideError(false), 4000);
+                return;
+              }
               const addr = venueAddr || venueName || "Houston, TX";
               onRideClick?.(addr);
               window.open(
-                `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[formatted_address]=${encodeURIComponent(addr)}`,
+                `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[latitude]=${venueLat}&dropoff[longitude]=${venueLng}&dropoff[nickname]=${encodeURIComponent(venueName || addr)}&dropoff[formatted_address]=${encodeURIComponent(addr)}`,
                 "_blank",
                 "noopener,noreferrer"
               );
@@ -928,6 +949,12 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
 
       </div>
       </div>
+
+      {rideError ? (
+        <div className="fixed inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+4.5rem)] z-50 mx-auto max-w-sm rounded-xl bg-gray-900 px-4 py-3 text-center text-[0.82rem] font-medium text-white shadow-lg dark:bg-black">
+          Ride directions aren&apos;t available for this location yet.
+        </div>
+      ) : null}
     </section>
   );
 }

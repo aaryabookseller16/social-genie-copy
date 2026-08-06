@@ -124,7 +124,7 @@ export function VenueDetailClient({ venue }: { venue: GenieVenue }) {
     venue.city;
 
   const uberUrl = hasCoords
-    ? `uber://?dropoff[lat]=${lat}&dropoff[lng]=${lng}&dropoff[nickname]=${encodeURIComponent(venue.venue_name)}`
+    ? `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[latitude]=${lat}&dropoff[longitude]=${lng}&dropoff[nickname]=${encodeURIComponent(venue.venue_name)}&dropoff[formatted_address]=${encodeURIComponent(venue.venue_name)}`
     : null;
 
   const mapsUrl = venue.google_maps_url

@@ -41,6 +41,7 @@ export async function POST(request: NextRequest) {
       email: string;
       verified: boolean;
       membership_active: boolean;
+      membership_started_at?: string | null;
       first_name?: string;
       last_name?: string;
       flow?: "signup" | "login";
@@ -57,6 +58,7 @@ export async function POST(request: NextRequest) {
         last_name: result.last_name ?? "",
         membership: result.membership_active ? "vibee" : "free",
         subscription_status: result.membership_active ? "active" : "inactive",
+        has_subscribed_before: Boolean(result.membership_started_at),
         vendor_id: null,
         verified: result.verified ?? false,
       },
