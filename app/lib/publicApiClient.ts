@@ -572,6 +572,14 @@ export async function fetchSubscriptionDetails() {
   return apiJson<SubscriptionDetails>("/api/subscription/details");
 }
 
+export async function cancelSubscription() {
+  return apiJson<{
+    cancel_at_period_end: boolean;
+    current_period_end: number;
+    status: string;
+  }>("/api/subscription/cancel", { method: "POST" });
+}
+
 export async function createSubscriptionCheckout(payload: {
   email?: string;
   user_id?: number;

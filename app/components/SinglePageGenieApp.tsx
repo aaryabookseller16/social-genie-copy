@@ -99,6 +99,7 @@ import {
   fetchSubscriptionStatus,
   fetchSubscriptionStatusForSession,
   fetchSubscriptionDetails,
+  cancelSubscription,
   type SubscriptionDetails,
   initGuestSession,
   initDeviceProfile,
@@ -487,6 +488,93 @@ function parseAiFallbackReply(text: string): {
   return { intro: stripMd(normalized), items: [] };
 }
 
+function CancelSubscriptionSheet({
+  open,
+  onClose,
+  onConfirm,
+  error,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onConfirm: () => Promise<void> | void;
+  error: string | null;
+}) {
+  const [confirming, setConfirming] = useState(false);
+
+  if (!open) return null;
+
+  const handleConfirm = async () => {
+    setConfirming(true);
+    try {
+      await onConfirm();
+    } finally {
+      setConfirming(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-80 flex flex-col justify-end"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Cancel subscription confirmation"
+    >
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={onClose}
+        className="absolute inset-0 bg-black/45 backdrop-blur-sm"
+      />
+      <div className="relative mx-auto w-full max-w-md rounded-t-[28px] bg-white bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat px-5 pb-10 pt-3 shadow-[0_-18px_40px_rgba(0,0,0,0.18)] dark:bg-black dark:bg-[url('/bg.png')] dark:shadow-[0_-18px_40px_rgba(0,0,0,0.5)]">
+        <div className="pointer-events-none absolute inset-0 hidden rounded-t-[28px] bg-black/45 dark:block" />
+        <div className="relative">
+          <div className="mx-auto h-1 w-12 rounded-full bg-black/25 dark:bg-white/30" />
+          <div className="mt-5 flex items-start justify-between gap-3">
+            <h3 className="text-[1.5rem] font-semibold text-gray-900 dark:text-white">
+              Cancel Subscription
+            </h3>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-black/15 text-gray-800 transition hover:bg-black/25 dark:bg-white/15 dark:text-white dark:hover:bg-white/25"
+            >
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                <path d="M6 6l12 12M18 6L6 18" />
+              </svg>
+            </button>
+          </div>
+          <p className="mt-4 text-[15px] leading-relaxed text-gray-700 dark:text-white/75">
+            Your V.I.Bee perks stay active through the end of your current billing period — you won&apos;t be charged again after that. Are you sure you want to cancel?
+          </p>
+          {error ? (
+            <p className="mt-3 text-[13px] leading-relaxed text-red-600 dark:text-red-300">
+              {error}
+            </p>
+          ) : null}
+          <div className="mt-6 flex flex-col gap-3">
+            <button
+              type="button"
+              onClick={() => void handleConfirm()}
+              disabled={confirming}
+              className="w-full rounded-[20px] border border-red-500 bg-red-600 px-4 py-3.5 text-[15px] font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+            >
+              {confirming ? "Cancelling..." : "Yes, cancel my subscription"}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full rounded-[20px] bg-black/10 px-4 py-3.5 text-[15px] font-semibold text-gray-900 transition hover:bg-black/15 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+            >
+              Keep my membership
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type SinglePageGenieAppProps = {
   initialScreen?: FlowAnchor;
   initialVenueId?: string | null;
@@ -628,6 +716,8 @@ const [subscriptionDetails, setSubscriptionDetails] =
   useState<SubscriptionDetails | null>(null);
 const [subscriptionDetailsLoading, setSubscriptionDetailsLoading] =
   useState(false);
+const [cancelSheetOpen, setCancelSheetOpen] = useState(false);
+const [cancelError, setCancelError] = useState<string | null>(null);
 
   const [sharedVenue, setSharedVenue] = useState<GenieVenue | null>(null);
   const [sharedVenueLoading, setSharedVenueLoading] = useState(false);
@@ -6219,6 +6309,18 @@ activeScreen === "vibbee-trial" ||
           // "inactive", which used to route brand-new free accounts into the
           // "Renew" flow instead of "Become a V.I.Bee".
           const wasVibee = !isVibee && Boolean(account?.hasSubscribedBefore) && (account?.subscriptionStatus === "cancelled" || account?.subscriptionStatus === "inactive" || account?.subscriptionStatus === "past_due");
+          // Shared by both the "renew" (wasVibee) and "become a V.I.Bee"
+          // (never subscribed) prompts below — both need the same
+          // monthly/yearly picker instead of silently checking out at
+          // whatever plan_type the checkout call happens to default to.
+          const membershipSavingsPercent = getYearlySavingsPercent(
+            config.vibeeMonthlyPrice,
+            config.vibeeYearlyPrice
+          );
+          const membershipActivePrice =
+            membershipBillingInterval === "yearly"
+              ? (config.vibeeYearlyPrice ?? "$29/yr")
+              : (config.vibeeMonthlyPrice ?? "$2.99/mo");
           return (
             <section className="pb-8">
               <div className="mb-5 flex items-center">
@@ -6236,8 +6338,12 @@ activeScreen === "vibbee-trial" ||
               </div>
 
               <div className="space-y-3">
-                {/* Free member card — always shown when not active vibee */}
-                {!isVibee || !isActive ? (
+                {/* Free member card — only for a genuinely free account (never
+                    subscribed). The old `!isVibee || !isActive` condition also
+                    matched past_due/cancelled accounts, so it rendered this
+                    "Currently Active" card at the same time as the expired
+                    card below for anyone who'd ever lapsed. */}
+                {!isVibee && !wasVibee ? (
                   <div className="flex items-center gap-4 rounded-[20px] border border-white/15 bg-[rgba(60,5,5,0.55)] px-4 py-4 dark:bg-black/25">
                     <div className="flex h-12 w-12 flex-none items-center justify-center rounded-full border-2 border-white/20 bg-white/10 text-[0.65rem] font-bold uppercase tracking-wide text-white">
                       FREE
@@ -6251,51 +6357,99 @@ activeScreen === "vibbee-trial" ||
 
                 {/* V.I.Bee active */}
                 {isVibee && isActive ? (
-                  <div className="flex items-center gap-4 rounded-[20px] border border-red-500/40 bg-[rgba(120,10,10,0.55)] px-4 py-4">
-                    <div className="flex h-12 w-12 flex-none items-center justify-center rounded-full border-2 border-red-400/60 bg-red-500/20">
-                      <svg viewBox="0 0 24 24" className="h-6 w-6 text-red-300" fill="none" stroke="currentColor" strokeWidth="1.6">
-                        <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <p className="text-base font-semibold text-white">V.I.Bee Member</p>
-                      <p className="mt-0.5 text-[0.78rem] text-white/55">
-                        {(() => {
-                          if (subscriptionDetailsLoading) {
-                            return "Loading next payment…";
-                          }
-                          if (!subscriptionDetails?.has_subscription) {
-                            return "Next Payment: —";
-                          }
-                          const { next_payment_date, next_payment_amount, currency, cancel_at_period_end } =
-                            subscriptionDetails;
-                          const dateLabel = next_payment_date
-                            ? new Date(next_payment_date * 1000).toLocaleDateString(undefined, {
-                                month: "short",
-                                day: "numeric",
-                                year: "numeric",
-                              })
-                            : "—";
-                          const amountLabel =
-                            typeof next_payment_amount === "number"
-                              ? (next_payment_amount / 100).toLocaleString(undefined, {
-                                  style: "currency",
-                                  currency: (currency ?? "usd").toUpperCase(),
+                  <>
+                    <div className="flex items-center gap-4 rounded-[20px] border border-red-500/40 bg-[rgba(120,10,10,0.55)] px-4 py-4">
+                      <div className="flex h-12 w-12 flex-none items-center justify-center rounded-full border-2 border-red-400/60 bg-red-500/20">
+                        <svg viewBox="0 0 24 24" className="h-6 w-6 text-red-300" fill="none" stroke="currentColor" strokeWidth="1.6">
+                          <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <p className="text-base font-semibold text-white">V.I.Bee Member</p>
+                        <p className="mt-0.5 text-[0.78rem] text-white/55">
+                          {(() => {
+                            if (subscriptionDetailsLoading) {
+                              return "Loading next payment…";
+                            }
+                            if (!subscriptionDetails?.has_subscription) {
+                              return "Next Payment: —";
+                            }
+                            const { next_payment_date, next_payment_amount, currency, cancel_at_period_end } =
+                              subscriptionDetails;
+                            const dateLabel = next_payment_date
+                              ? new Date(next_payment_date * 1000).toLocaleDateString(undefined, {
+                                  month: "short",
+                                  day: "numeric",
+                                  year: "numeric",
                                 })
-                              : null;
-                          if (cancel_at_period_end) {
-                            return `Cancels on ${dateLabel}`;
-                          }
-                          return amountLabel
-                            ? `Next Payment: ${amountLabel} on ${dateLabel}`
-                            : `Next Payment: ${dateLabel}`;
-                        })()}
-                      </p>
+                              : "—";
+                            const amountLabel =
+                              typeof next_payment_amount === "number"
+                                ? (next_payment_amount / 100).toLocaleString(undefined, {
+                                    style: "currency",
+                                    currency: (currency ?? "usd").toUpperCase(),
+                                  })
+                                : null;
+                            if (cancel_at_period_end) {
+                              return `Cancels on ${dateLabel}`;
+                            }
+                            return amountLabel
+                              ? `Next Payment: ${amountLabel} on ${dateLabel}`
+                              : `Next Payment: ${dateLabel}`;
+                          })()}
+                        </p>
+                      </div>
                     </div>
-                  </div>
+                    {!subscriptionDetails?.cancel_at_period_end ? (
+                      <button
+                        type="button"
+                        onClick={() => setCancelSheetOpen(true)}
+                        className="w-full py-1 text-center text-[0.78rem] font-medium text-white/50 transition hover:text-white/75 hover:underline"
+                      >
+                        Cancel Subscription
+                      </button>
+                    ) : null}
+                  </>
                 ) : null}
 
-                {/* Expired V.I.Bee */}
+                {/* V.I.Bee, grace period — payment failed but membership_active
+                    is still true (Stripe is retrying the card; see
+                    stripe/webhook_POST.xs). Distinct from both the fully
+                    active card above and the fully lapsed card below. */}
+                {isVibee && !isActive && account?.subscriptionStatus === "past_due" ? (
+                  <>
+                    <div className="flex items-center gap-4 rounded-[20px] border border-amber-500/40 bg-[rgba(120,70,10,0.55)] px-4 py-4">
+                      <div className="flex h-12 w-12 flex-none items-center justify-center rounded-full border-2 border-amber-400/60 bg-amber-500/20">
+                        <svg viewBox="0 0 24 24" className="h-6 w-6 text-amber-300" fill="none" stroke="currentColor" strokeWidth="1.6">
+                          <path d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L14.71 3.86a2 2 0 0 0-3.42 0Z" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </div>
+                      <div>
+                        <p className="text-base font-semibold text-white">V.I.Bee Member</p>
+                        <p className="mt-0.5 text-[0.78rem] text-amber-200">Payment failed — update your card to keep your membership</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => navigateTo("account")}
+                      className="w-full rounded-[18px] border border-red-500 bg-red-600 py-4 text-sm font-semibold text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                    >
+                      Update Payment Method
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCancelSheetOpen(true)}
+                      className="w-full py-1 text-center text-[0.78rem] font-medium text-white/50 transition hover:text-white/75 hover:underline"
+                    >
+                      Cancel Subscription Instead
+                    </button>
+                  </>
+                ) : null}
+
+                {/* Expired V.I.Bee — membership_active is false: either the
+                    subscription was fully cancelled, or (shouldn't normally
+                    happen given the grace-period logic above, kept as a safe
+                    fallback) some other lapsed state. */}
                 {wasVibee ? (
                   <>
                     <div className="flex items-center gap-4 rounded-[20px] border border-white/15 bg-[rgba(60,5,5,0.55)] px-4 py-4 opacity-70 dark:bg-black/25">
@@ -6306,30 +6460,74 @@ activeScreen === "vibbee-trial" ||
                       </div>
                       <div>
                         <p className="text-base font-semibold text-white">V.I.Bee Member</p>
-                        <p className="mt-0.5 text-[0.78rem] text-white/55">Expired</p>
+                        <p className="mt-0.5 text-[0.78rem] text-white/55">
+                          {account?.subscriptionStatus === "cancelled" ? "Cancelled" : "Expired"}
+                        </p>
                       </div>
                     </div>
+
+                    {/* Plan picker — renewing used to silently checkout at
+                        whatever plan_type the endpoint defaults to (monthly)
+                        with no choice shown. Mirrors the "Become a V.I.Bee"
+                        picker below. */}
+                    <div className="rounded-[20px] border border-red-500/30 bg-[rgba(80,5,5,0.60)] px-4 py-4">
+                      <p className="text-[0.85rem] font-semibold text-white">Choose your plan to renew</p>
+                      <div className="mt-3">
+                        <BillingIntervalToggle
+                          interval={membershipBillingInterval}
+                          onChange={setMembershipBillingInterval}
+                          savingsPercent={membershipSavingsPercent}
+                        />
+                      </div>
+                      <p className="mt-3 text-[0.82rem] font-medium text-red-300">
+                        {membershipBillingInterval === "yearly"
+                          ? (getEffectiveMonthlyPriceLabel(config.vibeeYearlyPrice) ??
+                            membershipActivePrice)
+                          : membershipActivePrice}
+                        {membershipBillingInterval === "yearly" && membershipSavingsPercent ? (
+                          <span className="ml-1.5 text-[0.72rem] font-bold text-green-400">
+                            Save {membershipSavingsPercent}%
+                          </span>
+                        ) : null}
+                      </p>
+                      {membershipBillingInterval === "yearly" ? (
+                        <p className="mt-0.5 text-[0.68rem] text-white/50">
+                          {toYearlyBilledLabel(config.vibeeYearlyPrice ?? "$29/yr")}
+                        </p>
+                      ) : null}
+                    </div>
+
+                    {trialError ? (
+                      <div className="rounded-[14px] border border-red-300 bg-red-50 px-4 py-3 text-[0.82rem] text-red-600 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+                        {trialError}
+                      </div>
+                    ) : null}
+
                     <button
                       type="button"
-                      onClick={() => navigateTo("account")}
-                      className="w-full rounded-[18px] border border-red-500 bg-red-600 py-4 text-sm font-semibold text-white dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
+                      onClick={async () => {
+                        try {
+                          setTrialLoading(true);
+                          const { checkout_url } = await createSubscriptionCheckout({
+                            plan_type: membershipBillingInterval,
+                          });
+                          window.location.href = checkout_url;
+                        } catch {
+                          setTrialError("Something went wrong. Please try again.");
+                        } finally {
+                          setTrialLoading(false);
+                        }
+                      }}
+                      disabled={trialLoading}
+                      className="w-full rounded-[18px] border border-red-500 bg-red-600 py-4 text-sm font-semibold text-white disabled:opacity-60 dark:border-[#d75050] dark:bg-[linear-gradient(180deg,rgba(134,10,12,0.88),rgba(81,3,4,0.95))]"
                     >
-                      Renew V.I.Bee Now
+                      {trialLoading ? "Loading..." : `Renew V.I.Bee — ${membershipActivePrice}`}
                     </button>
                   </>
                 ) : null}
 
                 {/* Upgrade prompt — free with no prior vibee */}
-                {!isVibee && !wasVibee ? (() => {
-                  const membershipSavingsPercent = getYearlySavingsPercent(
-                    config.vibeeMonthlyPrice,
-                    config.vibeeYearlyPrice
-                  );
-                  const membershipActivePrice =
-                    membershipBillingInterval === "yearly"
-                      ? (config.vibeeYearlyPrice ?? "$29/yr")
-                      : (config.vibeeMonthlyPrice ?? "$2.99/mo");
-                  return (
+                {!isVibee && !wasVibee ? (
                   <>
                     <div className="rounded-[20px] border border-red-500/30 bg-[rgba(80,5,5,0.60)] px-4 py-4">
                       <div className="flex items-center gap-3">
@@ -6409,9 +6607,36 @@ activeScreen === "vibbee-trial" ||
   {trialLoading ? "Loading..." : `Become a V.I.Bee — ${membershipActivePrice}`}
 </button>
                   </>
-                  );
-                })() : null}
+                ) : null}
               </div>
+              <CancelSubscriptionSheet
+                open={cancelSheetOpen}
+                onClose={() => {
+                  setCancelSheetOpen(false);
+                  setCancelError(null);
+                }}
+                error={cancelError}
+                onConfirm={async () => {
+                  try {
+                    setCancelError(null);
+                    await cancelSubscription();
+                    setCancelSheetOpen(false);
+                    // Refresh so "Cancels on <date>" shows immediately
+                    // instead of waiting for the next screen visit.
+                    setSubscriptionDetailsLoading(true);
+                    const details = await fetchSubscriptionDetails();
+                    setSubscriptionDetails(details);
+                  } catch (err) {
+                    setCancelError(
+                      err instanceof Error
+                        ? err.message
+                        : "Could not cancel subscription."
+                    );
+                  } finally {
+                    setSubscriptionDetailsLoading(false);
+                  }
+                }}
+              />
             </section>
           );
         })() : null}
