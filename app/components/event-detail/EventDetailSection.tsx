@@ -22,6 +22,8 @@ type Props = {
   onBack: () => void;
   onAuthRequired?: () => void;
   onRideClick?: (address: string) => void;
+  /** The user's own coordinates, when already known — used as the Uber pickup pin. */
+  pickupCoords?: { lat: number; lng: number } | null;
   logInteraction?: (action: string, id: number, screen: string) => void;
   onEventOpen?: (evt: Record<string, unknown>) => void;
 };
@@ -327,7 +329,7 @@ function isAuthError(err: unknown): boolean {
   return msg.includes("401") || msg.includes("unauthorized") || msg.includes("authentication required");
 }
 
-export function EventDetailSection({ eventId, initialData, onBack, onAuthRequired, onRideClick, logInteraction, onEventOpen }: Props) {
+export function EventDetailSection({ eventId, initialData, onBack, onAuthRequired, onRideClick, pickupCoords, logInteraction, onEventOpen }: Props) {
   const [data, setData] = useState<EventDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -338,7 +340,6 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
   const [vibbeeOffers, setVibbeeOffers] = useState<VibbeeEventOffer[]>([]);
   const [influencerOffers, setInfluencerOffers] = useState<InfluencerEventOffer[]>([]);
   const [showCalendarMenu, setShowCalendarMenu] = useState(false);
-  const [rideError, setRideError] = useState(false);
   const calendarMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -701,28 +702,14 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
           <button
             type="button"
             onClick={() => {
-              // Only a lat/lng dropoff reliably preselects in Uber — a
-              // formatted-address-only link routinely opens with nothing
-              // preselected. Without coordinates, fail loudly instead of
-              // shipping that broken experience.
-              if (venueLat == null || venueLng == null) {
-                console.log("[ride_click] no venue coordinates available", {
-                  event_id: ev.id,
-                  venue_name: venueName,
-                  venue_address: venueAddr,
-                });
-                setRideError(true);
-                window.setTimeout(() => setRideError(false), 4000);
-                return;
-              }
-              const addr = venueAddr || venueName || "Houston, TX";
-              onRideClick?.(addr);
-              window.open(
-                `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[latitude]=${venueLat}&dropoff[longitude]=${venueLng}&dropoff[nickname]=${encodeURIComponent(venueName || addr)}&dropoff[formatted_address]=${encodeURIComponent(addr)}`,
-                "_blank",
-                "noopener,noreferrer"
-              );
-              logInteraction?.("ride_click", ev.id as number, "event-detail");
+              const pickupLat = pickupCoords?.lat;
+              const pickupLng = pickupCoords?.lng;
+              const dropLat = venueLat;
+              const dropLng = venueLng;
+              console.log("pickup lat/lng:", pickupLat, pickupLng);
+              console.log("drop lat/lng:", dropLat, dropLng);
+              const url = `https://m.uber.com/looking?client_id=${process.env.NEXT_PUBLIC_UBER_CLIENT_ID}&pickup={"latitude":${pickupLat},"longitude":${pickupLng},"addressLine1":"Current Location"}&drop[0]={"latitude":${dropLat},"longitude":${dropLng},"addressLine1":"${venueName}","addressLine2":"${venueName}"}`;
+              console.log("uber url:", url);
             }}
             className="flex flex-none items-center justify-center gap-1.5 rounded-full border border-gray-300 bg-white px-4 py-2.5 text-[0.8rem] font-medium text-gray-700 backdrop-blur-sm transition-transform hover:bg-gray-50 active:scale-95 dark:border-white/25 dark:bg-black/30 dark:text-white dark:hover:bg-white/10"
           >
@@ -949,12 +936,6 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
 
       </div>
       </div>
-
-      {rideError ? (
-        <div className="fixed inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+4.5rem)] z-50 mx-auto max-w-sm rounded-xl bg-gray-900 px-4 py-3 text-center text-[0.82rem] font-medium text-white shadow-lg dark:bg-black">
-          Ride directions aren&apos;t available for this location yet.
-        </div>
-      ) : null}
     </section>
   );
 }

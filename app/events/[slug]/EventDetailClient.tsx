@@ -34,6 +34,7 @@ import { useEventRsvp, type UserRsvpStatus } from "@/app/lib/useEventRsvp";
 import ImageGallery from "@/app/components/ImageGallery";
 import { mediaGalleryFor } from "@/app/lib/image";
 import FeaturedEventVideos from "@/app/components/FeaturedEventVideos";
+import { openUberRide } from "@/app/lib/uber";
  
 // ─── Types (mirror server types) ─────────────────────────────────────────────
  
@@ -188,7 +189,7 @@ export function EventDetailClient({
   relatedEvents,
   slug,
 }: EventDetailClientProps) {
-  const { event, venue, ticket_cta, ride_cta, reservation_cta } = data;
+  const { event, venue, ticket_cta, reservation_cta } = data;
   const router = useRouter();
 
   // Track whether the user has tapped "Get Tickets" (optimistic sold-out UX)
@@ -252,7 +253,21 @@ export function EventDetailClient({
     void logExternalClick(event.id, "directions", mapsUrl);
     window.open(mapsUrl, "_blank", "noopener,noreferrer");
   }, [event.id, venue]);
- 
+
+  // Get a Ride — built from venue.latitude/longitude (the same field
+  // Directions already uses above), not the old venue.uber_deeplink, which is
+  // empty on every venue in the live database and left this button dead.
+  // Pickup is resolved at click time via browser geolocation — this page has
+  // no app-level cached location (see app/lib/uber.ts).
+  const handleRide = useCallback(() => {
+    if (!venue || venue.latitude == null || venue.longitude == null) return;
+    void logExternalClick(event.id, "ride", `uber:${venue.venue_name}`);
+    openUberRide({
+      dropoff: { lat: venue.latitude, lng: venue.longitude },
+      dropoffLabel: venue.venue_name,
+    });
+  }, [event.id, venue]);
+
   const heroFallback =
     event.cover_image_url ||
     venue?.image_primary_url ||
@@ -434,13 +449,10 @@ export function EventDetailClient({
           <div className="grid grid-cols-3 gap-2">
  
             {/* Get a Ride */}
-            {ride_cta ? (
+            {venue ? (
               <button
                 type="button"
-                onClick={() => {
-                  void logExternalClick(event.id, "ride", ride_cta.url);
-                  window.open(ride_cta.url, "_blank", "noopener,noreferrer");
-                }}
+                onClick={handleRide}
                 className="flex flex-col items-center gap-1.5 rounded-[16px] border border-gray-200 bg-white px-2 py-3 text-center shadow-sm transition hover:border-red-300"
               >
                 <svg viewBox="0 0 24 24" className="h-5 w-5 text-red-500" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -686,7 +698,7 @@ export function EventDetailClient({
           </div>
         </div>
       ) : null}
- 
+
     </main>
   );
 }

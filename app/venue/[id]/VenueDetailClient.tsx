@@ -14,6 +14,7 @@ import {
 } from "@/app/components/single-page/ui";
 import { readAuthToken } from "@/app/lib/localState";
 import { checkInToVenue, checkOutOfVenue, fetchVenueCheckins } from "@/app/lib/publicApiClient";
+import { openUberRide } from "@/app/lib/uber";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -123,9 +124,9 @@ export function VenueDetailClient({ venue }: { venue: GenieVenue }) {
     (raw.neighborhood_text as string | undefined) ||
     venue.city;
 
-  const uberUrl = hasCoords
-    ? `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[latitude]=${lat}&dropoff[longitude]=${lng}&dropoff[nickname]=${encodeURIComponent(venue.venue_name)}&dropoff[formatted_address]=${encodeURIComponent(venue.venue_name)}`
-    : null;
+  // Ride pickup is resolved at click time via browser geolocation — this
+  // page has no app-level cached location (see app/lib/uber.ts).
+  const rideDropoff = hasCoords ? { lat: lat as number, lng: lng as number } : null;
 
   const mapsUrl = venue.google_maps_url
     ? venue.google_maps_url
@@ -289,13 +290,17 @@ export function VenueDetailClient({ venue }: { venue: GenieVenue }) {
             </a>
           ) : null}
 
-          {uberUrl ? (
-            <a href={uberUrl} className={pillClass}>
+          {rideDropoff ? (
+            <button
+              type="button"
+              onClick={() => openUberRide({ dropoff: rideDropoff, dropoffLabel: venue.venue_name })}
+              className={pillClass}
+            >
               <svg viewBox="0 0 24 24" className="h-[15px] w-[15px] flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="1" y="3" width="15" height="13" rx="2" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" />
               </svg>
               Get a Ride
-            </a>
+            </button>
           ) : null}
 
           <button type="button" onClick={handleDirections} className={pillClass}>

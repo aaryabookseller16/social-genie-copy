@@ -135,6 +135,7 @@ import {
 } from "@/app/lib/publicApiClient";
 import { subscribeToGenieChannel } from "@/app/lib/realtimeMessaging";
 import { getRuntimeConfig } from "@/app/lib/runtimeConfig";
+import { openUberRide } from "@/app/lib/uber";
 import { extractCityFromMessage, mentionsNearMe } from "@/app/lib/cityExtractor";
 import {
   readSignupPromptState,
@@ -2889,10 +2890,12 @@ const [cancelError, setCancelError] = useState<string | null>(null);
     "Help Genie learn your vibe so recommendations get more personal.";
   const mapPreviewUrl = selectedVenue ? buildStaticMapUrl(selectedVenue) : null;
   const nativeMapsUrl = selectedVenue ? buildNativeMapsUrl(selectedVenue) : null;
-  // Uber deeplink — same construction as the standalone venue page (VenueDetailClient.tsx).
-  const uberUrl =
+  // Uber ride dropoff — pickup is resolved at click time (cached
+  // userCoordsLL if we already have it, else a fresh geolocation prompt).
+  // See app/lib/uber.ts.
+  const rideDropoff =
     selectedVenue && selectedVenue.latitude != null && selectedVenue.longitude != null
-      ? `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[latitude]=${selectedVenue.latitude}&dropoff[longitude]=${selectedVenue.longitude}&dropoff[nickname]=${encodeURIComponent(selectedVenue.venue_name)}&dropoff[formatted_address]=${encodeURIComponent(selectedVenue.venue_name)}`
+      ? { lat: selectedVenue.latitude, lng: selectedVenue.longitude }
       : null;
   const detailActions: Array<{
     id: string;
@@ -2901,7 +2904,7 @@ const [cancelError, setCancelError] = useState<string | null>(null);
     onClick: () => void;
   }> = selectedVenue
     ? [
-        ...(uberUrl
+        ...(rideDropoff
           ? [
               {
                 id: "ride",
@@ -2910,7 +2913,11 @@ const [cancelError, setCancelError] = useState<string | null>(null);
                 onClick: () => {
                   logVendorInteraction("ride_click", Number(selectedVenue.id));
                   logVenueInteraction("ride", Number(selectedVenue.id), "detail");
-                  window.open(uberUrl, "_blank", "noopener,noreferrer");
+                  openUberRide({
+                    dropoff: rideDropoff,
+                    dropoffLabel: selectedVenue.venue_name,
+                    pickupHint: userCoordsLL,
+                  });
                 },
               },
             ]
@@ -6645,6 +6652,7 @@ activeScreen === "vibbee-trial" ||
             eventId={selectedEventId}
             initialData={selectedEvent}
             onBack={handleTopBack}
+            pickupCoords={userCoordsLL}
             logInteraction={logEventInteraction}
             onEventOpen={(evt) => {
               setSelectedEventSlug((evt.public_slug as string) ?? null);
