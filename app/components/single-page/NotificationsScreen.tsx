@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { ScrollUnlock } from "@/app/p/[id]/ScrollUnlock";
 import {
   fetchUserNotifications,
   markNotificationsRead,
@@ -12,6 +11,7 @@ import {
 type Props = {
   onBack: () => void;
   onClearUnread: () => void;
+  onOpenNotification: (notification: UserNotification) => void;
 };
 
 function timeAgo(unixTimestamp: number): string {
@@ -47,7 +47,7 @@ function NotifAvatar({ notification }: { notification: UserNotification }) {
   );
 }
 
-export function NotificationsScreen({ onBack, onClearUnread }: Props) {
+export function NotificationsScreen({ onBack, onClearUnread, onOpenNotification }: Props) {
   const [notifications, setNotifications] = useState<UserNotification[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -79,26 +79,22 @@ export function NotificationsScreen({ onBack, onClearUnread }: Props) {
       );
       markNotificationsRead([notification.id]).catch(() => {});
     }
-    if (notification.target_url) {
-      window.location.href = notification.target_url;
-    }
+    onOpenNotification(notification);
   }
 
   const hasUnread = notifications.some((n) => !n.is_read);
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
-        <ScrollUnlock />
+      <div className="flex min-h-full items-center justify-center bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
         <div className="pointer-events-none fixed inset-0 z-0 hidden bg-black/60 dark:block" />
         <div className="relative z-10 h-10 w-10 animate-spin rounded-full border-2 border-gray-200 border-t-red-600 dark:border-white/20 dark:border-t-white" />
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
-      <ScrollUnlock />
+    <div className="min-h-full bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
       <div className="pointer-events-none fixed inset-0 z-0 hidden bg-black/60 dark:block" />
 
       <div className="relative z-10 mx-auto max-w-md">
@@ -174,6 +170,6 @@ export function NotificationsScreen({ onBack, onClearUnread }: Props) {
           </div>
         )}
       </div>
-    </main>
+    </div>
   );
 }

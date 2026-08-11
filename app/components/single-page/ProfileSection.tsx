@@ -4,6 +4,7 @@ import { type ReactNode, useEffect, useState } from "react";
 
 import { BackIcon } from "@/app/components/single-page/ui";
 import ImageUploader from "@/app/components/ImageUploader";
+import ImageLightbox from "@/app/components/ImageLightbox";
 import { type ConsumerAccount } from "@/app/lib/localState";
 import { type SocialProfile } from "@/app/lib/publicApiClient";
 
@@ -336,6 +337,7 @@ export function ProfileSection({
   const [saving, setSaving] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [deleteSheetOpen, setDeleteSheetOpen] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   useEffect(() => {
     if (visible && account) {
@@ -358,7 +360,7 @@ export function ProfileSection({
 
   if (editing) {
     return (
-      <section className="flex flex-1 flex-col pb-4">
+      <section className="flex flex-1 flex-col pb-[calc(env(safe-area-inset-bottom,0px)+5.75rem)]">
         {/* Header */}
         <div className="mb-6 flex items-center gap-3">
           <button
@@ -501,14 +503,26 @@ export function ProfileSection({
         >
           <div className="space-y-4">
             {account?.avatarUrl ? (
-              <div className="mx-auto h-16 w-16 overflow-hidden rounded-full border-2 border-red-400 shadow-[0_0_16px_rgba(220,38,38,0.35)]">
+              <button
+                type="button"
+                onClick={() => setLightboxOpen(true)}
+                aria-label="View profile photo"
+                className="mx-auto block h-16 w-16 cursor-pointer overflow-hidden rounded-full border-2 border-red-400 shadow-[0_0_16px_rgba(220,38,38,0.35)]"
+              >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={account.avatarUrl}
                   alt={account.displayName || fullName}
                   className="h-full w-full object-cover"
                 />
-              </div>
+              </button>
+            ) : null}
+            {lightboxOpen && account?.avatarUrl ? (
+              <ImageLightbox
+                src={account.avatarUrl}
+                alt={account.displayName || fullName}
+                onClose={() => setLightboxOpen(false)}
+              />
             ) : null}
             <DetailField label="Name" value={fullName} />
             {account?.displayName ? (

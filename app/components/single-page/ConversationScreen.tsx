@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { ScrollUnlock } from "@/app/p/[id]/ScrollUnlock";
+import ImageLightbox from "@/app/components/ImageLightbox";
 import {
   ApiError,
   blockUser,
@@ -147,6 +147,7 @@ export function ConversationScreen({
   // backend, missing client config). Falls the thread back to polling instead of
   // leaving it frozen.
   const [realtimeUnavailable, setRealtimeUnavailable] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   const usesRealtime = threadType === "producer";
 
@@ -609,11 +610,10 @@ export function ConversationScreen({
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
-        <ScrollUnlock />
+      <div className="flex min-h-full items-center justify-center bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
         <div className="pointer-events-none fixed inset-0 z-0 hidden bg-black/60 dark:block" />
         <div className="relative z-10 h-10 w-10 animate-spin rounded-full border-2 border-gray-200 border-t-red-600 dark:border-white/20 dark:border-t-white" />
-      </main>
+      </div>
     );
   }
 
@@ -621,8 +621,7 @@ export function ConversationScreen({
   // no messages to show, so offer the way out instead of an empty thread.
   if (accessDenied) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
-        <ScrollUnlock />
+      <div className="flex min-h-full items-center justify-center bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
         <div className="pointer-events-none fixed inset-0 z-0 hidden bg-black/60 dark:block" />
         <div className="relative z-10 mx-auto flex max-w-xs flex-col items-center gap-4 px-6 text-center">
           <p className="text-[0.9rem] font-semibold text-gray-900 dark:text-white">
@@ -639,16 +638,15 @@ export function ConversationScreen({
             Back to messages
           </button>
         </div>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="flex min-h-screen flex-col bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
-      <ScrollUnlock />
+    <div className="flex min-h-full flex-col bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
       <div className="pointer-events-none fixed inset-0 z-0 hidden bg-black/60 dark:block" />
 
-      <div className="relative z-10 mx-auto flex h-screen w-full max-w-md flex-col">
+      <div className="relative z-10 mx-auto flex h-full w-full max-w-md flex-col">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-200 px-4 pb-4 pt-14 dark:border-white/10">
           <button
@@ -664,9 +662,14 @@ export function ConversationScreen({
 
           <div className="flex min-w-0 flex-1 items-center justify-center gap-2 px-2">
             {counterpartAvatarUrl ? (
-              <div className="relative h-8 w-8 flex-none overflow-hidden rounded-full">
+              <button
+                type="button"
+                onClick={() => setLightboxOpen(true)}
+                aria-label="View profile photo"
+                className="relative h-8 w-8 flex-none cursor-pointer overflow-hidden rounded-full"
+              >
                 <Image src={counterpartAvatarUrl} alt="" fill className="object-cover" sizes="32px" unoptimized />
-              </div>
+              </button>
             ) : (
               <div className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-red-900 text-[0.6rem] font-bold text-white">
                 {(counterpartName ?? (isProducerOwnerReplying ? "CU" : "?")).slice(0, 2).toUpperCase()}
@@ -880,6 +883,13 @@ export function ConversationScreen({
           )}
         </div>
       </div>
-    </main>
+      {lightboxOpen && counterpartAvatarUrl ? (
+        <ImageLightbox
+          src={counterpartAvatarUrl}
+          alt={counterpartName ?? ""}
+          onClose={() => setLightboxOpen(false)}
+        />
+      ) : null}
+    </div>
   );
 }

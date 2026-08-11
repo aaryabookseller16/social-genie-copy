@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { markMatchingNotificationsRead } from "@/app/lib/publicApiClient";
 
 /**
  * Landing target for DM push notifications. The backend hard-codes each push's
@@ -19,8 +20,14 @@ export default function MessagesRedirect() {
       "thread_id"
     );
     if (threadId && Number.isFinite(Number(threadId))) {
+      const tid = Number(threadId);
+      markMatchingNotificationsRead(
+        (n) =>
+          !!n.deepLink &&
+          new URL(n.deepLink).searchParams.get("thread_id") === String(tid)
+      ).catch(() => {});
       router.replace(
-        `/?screen=conversation&thread_type=user&thread_id=${Number(threadId)}`
+        `/?screen=conversation&thread_type=user&thread_id=${tid}`
       );
     } else {
       router.replace("/?screen=messages");
@@ -28,7 +35,7 @@ export default function MessagesRedirect() {
   }, [router]);
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
+    <main className="flex min-h-dvh items-center justify-center bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
       <div className="pointer-events-none fixed inset-0 z-0 hidden bg-black/60 dark:block" />
       <div className="relative z-10 h-10 w-10 animate-spin rounded-full border-2 border-gray-200 border-t-red-600 dark:border-white/20 dark:border-t-white" />
     </main>

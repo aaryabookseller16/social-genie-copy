@@ -440,6 +440,8 @@ export function ProducerSection({
   const [profBio, setProfBio] = useState("");
   const [profIg, setProfIg] = useState("");
   const [profTags, setProfTags] = useState<string[]>([]);
+  const [profPhotoUrls, setProfPhotoUrls] = useState<string[]>([]);
+  const [profPhotoUploading, setProfPhotoUploading] = useState(false);
   const [profBusy, setProfBusy] = useState(false);
   const [profError, setProfError] = useState<string | null>(null);
 
@@ -743,6 +745,7 @@ export function ProducerSection({
     setProfBio(profile?.bio ?? "");
     setProfIg(profile?.instagram_handle ?? "");
     setProfTags(profile?.event_type_tags ?? []);
+    setProfPhotoUrls(profile?.profile_photo_url ? [profile.profile_photo_url] : []);
     setProfError(null);
     setStep("edit-profile");
   }
@@ -912,6 +915,7 @@ export function ProducerSection({
         display_name: profName.trim(),
         bio: profBio.trim() || undefined,
         instagram_handle: profIg.trim() || undefined,
+        profile_photo_url: profPhotoUrls[0] || undefined,
         event_type_tags: profTags.length > 0 ? profTags : undefined,
       });
       const rawRecord = raw as Record<string, unknown>;
@@ -2418,6 +2422,20 @@ export function ProducerSection({
         />
 
         <form onSubmit={handleProfileSave} className="space-y-4">
+          <FormField label="Producer photo">
+            <ImageUploader
+              mode="single"
+              shape="circle"
+              folder="avatars"
+              value={profPhotoUrls}
+              onChange={setProfPhotoUrls}
+              onUploadingChange={setProfPhotoUploading}
+            />
+            <p className="mt-1.5 text-center text-[11px] text-gray-400 dark:text-white/40">
+              Shown on your producer profile, posts, and events — separate from your personal account photo.
+            </p>
+          </FormField>
+
           <FormField label="Display name *">
             <input
               type="text"
@@ -2493,9 +2511,9 @@ export function ProducerSection({
             <ActionButton
               type="submit"
               className="flex-1"
-              disabled={profBusy || !profName.trim()}
+              disabled={profBusy || profPhotoUploading || !profName.trim()}
             >
-              {profBusy ? "Saving…" : "Save profile"}
+              {profBusy ? "Saving…" : profPhotoUploading ? "Uploading photo…" : "Save profile"}
             </ActionButton>
           </div>
         </form>

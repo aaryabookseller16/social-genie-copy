@@ -29,6 +29,7 @@ import {
   type UpcomingEvent,
 } from "@/app/lib/publicApiClient";
 import { mediaGalleryFor } from "@/app/lib/image";
+import { getEventBadge } from "@/app/lib/eventBadge";
 import ImageGallery from "@/app/components/ImageGallery";
 import FeaturedVideoRail from "@/app/components/homescreen/FeaturedVideoRail";
 import { type FlowAnchor } from "@/app/components/single-page/ui";
@@ -60,39 +61,6 @@ function formatShortRelativeTime(timestamp?: number): string {
   if (diffHr < 24) return `${diffHr}h`;
   const diffDay = Math.floor(diffHr / 24);
   return `${diffDay}d`;
-}
-
-/**
- * The rail's `event_date` is a plain YYYY-MM-DD already localized to the
- * city, so compare it against local calendar dates rather than constructing
- * a Date from the raw string directly (which would reinterpret it as UTC and
- * slip a day).
- *
- * Today/Tomorrow/This Weekend/This Week are mutually exclusive — most
- * specific wins. "This Weekend" only ever labels the *nearest* upcoming
- * Sat/Sun (the 20-day event window can span 2-3 weekends; later ones just
- * fall through to "This Week" or no badge). Beyond ~7 days out, no special
- * badge — the plain formatted date is used instead.
- */
-function relativeDateBadge(eventDate?: string): string | undefined {
-  if (!eventDate) return undefined;
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const target = new Date(`${eventDate.slice(0, 10)}T00:00:00`);
-  const diffDays = Math.round((target.getTime() - today.getTime()) / 86400000);
-
-  if (diffDays === 0) return "Happening Today";
-  if (diffDays === 1) return "Tomorrow";
-  if (diffDays < 0 || diffDays > 7) return undefined;
-
-  const dayOfWeek = today.getDay(); // 0 = Sun .. 6 = Sat
-  const nextSaturdayOffset = (6 - dayOfWeek + 7) % 7;
-  const nextSundayOffset = nextSaturdayOffset + 1;
-  if (diffDays === nextSaturdayOffset || diffDays === nextSundayOffset) {
-    return "This Weekend";
-  }
-  return "This Week";
 }
 
 function formatEventTime(raw?: string): string {
@@ -134,8 +102,9 @@ function upcomingEventToFeedItem(evt: UpcomingEvent): EventFeedItem {
     is_on_fire: evt.social_energy_state === "on_fire",
     is_live: evt.is_live === true,
     // Earned by the date, not by position in the list — a card that isn't
-    // actually today must never claim "tonight".
-    badge: evt.is_live ? undefined : relativeDateBadge(evt.event_date),
+    // actually today must never claim "tonight". Recomputed from event_date
+    // on every render, so editing an event's date changes the badge for free.
+    badge: !evt.is_live ? getEventBadge(evt.event_date) : undefined,
     producer_id: p?.id,
     producer,
     raw: evt,

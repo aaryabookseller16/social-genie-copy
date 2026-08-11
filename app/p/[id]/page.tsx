@@ -12,9 +12,12 @@ import {
   type ProducerEvent,
   type ProducerPost,
 } from "@/app/lib/publicApiClient";
-import { readAuthToken } from "@/app/lib/localState";
+import { readAuthToken, readConsumerAccount } from "@/app/lib/localState";
 import { mediaGalleryFor } from "@/app/lib/image";
 import ImageGallery from "@/app/components/ImageGallery";
+import ImageLightbox from "@/app/components/ImageLightbox";
+import { getEventBadge } from "@/app/lib/eventBadge";
+import { getProfileRoleLabel } from "@/app/lib/profileRoleLabel";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -44,7 +47,7 @@ function formatShortRelativeTime(timestamp?: number): string {
 
 function LoadingScreen() {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
+    <main className="flex min-h-dvh items-center justify-center bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
       <ScrollUnlock />
       <div className="pointer-events-none fixed inset-0 z-0 hidden bg-black/55 dark:block" />
       <div className="relative z-10 h-10 w-10 animate-spin rounded-full border-2 border-gray-200 border-t-red-600 dark:border-white/20 dark:border-t-white" />
@@ -54,7 +57,7 @@ function LoadingScreen() {
 
 function NotFoundScreen() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')] px-6 text-center">
+    <main className="flex min-h-dvh flex-col items-center justify-center bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')] px-6 text-center">
       <ScrollUnlock />
       <div className="pointer-events-none fixed inset-0 z-0 hidden bg-black/55 dark:block" />
       <div className="relative z-10">
@@ -71,7 +74,32 @@ function NotFoundScreen() {
   );
 }
 
-function EventCard({ ev, initials, displayName }: { ev: ProducerEvent; initials: string; displayName: string }) {
+function AuthorAvatar({ profilePhotoUrl, initials }: { profilePhotoUrl?: string | null; initials: string }) {
+  if (profilePhotoUrl) {
+    return (
+      <div className="relative h-8 w-8 flex-none overflow-hidden rounded-full border border-red-500/40">
+        <Image src={profilePhotoUrl} alt="" fill className="object-cover" sizes="32px" unoptimized />
+      </div>
+    );
+  }
+  return (
+    <div className="flex h-8 w-8 flex-none items-center justify-center rounded-full border border-red-500/40 bg-red-900 text-[0.55rem] font-bold text-white">
+      {initials}
+    </div>
+  );
+}
+
+function EventCard({
+  ev,
+  initials,
+  displayName,
+  profilePhotoUrl,
+}: {
+  ev: ProducerEvent;
+  initials: string;
+  displayName: string;
+  profilePhotoUrl?: string | null;
+}) {
   // `going_count` reflects actual attendees; `rsvp_count` counts RSVP
   // actions (including cancellations) and only ever increases, so it's
   // kept only as a fallback for events written before going_count existed.
@@ -83,15 +111,14 @@ function EventCard({ ev, initials, displayName }: { ev: ProducerEvent; initials:
   // the public slug microsite which only exists for events with a generated
   // public_slug.
   const href = `/?screen=event&event_id=${ev.id}`;
+  const badge = getEventBadge(ev.event_date);
 
   return (
     <a href={href} className="block overflow-hidden rounded-[22px] border border-gray-200 dark:border-white/10 bg-white/85 dark:bg-black/30">
       {/* Author row */}
       <div className="flex items-center justify-between px-4 pt-4">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 flex-none items-center justify-center rounded-full border border-red-500/40 bg-red-900 text-[0.55rem] font-bold text-white">
-            {initials}
-          </div>
+          <AuthorAvatar profilePhotoUrl={profilePhotoUrl} initials={initials} />
           <div>
             <p className="text-[0.78rem] font-semibold text-gray-900 dark:text-white">{displayName}</p>
             {ev.event_date ? (
@@ -115,6 +142,11 @@ function EventCard({ ev, initials, displayName }: { ev: ProducerEvent; initials:
             sizes="(max-width: 448px) 100vw, 448px"
             unoptimized
           />
+          {badge ? (
+            <span className="absolute left-3 top-3 rounded-full bg-black/55 px-2.5 py-1 text-[0.62rem] font-medium text-white backdrop-blur-sm">
+              {badge}
+            </span>
+          ) : null}
         </div>
       ) : (
         <div className="mx-4 mt-3 flex h-32 items-center justify-center rounded-xl bg-red-950/30">
@@ -154,7 +186,17 @@ function EventCard({ ev, initials, displayName }: { ev: ProducerEvent; initials:
   );
 }
 
-function PostCard({ post, initials, displayName }: { post: ProducerPost; initials: string; displayName: string }) {
+function PostCard({
+  post,
+  initials,
+  displayName,
+  profilePhotoUrl,
+}: {
+  post: ProducerPost;
+  initials: string;
+  displayName: string;
+  profilePhotoUrl?: string | null;
+}) {
   const media = mediaGalleryFor(post.image_url, post.image_urls, post.video_urls);
 
   return (
@@ -163,9 +205,7 @@ function PostCard({ post, initials, displayName }: { post: ProducerPost; initial
       className="block overflow-hidden rounded-[22px] border border-gray-200 dark:border-white/10 bg-white/85 dark:bg-black/30"
     >
       <div className="flex items-center gap-2 px-4 pt-4">
-        <div className="flex h-8 w-8 flex-none items-center justify-center rounded-full border border-red-500/40 bg-red-900 text-[0.55rem] font-bold text-white">
-          {initials}
-        </div>
+        <AuthorAvatar profilePhotoUrl={profilePhotoUrl} initials={initials} />
         <div>
           <p className="text-[0.78rem] font-semibold text-gray-900 dark:text-white">{displayName}</p>
           <p className="text-[0.65rem] text-gray-400 dark:text-white/40">{formatShortRelativeTime(post.created_at)}</p>
@@ -204,6 +244,7 @@ export default function ProducerProfilePage() {
   const [isFollowing, setIsFollowing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [posts, setPosts] = useState<ProducerPost[]>([]);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   useEffect(() => {
     const token = readAuthToken();
@@ -255,8 +296,15 @@ export default function ProducerProfilePage() {
 
   const { producer, upcoming_events } = data;
 
+  const viewerAccount = readConsumerAccount();
+  const isOwnProfile =
+    viewerAccount?.id != null &&
+    producer.user_id != null &&
+    viewerAccount.id === producer.user_id;
+
   const displayName = producer.display_name ?? "Producer";
   const initials = displayName.slice(0, 2).toUpperCase();
+  const roleLabel = getProfileRoleLabel(producer.roles);
   const followerCount = producer.follower_count ?? 0;
   const totalEvents = producer.total_events_created ?? data.event_count ?? 0;
 
@@ -273,7 +321,7 @@ export default function ProducerProfilePage() {
   ];
 
   return (
-    <main className="min-h-screen bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
+    <main className="min-h-dvh bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
       <ScrollUnlock />
       <div className="pointer-events-none fixed inset-0 z-0 hidden bg-black/55 dark:block" />
 
@@ -299,8 +347,13 @@ export default function ProducerProfilePage() {
         {/* ── Profile row ─────────────────────────────────────────────── */}
         <div className="mb-3 flex items-start gap-4">
           {/* Avatar */}
-          <div className="relative h-20 w-20 flex-none overflow-hidden rounded-full border-2 border-red-500 shadow-[0_0_18px_rgba(220,38,38,0.45)]">
-            {producer.profile_photo_url ? (
+          {producer.profile_photo_url ? (
+            <button
+              type="button"
+              onClick={() => setLightboxOpen(true)}
+              aria-label="View profile photo"
+              className="relative h-20 w-20 flex-none cursor-pointer overflow-hidden rounded-full border-2 border-red-500 shadow-[0_0_18px_rgba(220,38,38,0.45)]"
+            >
               <Image
                 src={producer.profile_photo_url}
                 alt={displayName}
@@ -309,12 +362,21 @@ export default function ProducerProfilePage() {
                 sizes="80px"
                 unoptimized
               />
-            ) : (
+            </button>
+          ) : (
+            <div className="relative h-20 w-20 flex-none overflow-hidden rounded-full border-2 border-red-500 shadow-[0_0_18px_rgba(220,38,38,0.45)]">
               <div className="flex h-full w-full items-center justify-center bg-red-900 text-xl font-bold text-white">
                 {initials}
               </div>
-            )}
-          </div>
+            </div>
+          )}
+          {lightboxOpen && producer.profile_photo_url ? (
+            <ImageLightbox
+              src={producer.profile_photo_url}
+              alt={displayName}
+              onClose={() => setLightboxOpen(false)}
+            />
+          ) : null}
 
           {/* Name + verified + bio + link */}
           <div className="min-w-0 flex-1">
@@ -324,6 +386,11 @@ export default function ProducerProfilePage() {
                 <svg viewBox="0 0 24 24" className="h-4 w-4 flex-none text-red-400" fill="currentColor">
                   <path fillRule="evenodd" d="M8.603 3.799A4.49 4.49 0 0112 2.25c1.357 0 2.573.6 3.397 1.549a4.49 4.49 0 013.498 1.307 4.491 4.491 0 011.307 3.497A4.49 4.49 0 0121.75 12a4.49 4.49 0 01-1.549 3.397 4.491 4.491 0 01-1.307 3.497 4.491 4.491 0 01-3.497 1.307A4.49 4.49 0 0112 21.75a4.49 4.49 0 01-3.397-1.549 4.49 4.49 0 01-3.498-1.307 4.491 4.491 0 01-1.307-3.497A4.49 4.49 0 012.25 12c0-1.357.6-2.573 1.549-3.397a4.49 4.49 0 011.307-3.497 4.492 4.492 0 013.497-1.307zm7.007 6.387a.75.75 0 10-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 00-1.06 1.06l2.25 2.25a.75.75 0 001.14-.094l3.75-5.25z" clipRule="evenodd" />
                 </svg>
+              ) : null}
+              {roleLabel ? (
+                <span className="flex-none rounded-full bg-red-600 px-2 py-0.5 text-[0.62rem] font-semibold uppercase tracking-wide text-white">
+                  {roleLabel}
+                </span>
               ) : null}
             </div>
 
@@ -361,31 +428,33 @@ export default function ProducerProfilePage() {
         ) : null}
 
         {/* ── Action buttons ──────────────────────────────────────────── */}
-        <div className="mb-6 flex gap-3">
-          <button
-            type="button"
-            onClick={() => void handleFollow()}
-            disabled={followBusy}
-            className={`flex-1 rounded-xl py-2.5 text-sm font-semibold transition disabled:opacity-60 ${
-              isFollowing
-                ? "border border-red-500 bg-transparent text-red-600 dark:text-red-400"
-                : "bg-red-600 text-white hover:bg-red-500"
-            }`}
-          >
-            {isFollowing ? "Following" : "Follow"}
-          </button>
-          <button
-            type="button"
-            className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-semibold text-white hover:bg-red-500"
-            onClick={() =>
-              router.push(
-                `/?screen=conversation&thread_type=producer&producer_id=${producer.id}&counterpart_name=${encodeURIComponent(displayName)}`
-              )
-            }
-          >
-            Message
-          </button>
-        </div>
+        {!isOwnProfile ? (
+          <div className="mb-6 flex gap-3">
+            <button
+              type="button"
+              onClick={() => void handleFollow()}
+              disabled={followBusy}
+              className={`flex-1 rounded-xl py-2.5 text-sm font-semibold transition disabled:opacity-60 ${
+                isFollowing
+                  ? "border border-red-500 bg-transparent text-red-600 dark:text-red-400"
+                  : "bg-red-600 text-white hover:bg-red-500"
+              }`}
+            >
+              {isFollowing ? "Following" : "Follow"}
+            </button>
+            <button
+              type="button"
+              className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-semibold text-white hover:bg-red-500"
+              onClick={() =>
+                router.push(
+                  `/?screen=conversation&thread_type=producer&producer_id=${producer.id}&counterpart_name=${encodeURIComponent(displayName)}`
+                )
+              }
+            >
+              Message
+            </button>
+          </div>
+        ) : null}
 
         {/* ── Stats row — 4 boxes ─────────────────────────────────────── */}
         <div className="mb-6 grid grid-cols-4 gap-2">
@@ -410,6 +479,7 @@ export default function ProducerProfilePage() {
                 ev={ev}
                 initials={initials}
                 displayName={displayName}
+                profilePhotoUrl={producer.profile_photo_url}
               />
             ))}
           </div>
@@ -424,7 +494,13 @@ export default function ProducerProfilePage() {
         {posts.length > 0 ? (
           <div className="space-y-3">
             {posts.map((post) => (
-              <PostCard key={post.id} post={post} initials={initials} displayName={displayName} />
+              <PostCard
+                key={post.id}
+                post={post}
+                initials={initials}
+                displayName={displayName}
+                profilePhotoUrl={producer.profile_photo_url}
+              />
             ))}
           </div>
         ) : (
