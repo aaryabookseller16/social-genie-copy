@@ -52,7 +52,7 @@ function SuccessContent() {
   }, [sessionId]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[linear-gradient(180deg,#1a0505,#2a0a0a,#000)] px-6 py-10">
+    <div className="flex min-h-dvh items-center justify-center bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[linear-gradient(180deg,#1a0505,#2a0a0a,#000)] px-6 py-10">
       <div className="w-full max-w-md rounded-[28px] border border-gray-100 bg-white/90 p-8 text-center shadow-[0_20px_60px_rgba(0,0,0,0.08)] dark:border-white/10 dark:bg-black/40 dark:shadow-[0_20px_60px_rgba(0,0,0,0.45)] dark:backdrop-blur-sm">
         {status === "pending" ? (
           <>
@@ -138,7 +138,7 @@ export default function VibeeSuccessPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-screen items-center justify-center bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[linear-gradient(180deg,#1a0505,#2a0a0a,#000)]">
+        <div className="flex min-h-dvh items-center justify-center bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[linear-gradient(180deg,#1a0505,#2a0a0a,#000)]">
           <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-200 border-t-[#e83434] dark:border-white/15" />
         </div>
       }

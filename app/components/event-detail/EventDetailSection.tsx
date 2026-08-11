@@ -192,7 +192,7 @@ function Skeleton({ className }: { className: string }) {
 
 function LoadingSkeleton() {
   return (
-    <section className="-mx-4 -mt-3 sm:-mx-6 sm:-mt-5 pb-[calc(env(safe-area-inset-bottom,0px)+5rem)]">
+    <section className="-mx-4 -mt-3 sm:-mx-6 sm:-mt-5 pb-[calc(env(safe-area-inset-bottom,0px)+5.75rem)]">
       {/* Hero skeleton */}
       <Skeleton className="h-[55vw] min-h-[220px] max-h-[340px] w-full rounded-none" />
       <div className="flex flex-col gap-5 px-4 pt-4 sm:px-6">
@@ -226,7 +226,7 @@ function LoadingSkeleton() {
 
 function ErrorState({ onBack, onRetry }: { onBack: () => void; onRetry: () => void }) {
   return (
-    <section className="-mx-4 -mt-3 sm:-mx-6 sm:-mt-5 pb-[calc(env(safe-area-inset-bottom,0px)+5rem)]">
+    <section className="-mx-4 -mt-3 sm:-mx-6 sm:-mt-5 pb-[calc(env(safe-area-inset-bottom,0px)+5.75rem)]">
       <div className="flex h-[55vw] min-h-[220px] max-h-[340px] w-full items-center justify-center bg-white/90 dark:bg-black/40">
         <button type="button" onClick={onBack} className="absolute left-4 top-4 flex h-9 w-9 items-center justify-center text-white">
           <BackIcon />
@@ -250,7 +250,7 @@ function ErrorState({ onBack, onRetry }: { onBack: () => void; onRetry: () => vo
 
 function AuthRequiredState({ onBack, onLogin }: { onBack: () => void; onLogin: () => void }) {
   return (
-    <section className="-mx-4 -mt-3 sm:-mx-6 sm:-mt-5 pb-[calc(env(safe-area-inset-bottom,0px)+5rem)]">
+    <section className="-mx-4 -mt-3 sm:-mx-6 sm:-mt-5 pb-[calc(env(safe-area-inset-bottom,0px)+5.75rem)]">
       <div className="relative flex h-[55vw] min-h-[220px] max-h-[340px] w-full items-center justify-center bg-white/90 dark:bg-black/40">
         <button type="button" onClick={onBack} className="absolute left-4 top-4 flex h-9 w-9 items-center justify-center text-white">
           <BackIcon />
@@ -480,7 +480,7 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
   const venueEvents   = (ev.venue_events   as Record<string, unknown>[]) ?? [];
 
   return (
-    <section className="-mx-4 -mt-3 sm:-mx-6 sm:-mt-5 pb-[calc(env(safe-area-inset-bottom,0px)+5rem)]">
+    <section className="-mx-4 -mt-3 sm:-mx-6 sm:-mt-5 pb-[calc(env(safe-area-inset-bottom,0px)+5.75rem)]">
 
       {/* ── Hero ── */}
       <div className="relative h-[55vw] min-h-[220px] max-h-[340px] w-full flex-none overflow-hidden">

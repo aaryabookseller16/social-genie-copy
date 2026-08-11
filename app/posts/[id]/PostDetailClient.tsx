@@ -82,7 +82,7 @@ export function PostDetailClient({
     post.author_type === "producer" && post.author_id ? `/p/${post.author_id}` : undefined;
 
   return (
-    <main className="min-h-screen bg-[#1a0505] pb-32">
+    <main className="min-h-dvh bg-[#1a0505] pb-32">
       {/* ── TOP BAR ─────────────────────────────────────────────────── */}
       <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/10 bg-[#1a0505]/95 px-4 py-3 backdrop-blur-sm">
         <Link

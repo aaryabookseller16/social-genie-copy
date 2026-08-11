@@ -1207,7 +1207,7 @@ export function VendorSection({
     return (
       <section
         ref={sectionRef}
-        className="relative min-h-screen overflow-hidden px-5 pb-32 pt-14"
+        className="relative min-h-full overflow-hidden px-5 pb-32 pt-14"
       >
         <div className="mx-auto flex w-full max-w-md flex-col items-center">
           <div className="relative mb-6 h-28 w-28 overflow-hidden rounded-full border-2 border-red-400/40">
@@ -1686,7 +1686,7 @@ export function VendorSection({
   // fill in five screens of business details and fail at the last step.
   if (!account && step !== "dashboard") {
     return (
-      <section ref={sectionRef} className="relative min-h-screen px-5 pb-32 pt-6">
+      <section ref={sectionRef} className="relative min-h-full px-5 pb-32 pt-6">
         <h2 className="mt-8 text-center text-[1.65rem] font-semibold leading-tight text-gray-900 dark:text-white">
           Sign in to list your business
         </h2>
@@ -1709,7 +1709,7 @@ export function VendorSection({
   return (
     <section
       ref={sectionRef}
-      className="relative min-h-screen overflow-hidden px-5 pb-32 pt-6"
+      className="relative min-h-full overflow-hidden px-5 pb-32 pt-6"
     >
       {/* Back arrow + progress bar */}
       <div className="mb-6 flex items-center gap-3">
@@ -2233,7 +2233,7 @@ export function VendorSection({
               const boostPeriodLabel = d.boost_period_label || "Today";
 
               return (
-                <div className="space-y-5 pb-24">
+                <div className="space-y-5 pb-28">
                   {/* ── Header: logo + name + stars + claimed + address ── */}
                   <div className="flex items-start gap-3">
                     <div className="flex h-16 w-16 flex-none items-center justify-center rounded-2xl border border-[#E7070380] bg-white/5 dark:bg-black/25">
@@ -2636,7 +2636,7 @@ export function VendorSection({
         const hasData = analyticsDaily.length > 0;
 
         return (
-          <div className="mt-2 space-y-6 pb-24">
+          <div className="mt-2 space-y-6 pb-28">
             {/* Period selector */}
             <div className="flex gap-2">
               {(["7_days","30_days","all_time"] as const).map((p) => (
@@ -2717,7 +2717,7 @@ export function VendorSection({
         // as an indistinguishable `unauthorized`.
         const isLive = Boolean(dashboardData?.is_live);
         return (
-          <div className="mt-2 space-y-4 pb-24">
+          <div className="mt-2 space-y-4 pb-28">
             {/* Create an offer — Pro + live vendors only */}
             {isPro ? (
               <div className="space-y-2">
@@ -3057,7 +3057,7 @@ export function VendorSection({
       {/* ======== STEP: CREATE OFFER ======== */}
       {step === "create-offer" && (
         <form
-          className="mt-6 space-y-4 pb-24"
+          className="mt-6 space-y-4 pb-28"
           onSubmit={(e: FormEvent<HTMLFormElement>) => {
             e.preventDefault();
             void handleCreateOffer();
@@ -3181,7 +3181,7 @@ export function VendorSection({
           { id: "7999", label: "Monthly Boost", price: "$79.99", desc: "30 days of top placement in Genie results" },
         ];
         return (
-          <div className="mt-2 space-y-4 pb-24">
+          <div className="mt-2 space-y-4 pb-28">
             <p className="text-[0.9rem] text-gray-500 dark:text-white/60">
               Boost puts your listing at the top of Genie results for your area. Pick a duration:
             </p>
@@ -3233,7 +3233,7 @@ export function VendorSection({
         const codes = influencerCodes;
         const selected = codes.find((c) => c.code === selectedInfluencerCode) ?? null;
         return (
-          <div className="mt-2 space-y-4 pb-24">
+          <div className="mt-2 space-y-4 pb-28">
             <p className="text-[0.82rem] text-gray-400 dark:text-white/50">
               Influencer codes driving traffic to your listing. Tap a code to see redemption history.
             </p>
@@ -3324,7 +3324,7 @@ export function VendorSection({
 
       {/* ======== STEP: SETTINGS ======== */}
       {step === "settings" && (
-        <div className="mt-2 space-y-5 pb-24">
+        <div className="mt-2 space-y-5 pb-28">
           {/* Plan info */}
           <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-4 dark:bg-black/20">
             <p className="text-[0.82rem] font-semibold uppercase tracking-wide text-gray-400 dark:text-white/55">Current Plan</p>

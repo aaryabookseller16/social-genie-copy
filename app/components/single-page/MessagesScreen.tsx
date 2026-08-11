@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { ScrollUnlock } from "@/app/p/[id]/ScrollUnlock";
 import {
   fetchMessageThreads,
   fetchProducerPublicProfile,
@@ -233,17 +232,15 @@ export function MessagesScreen({ account, onBack, onOpenConversation }: Props) {
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
-        <ScrollUnlock />
+      <div className="flex min-h-full items-center justify-center bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
         <div className="pointer-events-none fixed inset-0 z-0 hidden bg-black/60 dark:block" />
         <div className="relative z-10 h-10 w-10 animate-spin rounded-full border-2 border-gray-200 border-t-red-600 dark:border-white/20 dark:border-t-white" />
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
-      <ScrollUnlock />
+    <div className="min-h-full bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
       <div className="pointer-events-none fixed inset-0 z-0 hidden bg-black/60 dark:block" />
 
       <div className="relative z-10 mx-auto max-w-md">
@@ -337,6 +334,6 @@ export function MessagesScreen({ account, onBack, onOpenConversation }: Props) {
           </div>
         )}
       </div>
-    </main>
+    </div>
   );
 }
