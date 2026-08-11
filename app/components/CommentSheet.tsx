@@ -8,6 +8,7 @@ import {
   addPostComment,
   type PostComment,
 } from "@/app/lib/publicApiClient";
+import ImageLightbox from "@/app/components/ImageLightbox";
 
 export type CommentSheetProps = {
   postId: number;
@@ -46,6 +47,7 @@ export default function CommentSheet({
   // the v1.5-dev source, not deployed). No working toggle endpoint, so the
   // heart shows like_count but isn't interactive.
   const [likeCounts, setLikeCounts] = useState<Record<number, number>>({});
+  const [lightboxAvatar, setLightboxAvatar] = useState<{ src: string; alt: string } | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -178,12 +180,21 @@ export default function CommentSheet({
                 return (
                   <li key={c.id} className="flex gap-2.5">
                     {c.author_avatar_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={c.author_avatar_url}
-                        alt={c.author_name ?? ""}
-                        className="h-9 w-9 flex-none rounded-full object-cover"
-                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setLightboxAvatar({ src: c.author_avatar_url!, alt: c.author_name ?? "" })
+                        }
+                        aria-label="View profile photo"
+                        className="h-9 w-9 flex-none cursor-pointer overflow-hidden rounded-full"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={c.author_avatar_url}
+                          alt={c.author_name ?? ""}
+                          className="h-full w-full object-cover"
+                        />
+                      </button>
                     ) : (
                       <div className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-red-900 text-xs font-semibold text-white">
                         {initials(c.author_name)}
@@ -268,6 +279,13 @@ export default function CommentSheet({
           </form>
         </div>
       </div>
+      {lightboxAvatar ? (
+        <ImageLightbox
+          src={lightboxAvatar.src}
+          alt={lightboxAvatar.alt}
+          onClose={() => setLightboxAvatar(null)}
+        />
+      ) : null}
     </div>
   );
 }

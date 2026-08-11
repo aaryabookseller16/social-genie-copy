@@ -27,6 +27,7 @@ import {
   type UpcomingEvent,
 } from "@/app/lib/publicApiClient";
 import { mediaGalleryFor } from "@/app/lib/image";
+import { getEventBadge } from "@/app/lib/eventBadge";
 import ImageGallery from "@/app/components/ImageGallery";
 import FeaturedVideoRail from "@/app/components/homescreen/FeaturedVideoRail";
 import { type FlowAnchor } from "@/app/components/single-page/ui";
@@ -58,18 +59,6 @@ function formatShortRelativeTime(timestamp?: number): string {
   if (diffHr < 24) return `${diffHr}h`;
   const diffDay = Math.floor(diffHr / 24);
   return `${diffDay}d`;
-}
-
-/**
- * The rail's `event_date` is a plain YYYY-MM-DD already localized to the
- * city, so compare it as a string against the local date rather than
- * constructing a Date (which would reinterpret it as UTC and slip a day).
- */
-function isToday(eventDate?: string): boolean {
-  if (!eventDate) return false;
-  const now = new Date();
-  const local = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-  return eventDate.slice(0, 10) === local;
 }
 
 function formatEventTime(raw?: string): string {
@@ -111,8 +100,9 @@ function upcomingEventToFeedItem(evt: UpcomingEvent): EventFeedItem {
     is_on_fire: evt.social_energy_state === "on_fire",
     is_live: evt.is_live === true,
     // Earned by the date, not by position in the list — a card that isn't
-    // actually today must never claim "tonight".
-    badge: !evt.is_live && isToday(evt.event_date) ? "Happening Tonight" : undefined,
+    // actually today must never claim "tonight". Recomputed from event_date
+    // on every render, so editing an event's date changes the badge for free.
+    badge: !evt.is_live ? getEventBadge(evt.event_date) : undefined,
     producer_id: p?.id,
     producer,
     raw: evt,

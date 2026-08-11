@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { ScrollUnlock } from "@/app/p/[id]/ScrollUnlock";
+import ImageLightbox from "@/app/components/ImageLightbox";
 import {
   ApiError,
   blockUser,
@@ -147,6 +148,7 @@ export function ConversationScreen({
   // backend, missing client config). Falls the thread back to polling instead of
   // leaving it frozen.
   const [realtimeUnavailable, setRealtimeUnavailable] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   const usesRealtime = threadType === "producer";
 
@@ -664,9 +666,14 @@ export function ConversationScreen({
 
           <div className="flex min-w-0 flex-1 items-center justify-center gap-2 px-2">
             {counterpartAvatarUrl ? (
-              <div className="relative h-8 w-8 flex-none overflow-hidden rounded-full">
+              <button
+                type="button"
+                onClick={() => setLightboxOpen(true)}
+                aria-label="View profile photo"
+                className="relative h-8 w-8 flex-none cursor-pointer overflow-hidden rounded-full"
+              >
                 <Image src={counterpartAvatarUrl} alt="" fill className="object-cover" sizes="32px" unoptimized />
-              </div>
+              </button>
             ) : (
               <div className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-red-900 text-[0.6rem] font-bold text-white">
                 {(counterpartName ?? (isProducerOwnerReplying ? "CU" : "?")).slice(0, 2).toUpperCase()}
@@ -880,6 +887,13 @@ export function ConversationScreen({
           )}
         </div>
       </div>
+      {lightboxOpen && counterpartAvatarUrl ? (
+        <ImageLightbox
+          src={counterpartAvatarUrl}
+          alt={counterpartName ?? ""}
+          onClose={() => setLightboxOpen(false)}
+        />
+      ) : null}
     </main>
   );
 }

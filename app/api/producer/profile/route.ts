@@ -70,6 +70,7 @@ export async function POST(request: NextRequest) {
         display_name: displayName,
         bio: String(body.bio ?? "").trim() || undefined,
         instagram_handle: String(body.instagram_handle ?? "").trim() || undefined,
+        profile_photo_url: String(body.profile_photo_url ?? "").trim() || undefined,
         event_type_tags: Array.isArray(body.event_type_tags) ? body.event_type_tags : undefined,
       },
     });

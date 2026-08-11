@@ -13,6 +13,7 @@ import {
   type ManagedEvent,
 } from "@/app/lib/publicApiClient";
 import { computeDistance, getDistanceLabel } from "@/app/lib/geo";
+import { getEventBadge } from "@/app/lib/eventBadge";
 import { BackIcon } from "@/app/components/single-page/ui";
 
 type EventsTab = "upcoming" | "liked" | "past";
@@ -241,6 +242,7 @@ function EventCard({
   onRateNow?: () => void;
 }) {
   const isLiked = tab === "liked" || evt.user_rsvp_status === "saved";
+  const badge = !evt.is_live ? getEventBadge(evt.event_date) : undefined;
 
   return (
     <button
@@ -257,6 +259,11 @@ function EventCard({
             className="object-cover"
             sizes="112px"
           />
+          {badge ? (
+            <span className="absolute left-1.5 top-1.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[0.55rem] font-medium leading-tight text-white backdrop-blur-sm">
+              {badge}
+            </span>
+          ) : null}
         </div>
 
         <div className="min-w-0 flex-1 py-1">

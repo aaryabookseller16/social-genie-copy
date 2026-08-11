@@ -1935,6 +1935,8 @@ export type ProducerProfile = {
   total_events_created?: number;
   total_events_live?: number;
   average_going_count?: number;
+  /** This producer's account-level roles (e.g. also "vendor") — see getProfileRoleLabel(). */
+  roles?: string[];
 };
 
 /** A hosted video plus its Cloudinary-derived thumbnail. Matches the Xano `video_urls` shape. */
@@ -2036,6 +2038,7 @@ export async function setupProducerProfile(payload: {
   display_name: string;
   bio?: string;
   instagram_handle?: string;
+  profile_photo_url?: string;
   event_type_tags?: string[];
 }) {
   return apiJson<ProducerProfile>("/api/producer/profile", {
@@ -2898,7 +2901,7 @@ export type EventFeedItem = {
   is_on_fire?: boolean;
   /** Proven live right now — the only thing that may render a LIVE badge. */
   is_live?: boolean;
-  /** "Happening Tonight" — only set when the event's date really is today. */
+  /** "Happening Tonight" / "Happening This Weekend" / "Happening This Week" — see getEventBadge(). */
   badge?: string;
   producer_id?: number;
   producer?: {

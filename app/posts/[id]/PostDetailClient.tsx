@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import ImageGallery from "@/app/components/ImageGallery";
@@ -9,6 +9,18 @@ import { mediaGalleryFor } from "@/app/lib/image";
 import { formatRelativeTime, initials } from "@/app/lib/postFormat";
 import { usePostLike } from "@/app/lib/usePostLike";
 import { type PublicPostDetailResponse } from "@/app/lib/publicApiClient";
+
+/** Links to the author's public profile when one exists; otherwise a static row. */
+function AuthorRow({ authorHref, children }: { authorHref?: string; children: ReactNode }) {
+  if (authorHref) {
+    return (
+      <Link href={authorHref} className="flex items-center gap-3">
+        {children}
+      </Link>
+    );
+  }
+  return <div className="flex items-center gap-3">{children}</div>;
+}
 
 export function PostDetailClient({
   data,
@@ -66,6 +78,8 @@ export function PostDetailClient({
   const [sheetOpen, setSheetOpen] = useState(false);
 
   const media = mediaGalleryFor(post.image_url, post.image_urls, post.video_urls);
+  const authorHref =
+    post.author_type === "producer" && post.author_id ? `/p/${post.author_id}` : undefined;
 
   return (
     <main className="min-h-screen bg-[#1a0505] pb-32">
@@ -86,7 +100,7 @@ export function PostDetailClient({
         <div className="overflow-hidden rounded-[22px] border border-white/10 bg-gradient-to-b from-red-950/60 to-black/60 shadow-xl">
           <div className="space-y-4 p-5 pb-3">
             {/* ── AUTHOR ──────────────────────────────────────────────── */}
-            <div className="flex items-center gap-3">
+            <AuthorRow authorHref={authorHref}>
               {author?.profile_photo_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -112,7 +126,7 @@ export function PostDetailClient({
                   {formatRelativeTime(post.created_at)}
                 </p>
               </div>
-            </div>
+            </AuthorRow>
 
             {/* ── POST TEXT ───────────────────────────────────────────── */}
             {post.post_text ? (
