@@ -16,6 +16,7 @@ import {
   updateUserProfile,
 } from "@/app/lib/publicApiClient";
 import ImageUploader from "@/app/components/ImageUploader";
+import ImageLightbox from "@/app/components/ImageLightbox";
 import { ActionButton } from "./ui";
 
 // "vibee" is gone as a signup mode — the tier is chosen after verification on
@@ -106,6 +107,7 @@ export function AccountSection({
   // Held locally so the banner survives the parent clearing the `notice` prop.
   const [gateNotice, setGateNotice] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   /* profile edit form */
   const [editingProfile, setEditingProfile] = useState(false);
@@ -705,14 +707,26 @@ export function AccountSection({
           ) : null}
 
           {account.avatarUrl ? (
-            <div className="mx-auto mb-4 h-20 w-20 overflow-hidden rounded-full border-2 border-red-400 shadow-[0_0_16px_rgba(220,38,38,0.35)]">
+            <button
+              type="button"
+              onClick={() => setLightboxOpen(true)}
+              aria-label="View profile photo"
+              className="mx-auto mb-4 block h-20 w-20 cursor-pointer overflow-hidden rounded-full border-2 border-red-400 shadow-[0_0_16px_rgba(220,38,38,0.35)]"
+            >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={account.avatarUrl}
                 alt={account.displayName || account.firstName}
                 className="h-full w-full object-cover"
               />
-            </div>
+            </button>
+          ) : null}
+          {lightboxOpen && account.avatarUrl ? (
+            <ImageLightbox
+              src={account.avatarUrl}
+              alt={account.displayName || account.firstName}
+              onClose={() => setLightboxOpen(false)}
+            />
           ) : null}
 
           <h2 className="text-center text-[1.65rem] font-semibold leading-tight text-gray-900 dark:text-white">

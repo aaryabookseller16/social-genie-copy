@@ -7,6 +7,7 @@ import { ActionButton } from "@/app/components/single-page/ui";
 import { type FlowAnchor } from "@/app/components/single-page/ui";
 import { type ConsumerAccount } from "@/app/lib/localState";
 import ImageUploader from "@/app/components/ImageUploader";
+import ImageLightbox from "@/app/components/ImageLightbox";
 import VideoUploader, { type VideoSlotValue } from "@/app/components/VideoUploader";
 import ImageGallery from "@/app/components/ImageGallery";
 import FeaturedEventVideos from "@/app/components/FeaturedEventVideos";
@@ -256,6 +257,7 @@ export function InfluencerSection({ account, onNavigate }: Props) {
   const [dashboard, setDashboard] = useState<InfluencerDashboardData | null>(null);
   const [offers, setOffers] = useState<InfluencerOffer[]>([]);
   const [selectedOffer, setSelectedOffer] = useState<InfluencerOffer | null>(null);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   // Onboarding / profile-edit form state
   const [displayName, setDisplayName] = useState("");
@@ -856,7 +858,12 @@ export function InfluencerSection({ account, onNavigate }: Props) {
         <div className="rounded-[22px] border border-gray-100 bg-white/90 p-4 shadow-sm dark:border-white/10 dark:bg-black/25 dark:backdrop-blur-sm">
           <div className="flex items-center gap-4">
             {profile?.profile_image_url ? (
-              <div className="relative h-14 w-14 flex-none overflow-hidden rounded-full border-2 border-red-400 shadow-[0_0_12px_rgba(220,38,38,0.3)]">
+              <button
+                type="button"
+                onClick={() => setLightboxOpen(true)}
+                aria-label="View profile photo"
+                className="relative h-14 w-14 flex-none cursor-pointer overflow-hidden rounded-full border-2 border-red-400 shadow-[0_0_12px_rgba(220,38,38,0.3)]"
+              >
                 <Image
                   src={profile.profile_image_url}
                   alt={profile.display_name ?? ""}
@@ -864,12 +871,19 @@ export function InfluencerSection({ account, onNavigate }: Props) {
                   className="object-cover"
                   sizes="56px"
                 />
-              </div>
+              </button>
             ) : (
               <div className="flex h-14 w-14 flex-none items-center justify-center rounded-full border-2 border-red-400 bg-red-600 text-xl font-bold text-white shadow-[0_0_12px_rgba(220,38,38,0.3)]">
                 {firstName.charAt(0).toUpperCase()}
               </div>
             )}
+            {lightboxOpen && profile?.profile_image_url ? (
+              <ImageLightbox
+                src={profile.profile_image_url}
+                alt={profile.display_name ?? ""}
+                onClose={() => setLightboxOpen(false)}
+              />
+            ) : null}
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
                 <p className="truncate font-semibold text-gray-900 dark:text-white">
