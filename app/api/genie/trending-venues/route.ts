@@ -22,8 +22,10 @@ export async function GET(request: NextRequest) {
     const params: Record<string, string> = { city_id: cityId };
     const offset = sp.get("offset");
     const limit = sp.get("limit");
+    const shuffleSeed = sp.get("shuffle_seed");
     if (offset) params.offset = offset;
     if (limit) params.limit = limit;
+    if (shuffleSeed) params.shuffle_seed = shuffleSeed;
 
     const result = await xanoFetch("genie/ep_get_trending_venues_v2_dev", { params });
     return NextResponse.json(result);

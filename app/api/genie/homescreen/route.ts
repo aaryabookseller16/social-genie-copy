@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     const sp = request.nextUrl.searchParams;
 
     const params: Record<string, string> = {};
-    for (const key of ["city_id", "user_id", "lat", "lng"]) {
+    for (const key of ["city_id", "user_id", "lat", "lng", "shuffle_seed"]) {
       const value = sp.get(key);
       if (value) params[key] = value;
     }

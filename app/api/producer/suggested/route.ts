@@ -12,7 +12,15 @@ export async function GET(request: NextRequest) {
     if (!authToken) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    const result = await xanoFetch("genie/ep_get_suggested_follows_dev", { authToken });
+
+    const sp = request.nextUrl.searchParams;
+    const params: Record<string, string> = {};
+    const limit = sp.get("limit");
+    const shuffleSeed = sp.get("shuffle_seed");
+    if (limit) params.limit = limit;
+    if (shuffleSeed) params.shuffle_seed = shuffleSeed;
+
+    const result = await xanoFetch("genie/ep_get_suggested_follows_dev", { params, authToken });
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof XanoError) {

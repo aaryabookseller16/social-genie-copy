@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { xanoFetch, toClientError } from "@/app/lib/server/xanoProxy";
 
 /**
- * GET /api/genie/homescreen-events?city_id=&offset=&limit=&user_id=
- * Proxies to genie/ep_get_homescreen_events_dev — the homescreen event rail's
- * "load more". Returns the next page of the same live-first ordering the
- * homescreen's first page came from, so pages are appended, never re-sorted.
+ * GET /api/genie/homescreen-influencer-offers?city_id=&offset=&limit=&shuffle_seed=
+ * Proxies to genie/ep_get_homescreen_influencer_offers_dev — the homescreen
+ * influencer-offers rail's "load more". The first page arrives with the
+ * homescreen response; this is only for subsequent offsets.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -19,17 +19,15 @@ export async function GET(request: NextRequest) {
     const params: Record<string, string> = { city_id: cityId };
     const offset = sp.get("offset");
     const limit = sp.get("limit");
-    const userId = sp.get("user_id");
     const shuffleSeed = sp.get("shuffle_seed");
     if (offset) params.offset = offset;
     if (limit) params.limit = limit;
-    if (userId) params.user_id = userId;
     if (shuffleSeed) params.shuffle_seed = shuffleSeed;
 
-    const result = await xanoFetch("genie/ep_get_homescreen_events_dev", { params });
+    const result = await xanoFetch("genie/ep_get_homescreen_influencer_offers_dev", { params });
     return NextResponse.json(result);
   } catch (error) {
-    const { status, message } = toClientError(error, "Could not load events.");
+    const { status, message } = toClientError(error, "Could not load offers.");
     return NextResponse.json({ error: message }, { status });
   }
 }

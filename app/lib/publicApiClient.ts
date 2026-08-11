@@ -2340,8 +2340,18 @@ export type SuggestedProducerResult = {
   count: number;
 };
 
-export async function fetchSuggestedProducers() {
-  return apiJson<SuggestedProducerResult>("/api/producer/suggested");
+export async function fetchSuggestedProducers(options: {
+  limit?: number;
+  shuffleSeed?: string;
+} = {}) {
+  const { limit, shuffleSeed } = options;
+  const params = new URLSearchParams();
+  if (limit != null) params.set("limit", String(limit));
+  if (shuffleSeed) params.set("shuffle_seed", shuffleSeed);
+  const qs = params.toString();
+  return apiJson<SuggestedProducerResult>(
+    `/api/producer/suggested${qs ? `?${qs}` : ""}`
+  );
 }
 
 export type UserBasicProfile = {
@@ -2860,6 +2870,39 @@ export type HomescreenPlacement = {
   [key: string]: unknown;
 };
 
+/**
+ * An influencer-created promo offer, from `ep_get_homescreen_influencer_offers_dev`.
+ * Every offer targets exactly one of `venue_info` / `event` (mutually
+ * exclusive, matching the backend table). Commission/earnings fields are
+ * deliberately not part of this shape — that's the influencer's own private
+ * analytics, stripped server-side.
+ */
+export type HomescreenInfluencerOffer = {
+  id: number;
+  offer_title?: string;
+  offer_description?: string;
+  offer_type?: string;
+  discount_value?: string;
+  discount_type?: string;
+  promo_code?: string;
+  unique_url_slug?: string;
+  max_redemptions?: number;
+  redemptions_used?: number;
+  /** Unix ms, or 0 when the offer has no expiry set. */
+  valid_until?: number;
+  image_urls?: string[] | null;
+  video_urls?: { url: string; thumbnail_url?: string }[] | null;
+  venue_info?: { id: number; name?: string; image_url?: string } | null;
+  event?: { id: number; title?: string; event_date?: string } | null;
+  influencer?: {
+    id: number;
+    name?: string;
+    handle?: string;
+    image_url?: string;
+    is_verified?: boolean;
+  } | null;
+};
+
 /** A row of the neighborhoods table, sorted by social_energy_score desc. */
 export type HomescreenNeighborhood = {
   id: number;
@@ -2880,6 +2923,7 @@ export type HomescreenApiResponse = {
   upcoming_events?: Paged<UpcomingEvent>;
   /** Not paginated — first load only. */
   active_placements?: HomescreenPlacement[];
+  influencer_offers?: Paged<HomescreenInfluencerOffer>;
   /** Not paginated — first load only. */
   top_neighborhoods?: HomescreenNeighborhood[];
   generated_at?: number;
@@ -2952,8 +2996,9 @@ export async function fetchHomescreen(options: {
   userId?: number;
   lat?: number;
   lng?: number;
+  shuffleSeed?: string;
 } = {}): Promise<HomescreenApiResponse> {
-  const { cityId, userId, lat, lng } = options;
+  const { cityId, userId, lat, lng, shuffleSeed } = options;
   const params = new URLSearchParams();
   if (cityId != null) params.set("city_id", String(cityId));
   if (userId) params.set("user_id", String(userId));
@@ -2961,6 +3006,7 @@ export async function fetchHomescreen(options: {
     params.set("lat", String(lat));
     params.set("lng", String(lng));
   }
+  if (shuffleSeed) params.set("shuffle_seed", shuffleSeed);
   return apiJson<HomescreenApiResponse>(
     `/api/genie/homescreen?${params.toString()}`,
     { auth: false }
@@ -2976,13 +3022,15 @@ export async function fetchTrendingVenues(options: {
   cityId: number;
   offset: number;
   limit?: number;
+  shuffleSeed?: string;
 }): Promise<Paged<TrendingVenue>> {
-  const { cityId, offset, limit = 10 } = options;
+  const { cityId, offset, limit = 10, shuffleSeed } = options;
   const params = new URLSearchParams({
     city_id: String(cityId),
     offset: String(offset),
     limit: String(limit),
   });
+  if (shuffleSeed) params.set("shuffle_seed", shuffleSeed);
   const result = await apiJson<{ venues: Paged<TrendingVenue> }>(
     `/api/genie/trending-venues?${params.toString()}`,
     { auth: false }
@@ -3085,19 +3133,42 @@ export async function fetchHomescreenEvents(options: {
   offset: number;
   limit?: number;
   userId?: number;
+  shuffleSeed?: string;
 }): Promise<Paged<UpcomingEvent>> {
-  const { cityId, offset, limit = 10, userId } = options;
+  const { cityId, offset, limit = 10, userId, shuffleSeed } = options;
   const params = new URLSearchParams({
     city_id: String(cityId),
     offset: String(offset),
     limit: String(limit),
   });
   if (userId) params.set("user_id", String(userId));
+  if (shuffleSeed) params.set("shuffle_seed", shuffleSeed);
   const result = await apiJson<{ events: Paged<UpcomingEvent> }>(
     `/api/genie/homescreen-events?${params.toString()}`,
     { auth: false }
   );
   return result.events;
+}
+
+/** "Load more" for the influencer-offers rail. Same offset contract as the other rails. */
+export async function fetchHomescreenInfluencerOffers(options: {
+  cityId: number;
+  offset: number;
+  limit?: number;
+  shuffleSeed?: string;
+}): Promise<Paged<HomescreenInfluencerOffer>> {
+  const { cityId, offset, limit = 10, shuffleSeed } = options;
+  const params = new URLSearchParams({
+    city_id: String(cityId),
+    offset: String(offset),
+    limit: String(limit),
+  });
+  if (shuffleSeed) params.set("shuffle_seed", shuffleSeed);
+  const result = await apiJson<{ offers: Paged<HomescreenInfluencerOffer> }>(
+    `/api/genie/homescreen-influencer-offers?${params.toString()}`,
+    { auth: false }
+  );
+  return result.offers;
 }
 
 /* ------------------------------------------------------------------ */

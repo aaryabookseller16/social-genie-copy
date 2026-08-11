@@ -9,6 +9,7 @@ import {
   fetchFollowedProducers,
   fetchHomescreen,
   fetchHomescreenEvents,
+  fetchHomescreenInfluencerOffers,
   fetchHomescreenPosts,
   fetchSuggestedProducers,
   fetchTrendingVenues,
@@ -16,6 +17,7 @@ import {
   rsvpToEvent,
   type EventFeedItem,
   type FollowedProducerItem,
+  type HomescreenInfluencerOffer,
   type HomescreenLocation,
   type HomescreenNeighborhood,
   type HomescreenPlacement,
@@ -62,14 +64,35 @@ function formatShortRelativeTime(timestamp?: number): string {
 
 /**
  * The rail's `event_date` is a plain YYYY-MM-DD already localized to the
- * city, so compare it as a string against the local date rather than
- * constructing a Date (which would reinterpret it as UTC and slip a day).
+ * city, so compare it against local calendar dates rather than constructing
+ * a Date from the raw string directly (which would reinterpret it as UTC and
+ * slip a day).
+ *
+ * Today/Tomorrow/This Weekend/This Week are mutually exclusive — most
+ * specific wins. "This Weekend" only ever labels the *nearest* upcoming
+ * Sat/Sun (the 20-day event window can span 2-3 weekends; later ones just
+ * fall through to "This Week" or no badge). Beyond ~7 days out, no special
+ * badge — the plain formatted date is used instead.
  */
-function isToday(eventDate?: string): boolean {
-  if (!eventDate) return false;
-  const now = new Date();
-  const local = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-  return eventDate.slice(0, 10) === local;
+function relativeDateBadge(eventDate?: string): string | undefined {
+  if (!eventDate) return undefined;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(`${eventDate.slice(0, 10)}T00:00:00`);
+  const diffDays = Math.round((target.getTime() - today.getTime()) / 86400000);
+
+  if (diffDays === 0) return "Happening Today";
+  if (diffDays === 1) return "Tomorrow";
+  if (diffDays < 0 || diffDays > 7) return undefined;
+
+  const dayOfWeek = today.getDay(); // 0 = Sun .. 6 = Sat
+  const nextSaturdayOffset = (6 - dayOfWeek + 7) % 7;
+  const nextSundayOffset = nextSaturdayOffset + 1;
+  if (diffDays === nextSaturdayOffset || diffDays === nextSundayOffset) {
+    return "This Weekend";
+  }
+  return "This Week";
 }
 
 function formatEventTime(raw?: string): string {
@@ -112,7 +135,7 @@ function upcomingEventToFeedItem(evt: UpcomingEvent): EventFeedItem {
     is_live: evt.is_live === true,
     // Earned by the date, not by position in the list — a card that isn't
     // actually today must never claim "tonight".
-    badge: !evt.is_live && isToday(evt.event_date) ? "Happening Tonight" : undefined,
+    badge: evt.is_live ? undefined : relativeDateBadge(evt.event_date),
     producer_id: p?.id,
     producer,
     raw: evt,
@@ -162,13 +185,19 @@ type OffersFeedItem = {
   id: string;
   placements: HomescreenPlacement[];
 };
+type InfluencerOffersFeedItem = {
+  feed_type: "influencer_offers";
+  id: string;
+  offers: HomescreenInfluencerOffer[];
+};
 type HomeFeedItem =
   | EventFeedItem
   | SocialPostFeedItem
   | OnFireVenueItem
   | SuggestedProducersFeedItem
   | NeighborhoodPulseFeedItem
-  | OffersFeedItem;
+  | OffersFeedItem
+  | InfluencerOffersFeedItem;
 
 /* ------------------------------------------------------------------ */
 /*  Story bar                                                           */
@@ -839,6 +868,119 @@ function OffersRow({
 }
 
 /* ------------------------------------------------------------------ */
+/*  Influencer offers row                                               */
+/* ------------------------------------------------------------------ */
+
+/** "discount_code" -> "Discount Code"; trims stray whitespace from seed data. */
+function formatOfferBadge(offerType?: string): string | undefined {
+  const cleaned = offerType?.trim().replace(/_/g, " ");
+  if (!cleaned) return undefined;
+  return cleaned.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function InfluencerOfferCard({ offer }: { offer: HomescreenInfluencerOffer }) {
+  const [copied, setCopied] = useState(false);
+  const imageUrl = offer.image_urls?.[0] || offer.venue_info?.image_url;
+  const context = offer.venue_info?.name ?? offer.event?.title ?? "Offer";
+  const badge = formatOfferBadge(offer.offer_type);
+  const promoCode = offer.promo_code?.trim();
+  // The real offer detail/redeem page lives at /i/[handle]/[code] — it looks
+  // the offer up by matching promo_code for that influencer, so both are
+  // required to link there. Falls back to copy-to-clipboard when the
+  // influencer didn't resolve (a real data gap on some rows today) rather
+  // than linking to a page that would 404.
+  const detailHref =
+    offer.influencer?.handle && promoCode
+      ? `/i/${encodeURIComponent(offer.influencer.handle)}/${encodeURIComponent(promoCode)}`
+      : null;
+
+  const cardBody = (
+    <>
+      <span className="relative block h-56 w-full bg-zinc-900">
+        {imageUrl ? (
+          <Image
+            src={imageUrl}
+            alt=""
+            aria-hidden="true"
+            fill
+            sizes="176px"
+            className="object-cover"
+            unoptimized
+          />
+        ) : null}
+      </span>
+      <span className="block px-3 py-3">
+        <span className="block truncate text-[1rem] font-bold text-white">{context}</span>
+        {offer.offer_title ? (
+          <span className="mt-1 block truncate text-[0.85rem] font-semibold text-amber-400">
+            {offer.offer_title}
+          </span>
+        ) : null}
+        {badge ? (
+          <span className="mt-2 inline-block rounded-full bg-red-600 px-3 py-1.5 text-[0.72rem] font-bold text-white">
+            {copied ? "Copied!" : badge}
+          </span>
+        ) : null}
+      </span>
+    </>
+  );
+
+  if (detailHref) {
+    return (
+      <Link
+        href={detailHref}
+        className="w-44 flex-none overflow-hidden rounded-2xl border border-red-500/40 text-left"
+      >
+        {cardBody}
+      </Link>
+    );
+  }
+
+  const handleTap = async () => {
+    if (!promoCode) return;
+    try {
+      await navigator.clipboard.writeText(promoCode);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard access denied — nothing to fall back to; the offer is
+      // still fully visible on the card.
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleTap}
+      className="w-44 flex-none overflow-hidden rounded-2xl border border-red-500/40 text-left"
+    >
+      {cardBody}
+    </button>
+  );
+}
+
+function InfluencerOffersRow({ offers }: { offers: HomescreenInfluencerOffer[] }) {
+  if (!offers.length) return null;
+  return (
+    <div>
+      <div className="mb-3 flex w-full items-center justify-between">
+        <span className="font-[family:var(--font-display)] text-[1.4rem] text-gray-900 dark:text-white">
+          Offers
+        </span>
+        <svg viewBox="0 0 24 24" className="h-5 w-5 text-gray-500 dark:text-white/50" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+      </div>
+      <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {offers.map((o) => (
+          <InfluencerOfferCard key={o.id} offer={o} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Location card                                                       */
 /*  The backend picks the city from lat/lng, so a visitor who never     */
 /*  grants permission silently gets Houston. This is where we ask, and  */
@@ -968,6 +1110,8 @@ function FeedCard({
           onOpen={onVenueOpen}
         />
       );
+    case "influencer_offers":
+      return <InfluencerOffersRow offers={item.offers} />;
     default:
       return null;
   }
@@ -1028,6 +1172,14 @@ export function HomescreenSection({
   onDismissLocationPrompt,
 }: HomescreenSectionProps) {
   const isLoggedIn = !!account;
+
+  // One random value per app-open, reused for every homescreen / load-more /
+  // suggested-producers request this visit. The backend uses it to
+  // deterministically reorder results per seed: reloading the app picks a new
+  // seed (fresh mix), while "load more" during one visit reuses the same seed
+  // (so pagination never repeats an item). Generated once via the lazy
+  // initializer — never regenerated on re-render.
+  const [shuffleSeed] = useState(() => Math.random().toString(36).slice(2));
 
   // Header hides while scrolling down the feed and comes back on the first
   // upward flick, so reaching it never means scrolling all the way to the top.
@@ -1100,7 +1252,7 @@ export function HomescreenSection({
       return;
     }
     let cancelled = false;
-    fetchSuggestedProducers()
+    fetchSuggestedProducers({ limit: 20, shuffleSeed })
       .then((result) => {
         if (cancelled) return;
         const mapped: SuggestedProducerItem[] = (result.suggested_follows ?? []).map((p) => ({
@@ -1117,7 +1269,7 @@ export function HomescreenSection({
         if (!cancelled) setSuggestedProducers([]);
       });
     return () => { cancelled = true; };
-  }, [account?.id]);
+  }, [account?.id, shuffleSeed]);
 
   // Events arrive 10 at a time; posts have to keep roughly that pace or the
   // weave below runs dry and the feed turns back into a wall of events.
@@ -1167,6 +1319,9 @@ export function HomescreenSection({
   const [venues, setVenues] = useState<TrendingVenue[]>([]);
   const [venuesOffset, setVenuesOffset] = useState(0);
   const [hasMoreVenues, setHasMoreVenues] = useState(true);
+  const [influencerOffers, setInfluencerOffers] = useState<HomescreenInfluencerOffer[]>([]);
+  const [offersOffset, setOffersOffset] = useState(0);
+  const [hasMoreOffers, setHasMoreOffers] = useState(true);
   const [placements, setPlacements] = useState<HomescreenPlacement[]>([]);
   const [neighborhoods, setNeighborhoods] = useState<HomescreenNeighborhood[]>([]);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -1197,6 +1352,7 @@ export function HomescreenSection({
       userId: account?.id ?? undefined,
       lat: userCoords?.latitude,
       lng: userCoords?.longitude,
+      shuffleSeed,
     })
       .then((result) => {
         if (cancelled) return;
@@ -1212,6 +1368,10 @@ export function HomescreenSection({
         setVenues(rail?.items ?? []);
         setVenuesOffset(rail?.next_offset ?? 0);
         setHasMoreVenues(rail?.has_more ?? false);
+        const offersRail = result.influencer_offers;
+        setInfluencerOffers(offersRail?.items ?? []);
+        setOffersOffset(offersRail?.next_offset ?? 0);
+        setHasMoreOffers(offersRail?.has_more ?? false);
         setPlacements(result.active_placements ?? []);
         setNeighborhoods(result.top_neighborhoods ?? []);
       })
@@ -1228,14 +1388,14 @@ export function HomescreenSection({
       });
 
     return () => { cancelled = true; };
-  }, [account?.id, userCoords?.latitude, userCoords?.longitude]);
+  }, [account?.id, userCoords?.latitude, userCoords?.longitude, shuffleSeed]);
 
   useEffect(() => loadFirstPage(), [loadFirstPage]);
 
   const loadMore = useCallback(() => {
     const cityId = location?.city_id;
     if (loadingMore || !cityId) return;
-    if (!hasMoreEvents && !hasMoreVenues && !hasMorePosts) return;
+    if (!hasMoreEvents && !hasMoreVenues && !hasMoreOffers && !hasMorePosts) return;
     setLoadingMore(true);
 
     const eventsRequest = hasMoreEvents
@@ -1243,6 +1403,7 @@ export function HomescreenSection({
           cityId,
           offset: eventsOffset,
           userId: account?.id ?? undefined,
+          shuffleSeed,
         })
           .then((page) => {
             // Drop a page that belongs to a city we've since moved off — a
@@ -1278,7 +1439,7 @@ export function HomescreenSection({
       : Promise.resolve();
 
     const venuesRequest = hasMoreVenues
-      ? fetchTrendingVenues({ cityId, offset: venuesOffset })
+      ? fetchTrendingVenues({ cityId, offset: venuesOffset, shuffleSeed })
           .then((page) => {
             if (activeCityRef.current !== cityId) return;
             setVenues((prev) => {
@@ -1299,6 +1460,30 @@ export function HomescreenSection({
             );
           })
           .catch(() => setHasMoreVenues(false))
+      : Promise.resolve();
+
+    const offersRequest = hasMoreOffers
+      ? fetchHomescreenInfluencerOffers({ cityId, offset: offersOffset, shuffleSeed })
+          .then((page) => {
+            if (activeCityRef.current !== cityId) return;
+            setInfluencerOffers((prev) => {
+              const seenIds = new Set(prev.map((o) => o.id));
+              const deduped: HomescreenInfluencerOffer[] = [];
+              for (const o of page.items ?? []) {
+                if (seenIds.has(o.id)) continue;
+                seenIds.add(o.id);
+                deduped.push(o);
+              }
+              return [...prev, ...deduped];
+            });
+            setOffersOffset(page.next_offset);
+            setHasMoreOffers(
+              page.has_more &&
+                (page.items?.length ?? 0) > 0 &&
+                page.next_offset > offersOffset
+            );
+          })
+          .catch(() => setHasMoreOffers(false))
       : Promise.resolve();
 
     const postsRequest = hasMorePosts
@@ -1322,7 +1507,7 @@ export function HomescreenSection({
           .catch(() => setHasMorePosts(false))
       : Promise.resolve();
 
-    Promise.all([eventsRequest, venuesRequest, postsRequest]).finally(() =>
+    Promise.all([eventsRequest, venuesRequest, offersRequest, postsRequest]).finally(() =>
       setLoadingMore(false)
     );
   }, [
@@ -1330,17 +1515,20 @@ export function HomescreenSection({
     location?.city_id,
     hasMoreEvents,
     hasMoreVenues,
+    hasMoreOffers,
     hasMorePosts,
     eventsOffset,
     venuesOffset,
+    offersOffset,
     postsPage,
     account?.id,
+    shuffleSeed,
   ]);
 
   // Keep these refs current every render so the observer callback below
   // always sees fresh values without the observer itself needing to change.
   loadMoreRef.current = loadMore;
-  hasMoreRef.current = hasMoreEvents || hasMoreVenues || hasMorePosts;
+  hasMoreRef.current = hasMoreEvents || hasMoreVenues || hasMoreOffers || hasMorePosts;
 
   // Callback ref instead of useRef + useEffect: the sentinel <div> only
   // exists once the loading skeleton is replaced by real content, and a
@@ -1425,9 +1613,46 @@ export function HomescreenSection({
   }
   if (homescreenPosts[0]) feed.push(homescreenPosts[0]);
   if (venueItems[0]) feed.push(venueItems[0]);
-  if (isLoggedIn && suggestedProducers.length > 0) {
-    feed.push({ feed_type: "suggested_producers", id: "suggested_producers", producers: suggestedProducers });
+  // Suggested Producers AND Offers both reappear periodically (like
+  // Instagram's "suggested for you") instead of showing once as one long
+  // row — each fetched batch is sliced into groups of 4, one group per
+  // appearance, with no further network calls needed to reveal the next
+  // group.
+  const PRODUCERS_PER_APPEARANCE = 4;
+  const producerChunks: SuggestedProducerItem[][] = [];
+  for (let i = 0; i < suggestedProducers.length; i += PRODUCERS_PER_APPEARANCE) {
+    producerChunks.push(suggestedProducers.slice(i, i + PRODUCERS_PER_APPEARANCE));
   }
+  let nextProducerChunk = 0;
+  const pushProducerChunk = () => {
+    const chunk = producerChunks[nextProducerChunk];
+    if (!chunk || chunk.length === 0) return;
+    feed.push({
+      feed_type: "suggested_producers",
+      id: `suggested_producers-${nextProducerChunk}`,
+      producers: chunk,
+    });
+    nextProducerChunk += 1;
+  };
+  if (isLoggedIn) pushProducerChunk();
+
+  const OFFERS_PER_APPEARANCE = 4;
+  const offerChunks: HomescreenInfluencerOffer[][] = [];
+  for (let i = 0; i < influencerOffers.length; i += OFFERS_PER_APPEARANCE) {
+    offerChunks.push(influencerOffers.slice(i, i + OFFERS_PER_APPEARANCE));
+  }
+  let nextOfferChunk = 0;
+  const pushOfferChunk = () => {
+    const chunk = offerChunks[nextOfferChunk];
+    if (!chunk || chunk.length === 0) return;
+    feed.push({
+      feed_type: "influencer_offers",
+      id: `influencer_offers-${nextOfferChunk}`,
+      offers: chunk,
+    });
+    nextOfferChunk += 1;
+  };
+  pushOfferChunk();
   // Weave the three streams rather than concatenating them. Events are the
   // spine (they're the most numerous), with a post every 2nd and a venue
   // every 3rd. This used to append `...posts.slice(1)` after the whole event
@@ -1445,11 +1670,16 @@ export function HomescreenSection({
       feed.push(venueItems[nextVenue]);
       nextVenue += 1;
     }
+    if (position % 5 === 0) pushOfferChunk();
+    if (position % 8 === 0) pushProducerChunk();
   });
   // The venue rail pages in faster than the cadence consumes it, so hold the
   // surplus back to be woven into the events still loading — but once the
   // event rail is exhausted, flush it so nothing loaded is silently dropped.
-  if (!hasMoreEvents) feed.push(...venueItems.slice(nextVenue));
+  if (!hasMoreEvents) {
+    feed.push(...venueItems.slice(nextVenue));
+    while (nextOfferChunk < offerChunks.length) pushOfferChunk();
+  }
   feed.push(...homescreenPosts.slice(nextPost));
 
   return (
