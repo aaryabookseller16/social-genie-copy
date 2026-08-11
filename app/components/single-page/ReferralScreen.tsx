@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ScrollUnlock } from "@/app/p/[id]/ScrollUnlock";
 import {
   ApiError,
   createConnectOnboardingLink,
@@ -230,8 +229,7 @@ export function ReferralScreen({ onBack }: Props) {
   }
 
   return (
-    <main className="min-h-screen bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
-      <ScrollUnlock />
+    <div className="min-h-full bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
       <div className="pointer-events-none fixed inset-0 z-0 hidden bg-black/60 dark:block" />
 
       <div className="relative z-10 mx-auto max-w-md">
@@ -384,6 +382,6 @@ export function ReferralScreen({ onBack }: Props) {
           </>
         )}
       </div>
-    </main>
+    </div>
   );
 }

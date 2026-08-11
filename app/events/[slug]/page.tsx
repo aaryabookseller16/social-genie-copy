@@ -217,7 +217,7 @@ export default async function EventDetailPage({
   // 404 fallback
   if (!data) {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center bg-white px-6 text-center">
+      <main className="flex min-h-dvh flex-col items-center justify-center bg-white px-6 text-center">
         <h1 className="text-2xl font-bold text-gray-900">Event not found</h1>
         <p className="mt-2 text-gray-500">
           This event may have ended or been removed.

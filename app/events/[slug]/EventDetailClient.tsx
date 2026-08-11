@@ -266,7 +266,7 @@ export function EventDetailClient({
   const heroMedia = heroMediaRaw.length > 0 ? heroMediaRaw : [{ type: "image" as const, url: heroFallback }];
 
   return (
-    <main className="min-h-screen bg-white">
+    <main className="min-h-dvh bg-white">
 
       {/* ── HERO IMAGE ─────────────────────────────────────────────────── */}
       <div className="relative h-[42vh] min-h-[260px] w-full overflow-hidden">

@@ -358,7 +358,7 @@ export function ProfileSection({
 
   if (editing) {
     return (
-      <section className="flex flex-1 flex-col pb-4">
+      <section className="flex flex-1 flex-col pb-[calc(env(safe-area-inset-bottom,0px)+5.75rem)]">
         {/* Header */}
         <div className="mb-6 flex items-center gap-3">
           <button

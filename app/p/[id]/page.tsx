@@ -44,7 +44,7 @@ function formatShortRelativeTime(timestamp?: number): string {
 
 function LoadingScreen() {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
+    <main className="flex min-h-dvh items-center justify-center bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
       <ScrollUnlock />
       <div className="pointer-events-none fixed inset-0 z-0 hidden bg-black/55 dark:block" />
       <div className="relative z-10 h-10 w-10 animate-spin rounded-full border-2 border-gray-200 border-t-red-600 dark:border-white/20 dark:border-t-white" />
@@ -54,7 +54,7 @@ function LoadingScreen() {
 
 function NotFoundScreen() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')] px-6 text-center">
+    <main className="flex min-h-dvh flex-col items-center justify-center bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')] px-6 text-center">
       <ScrollUnlock />
       <div className="pointer-events-none fixed inset-0 z-0 hidden bg-black/55 dark:block" />
       <div className="relative z-10">
@@ -273,7 +273,7 @@ export default function ProducerProfilePage() {
   ];
 
   return (
-    <main className="min-h-screen bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
+    <main className="min-h-dvh bg-[url('/bg-white.png')] bg-cover bg-center bg-no-repeat dark:bg-[url('/bg.png')]">
       <ScrollUnlock />
       <div className="pointer-events-none fixed inset-0 z-0 hidden bg-black/55 dark:block" />
 

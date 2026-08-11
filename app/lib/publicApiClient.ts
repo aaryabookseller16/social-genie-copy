@@ -2369,7 +2369,10 @@ export type UserNotification = {
   body: string;
   is_read: boolean;
   created_at: number;
-  target_url?: string;
+  entityType?: string;
+  postId?: number;
+  eventId?: number;
+  deepLink?: string;
   actor_name?: string;
   actor_image_url?: string;
 };
@@ -2402,6 +2405,8 @@ function normalizeNotification(row: RawNotification): UserNotification {
   }
   const pickString = (key: string) =>
     typeof data[key] === "string" ? (data[key] as string) : undefined;
+  const pickNumber = (key: string) =>
+    typeof data[key] === "number" ? (data[key] as number) : undefined;
 
   return {
     id: row.id,
@@ -2410,7 +2415,10 @@ function normalizeNotification(row: RawNotification): UserNotification {
     body: row.body ?? "",
     is_read: Boolean(row.is_read),
     created_at: createdAt,
-    target_url: pickString("target_url"),
+    entityType: pickString("entity_type"),
+    postId: pickNumber("post_id"),
+    eventId: pickNumber("event_id"),
+    deepLink: pickString("deep_link"),
     actor_name: pickString("actor_name"),
     actor_image_url: pickString("actor_image_url"),
   };
@@ -2437,6 +2445,27 @@ export async function markNotificationsRead(notificationIds: number[]) {
     method: "PATCH",
     body: JSON.stringify({ notification_ids: notificationIds }),
   });
+}
+
+/**
+ * Marks any unread notification matching `matches` as read. Used by the OS
+ * push redirect pages (`/messages`, `/events`, `/posts`), which only know the
+ * target entity (thread/event/post id) and not which notification row a given
+ * push came from — bulk pushes fan out to many recipients from a single
+ * OneSignal call, so there's no per-recipient notification id to thread
+ * through. Matching by entity instead gets the same result without needing
+ * one.
+ */
+export async function markMatchingNotificationsRead(
+  matches: (notification: UserNotification) => boolean
+) {
+  const { notifications } = await fetchUserNotifications();
+  const ids = notifications
+    .filter((n) => !n.is_read && matches(n))
+    .map((n) => n.id);
+  if (ids.length > 0) {
+    await markNotificationsRead(ids);
+  }
 }
 
 /* ------------------------------------------------------------------ */

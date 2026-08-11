@@ -668,7 +668,7 @@ export function InfluencerSection({ account, onNavigate }: Props) {
 
   if (!account) {
     return (
-      <section className="relative min-h-screen overflow-hidden px-5 pb-32 pt-14">
+      <section className="relative min-h-full overflow-hidden px-5 pb-32 pt-14">
         <div className="mx-auto flex w-full max-w-md flex-col items-center">
           <div className="relative mb-6 h-28 w-28 overflow-hidden rounded-full border-2 border-red-400/40">
             <Image

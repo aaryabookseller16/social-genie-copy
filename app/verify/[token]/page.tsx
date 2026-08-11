@@ -106,7 +106,7 @@ export default function VerifyRedemptionPage() {
   );
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#fff7f7,#ffeaea)] px-4 py-8 dark:bg-[linear-gradient(180deg,#150202,#2d0707)]">
+    <main className="flex min-h-dvh items-center justify-center bg-[linear-gradient(180deg,#fff7f7,#ffeaea)] px-4 py-8 dark:bg-[linear-gradient(180deg,#150202,#2d0707)]">
       <div className="w-full max-w-md rounded-[28px] border border-gray-100 bg-white p-6 shadow-[0_16px_48px_rgba(0,0,0,0.08)] dark:border-white/10 dark:bg-black/24">
         {loading ? (
           <div className="text-center">

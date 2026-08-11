@@ -132,6 +132,7 @@ import {
   fetchMessageThreads,
   mergeThreadsToConversations,
   type MessageThreadType,
+  type UserNotification,
 } from "@/app/lib/publicApiClient";
 import { subscribeToGenieChannel } from "@/app/lib/realtimeMessaging";
 import { getRuntimeConfig } from "@/app/lib/runtimeConfig";
@@ -996,6 +997,69 @@ const [cancelError, setCancelError] = useState<string | null>(null);
       setActiveScreen(previous);
     },
     [stopListeningSession]
+  );
+
+  // Opens a conversation by thread id alone (all we have from a notification
+  // tap or push deep-link). Fetches "all" threads rather than just "user" ones
+  // so this resolves correctly whether the current account is the consumer or
+  // the producer-owner side of that thread — the messaging center is shared,
+  // there's no separate producer inbox to special-case.
+  const openConversationByThreadId = useCallback(
+    (threadId: number, counterpartName?: string) => {
+      setActiveConversation({
+        threadId,
+        threadType: "user",
+        counterpartId: 0,
+        counterpartName: counterpartName ?? undefined,
+      });
+      navigateTo("conversation");
+      const selfId = readConsumerAccount()?.id;
+      void fetchMessageThreads("all", 1, 100)
+        .then((raw) => {
+          const conv = mergeThreadsToConversations(raw, selfId).find(
+            (c) => c.threadId === threadId
+          );
+          if (!conv) return;
+          setActiveConversation((prev) =>
+            prev && prev.threadId === threadId
+              ? {
+                  ...prev,
+                  threadType: conv.threadType,
+                  counterpartId: conv.counterpartId,
+                  counterpartName: conv.counterpartName ?? prev.counterpartName,
+                  counterpartAvatarUrl: conv.counterpartAvatarUrl,
+                  viewerRole: conv.viewerRole,
+                }
+              : prev
+          );
+        })
+        .catch(() => {});
+    },
+    [navigateTo]
+  );
+
+  const handleOpenNotification = useCallback(
+    (notification: UserNotification) => {
+      if (notification.entityType === "event" && notification.eventId) {
+        setSelectedEventId(notification.eventId);
+        setSelectedEvent({ id: notification.eventId });
+        navigateTo("event-detail");
+        return;
+      }
+      if (notification.entityType === "post" && notification.postId) {
+        router.push(`/posts/${notification.postId}`);
+        return;
+      }
+      if (notification.deepLink) {
+        const threadId = Number(
+          new URL(notification.deepLink).searchParams.get("thread_id")
+        );
+        if (Number.isFinite(threadId) && threadId > 0) {
+          openConversationByThreadId(threadId);
+        }
+      }
+    },
+    [navigateTo, openConversationByThreadId, router]
   );
 
   const maybeTriggerSignup = useCallback(
@@ -2568,39 +2632,10 @@ const [cancelError, setCancelError] = useState<string | null>(null);
         threadIdParam &&
         !isNaN(Number(threadIdParam))
       ) {
-        // Notification tap into a 1:1 DM: we only have thread_id. Open the chat
-        // immediately (history loads by thread_id + clears unread), then resolve
-        // the counterpart (name/avatar/id, needed for the header and replies)
-        // from the thread list. Use the stored account id so this is correct
-        // even before React state hydrates on a cold notification open.
-        const tid = Number(threadIdParam);
-        setActiveConversation({
-          threadId: tid,
-          threadType: "user",
-          counterpartId: 0,
-          counterpartName: counterpartName ?? undefined,
-        });
-        navigateTo("conversation");
-        const selfId = readConsumerAccount()?.id;
-        void fetchMessageThreads("user", 1, 100)
-          .then((raw) => {
-            const conv = mergeThreadsToConversations(raw, selfId).find(
-              (c) => c.threadType === "user" && c.threadId === tid
-            );
-            if (!conv) return;
-            setActiveConversation((prev) =>
-              prev && prev.threadId === tid
-                ? {
-                    ...prev,
-                    counterpartId: conv.counterpartId,
-                    counterpartName: conv.counterpartName ?? prev.counterpartName,
-                    counterpartAvatarUrl: conv.counterpartAvatarUrl,
-                    viewerRole: conv.viewerRole,
-                  }
-                : prev
-            );
-          })
-          .catch(() => {});
+        // Notification tap into a DM: we only have thread_id. Open the chat
+        // immediately, then resolve the counterpart (name/avatar/id, needed for
+        // the header and replies) from the thread list.
+        openConversationByThreadId(Number(threadIdParam), counterpartName ?? undefined);
       }
     } else if (screen === "login") {
       // Public pages outside the SPA (event/venue/producer/post microsites)
@@ -2657,7 +2692,7 @@ const [cancelError, setCancelError] = useState<string | null>(null);
       "",
       `${url.pathname}${url.search}${url.hash}`
     );
-  }, [navigateTo]);
+  }, [navigateTo, openConversationByThreadId]);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -4964,7 +4999,7 @@ activeScreen === "vibbee-trial" ||
 
               {/* Upgrade CTA for non-members */}
               {account && !canRedeem ? (
-                <div className="fixed bottom-0 left-1/2 z-40 w-[min(100vw,28rem)] -translate-x-1/2 px-4 pb-[calc(env(safe-area-inset-bottom,0px)+12px)] pt-3">
+                <div className="fixed bottom-[calc(env(safe-area-inset-bottom,0px)+5.25rem)] left-1/2 z-[90] w-[min(100vw,28rem)] -translate-x-1/2 px-4 pt-3">
                   <button
                     type="button"
                     onClick={() => navigateTo("account")}
@@ -6170,7 +6205,7 @@ activeScreen === "vibbee-trial" ||
 
         {/* ── CONTACT ── */}
         {activeScreen === "contact" ? (
-          <section className="pb-8">
+          <section className="pb-[calc(env(safe-area-inset-bottom,0px)+5.75rem)]">
             <div className="mb-5 flex items-center">
               <button
                 type="button"
@@ -6707,6 +6742,7 @@ activeScreen === "vibbee-trial" ||
   <NotificationsScreen
     onBack={() => goBack("homescreen")}
     onClearUnread={() => setUnreadNotifCount(0)}
+    onOpenNotification={handleOpenNotification}
   />
 ) : null}
 
