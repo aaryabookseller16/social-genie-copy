@@ -896,7 +896,16 @@ function formatOfferBadge(offerType?: string): string | undefined {
 
 function InfluencerOfferCard({ offer }: { offer: HomescreenInfluencerOffer }) {
   const [copied, setCopied] = useState(false);
-  const imageUrl = offer.image_urls?.[0] || offer.venue_info?.image_url;
+  // Xano can return a blank/whitespace-only string (or something that isn't
+  // even a string, despite the type) instead of null for a missing image —
+  // truthy in JS, so it slips past `||` and reaches next/image, which then
+  // rejects it as an empty src. Validate the type before trimming.
+  const firstImageUrl = offer.image_urls?.[0];
+  const venueImageUrl = offer.venue_info?.image_url;
+  const imageUrl =
+    (typeof firstImageUrl === "string" && firstImageUrl.trim()) ||
+    (typeof venueImageUrl === "string" && venueImageUrl.trim()) ||
+    null;
   const context = offer.venue_info?.name ?? offer.event?.title ?? "Offer";
   const badge = formatOfferBadge(offer.offer_type);
   const promoCode = offer.promo_code?.trim();
