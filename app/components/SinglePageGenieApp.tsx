@@ -3849,6 +3849,7 @@ activeScreen === "vibbee-trial" ||
                       logVenueInteraction("tap", Number(item.venue.id), "decision");
                     }}
                     onSave={() => handleSaveVenue(item.venue)}
+                    isSaved={savedVenueIds.includes(getVenueId(item.venue))}
                   />
                 ) : (
                   <EventResultCard
@@ -6735,6 +6736,8 @@ activeScreen === "vibbee-trial" ||
     unreadNotifCount={unreadNotifCount}
     onMessages={() => navigateTo("messages")}
     unreadMessageCount={unreadMessageCount}
+    savedVenueIds={savedVenueIds}
+    onToggleSaveVenue={handleSaveVenue}
   />
 ) : null}
 
