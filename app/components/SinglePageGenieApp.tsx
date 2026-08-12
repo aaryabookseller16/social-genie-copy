@@ -4739,6 +4739,9 @@ activeScreen === "vibbee-trial" ||
             onAllowLocation={requestLocationPermission}
             isLoggedIn={!!account}
             onRequireAuth={() => navigateTo("account")}
+            onSignIn={() => navigateTo("account")}
+            savedVenueIds={savedVenueIds}
+            onToggleSaveVenue={handleSaveVenue}
             onSelectVenue={(venueId) => {
               setSharedVenueLoading(true);
               setSelectedVenueId(String(venueId));
