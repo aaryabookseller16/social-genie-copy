@@ -12,10 +12,14 @@ export async function GET(request: NextRequest) {
     const authToken = extractBearerToken(request);
     const page = request.nextUrl.searchParams.get("page") ?? "1";
     const perPage = request.nextUrl.searchParams.get("per_page") ?? "20";
+    const actingAs = request.nextUrl.searchParams.get("acting_as");
+
+    const params: Record<string, string> = { page, per_page: perPage };
+    if (actingAs === "venue") params.acting_as = "venue";
 
     const result = await xanoFetch("genie/ep_get_my_events_dev", {
       authToken,
-      params: { page, per_page: perPage },
+      params,
     });
 
     return NextResponse.json(result);

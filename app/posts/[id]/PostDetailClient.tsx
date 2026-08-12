@@ -78,8 +78,14 @@ export function PostDetailClient({
   const [sheetOpen, setSheetOpen] = useState(false);
 
   const media = mediaGalleryFor(post.image_url, post.image_urls, post.video_urls);
+  // Venue authors link by author.venue_id (a genie_venues.id) — not post.author_id,
+  // which for a venue post is the genie_vendor.id, a different row entirely.
   const authorHref =
-    post.author_type === "producer" && post.author_id ? `/p/${post.author_id}` : undefined;
+    post.author_type === "producer" && post.author_id
+      ? `/p/${post.author_id}`
+      : post.author_type === "venue" && author?.venue_id
+        ? `/venue/${author.venue_id}`
+        : undefined;
 
   return (
     <main className="min-h-dvh bg-[#1a0505] pb-32">
