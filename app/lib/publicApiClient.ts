@@ -1961,13 +1961,16 @@ export type ProducerEvent = {
   ticket_url?: string;
   ticket_price_min?: number;
   is_free?: boolean;
-  age_requirement?: string;
+  /** An int column in Xano (e.g. 18), despite the name suggesting free text. */
+  age_requirement?: number;
   rsvp_limit?: number;
   rsvp_count?: number;
   going_count?: number;
   created_at?: number;
   /** Powers the public event microsite at /events/{slug}. May be empty for older rows. */
   public_slug?: string;
+  /** e.g. "active", "cancelled". */
+  status?: string;
 };
 
 export type ProducerPost = {
@@ -2077,6 +2080,20 @@ export async function createProducerEvent(payload: {
   return apiJson<ProducerEvent>("/api/producer/event", {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+/** Owner-only: sets an event's status to "cancelled". No hard-delete exists for
+ * events anywhere in this Xano workspace, for either role — this is the closest
+ * available action. */
+export async function cancelProducerEvent(eventId: number, actingAs?: "venue") {
+  return apiJson<ProducerEvent>("/api/producer/event", {
+    method: "POST",
+    body: JSON.stringify({
+      event_id: eventId,
+      status: "cancelled",
+      acting_as: actingAs,
+    }),
   });
 }
 

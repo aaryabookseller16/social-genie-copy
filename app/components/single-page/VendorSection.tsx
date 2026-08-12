@@ -21,6 +21,7 @@ import {
   createVendorOffer,
   createProducerEvent,
   createProducerPost,
+  cancelProducerEvent,
   updateProducerPost,
   deleteProducerPost,
   fetchMyEvents,
@@ -721,6 +722,7 @@ export function VendorSection({
   const [vendorPostsLoading, setVendorPostsLoading] = useState(false);
   const [contentTab, setContentTab] = useState<"events" | "posts">("events");
   const [contentMessage, setContentMessage] = useState<string | null>(null);
+  const [eventActionBusyId, setEventActionBusyId] = useState<number | null>(null);
 
   /* create/edit-event form state */
   const [evTitle, setEvTitle] = useState("");
@@ -1165,10 +1167,39 @@ export function VendorSection({
     }
   }, []);
 
+  /* ---- Venue's own events + posts (acting_as: "venue") ---- */
+  const refreshVendorEvents = useCallback(async () => {
+    setVendorEventsLoading(true);
+    try {
+      const data = await fetchMyEvents(1, 50, "venue");
+      setVendorEvents(Array.isArray(data.events) ? data.events : []);
+    } catch {
+      /* non-fatal — keep existing list */
+    } finally {
+      setVendorEventsLoading(false);
+    }
+  }, []);
+
+  const refreshVendorPosts = useCallback(async () => {
+    setVendorPostsLoading(true);
+    try {
+      const data = await fetchMyPosts(1, 50, "venue");
+      setVendorPosts(Array.isArray(data.posts) ? data.posts : []);
+    } catch {
+      /* non-fatal — keep existing list */
+    } finally {
+      setVendorPostsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!visible || step !== "dashboard") return;
     void loadDashboard();
-  }, [visible, step, loadDashboard]);
+    // Counts for the "Events & Posts" dashboard card — fetched here so it's
+    // accurate on first load, not just after visiting "My Events & Posts".
+    void refreshVendorEvents();
+    void refreshVendorPosts();
+  }, [visible, step, loadDashboard, refreshVendorEvents, refreshVendorPosts]);
 
   // ── Influencer offer review queue (venue owner) ────────────────────────────
 
@@ -1243,31 +1274,6 @@ export function VendorSection({
     },
     []
   );
-
-  /* ---- Venue's own events + posts (acting_as: "venue") ---- */
-  const refreshVendorEvents = useCallback(async () => {
-    setVendorEventsLoading(true);
-    try {
-      const data = await fetchMyEvents(1, 50, "venue");
-      setVendorEvents(Array.isArray(data.events) ? data.events : []);
-    } catch {
-      /* non-fatal — keep existing list */
-    } finally {
-      setVendorEventsLoading(false);
-    }
-  }, []);
-
-  const refreshVendorPosts = useCallback(async () => {
-    setVendorPostsLoading(true);
-    try {
-      const data = await fetchMyPosts(1, 50, "venue");
-      setVendorPosts(Array.isArray(data.posts) ? data.posts : []);
-    } catch {
-      /* non-fatal — keep existing list */
-    } finally {
-      setVendorPostsLoading(false);
-    }
-  }, []);
 
   /** Persist vendor_id into ConsumerAccount localStorage so dashboard survives refresh */
   const persistVendorIdToAccount = (vid: number) => {
@@ -1799,7 +1805,9 @@ export function VendorSection({
     setEvVideos([]);
     setEvVideoUploading(false);
     setEvRsvpLimit(ev.rsvp_limit !== undefined ? String(ev.rsvp_limit) : "");
-    setEvAgeReq(ev.age_requirement ?? "");
+    // age_requirement is an int column (e.g. 18), not a string — must stringify
+    // or the later evAgeReq.trim() in handleVendorEventSubmit throws.
+    setEvAgeReq(ev.age_requirement !== undefined ? String(ev.age_requirement) : "");
     setEvError(null);
     setStep("create-event");
   }
@@ -1908,6 +1916,22 @@ export function VendorSection({
       setContentMessage("Post deleted.");
     } catch (err) {
       setContentMessage(err instanceof Error ? err.message : "Could not delete post.");
+    }
+  }
+
+  async function handleVendorEventCancel(eventId: number) {
+    setContentMessage(null);
+    setEventActionBusyId(eventId);
+    try {
+      await cancelProducerEvent(eventId, "venue");
+      setVendorEvents((prev) =>
+        prev.map((e) => (e.id === eventId ? { ...e, status: "cancelled" } : e))
+      );
+      setContentMessage("Event cancelled.");
+    } catch (err) {
+      setContentMessage(err instanceof Error ? err.message : "Could not cancel event.");
+    } finally {
+      setEventActionBusyId(null);
     }
   }
 
@@ -3508,28 +3532,50 @@ export function VendorSection({
               </p>
             ) : (
               <div className="space-y-2">
-                {vendorEvents.map((ev) => (
-                  <button
-                    key={ev.id}
-                    type="button"
-                    onClick={() => openEditEvent(ev)}
-                    className="flex w-full items-center justify-between rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-3.5 text-left transition hover:bg-white/10 dark:bg-black/25 dark:hover:bg-black/35"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-[0.9rem] font-semibold text-gray-900 dark:text-white">
-                        {ev.title}
-                      </p>
-                      <p className="mt-0.5 text-[0.78rem] text-gray-500 dark:text-white/55">
-                        {[formatEventDateLabel(ev.event_date), formatEventTimeRange(ev.start_time, ev.end_time)]
-                          .filter(Boolean)
-                          .join(" · ") || ev.category}
-                      </p>
+                {vendorEvents.map((ev) => {
+                  const isCancelled = ev.status === "cancelled";
+                  return (
+                    <div
+                      key={ev.id}
+                      className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-3.5 dark:bg-black/25"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-[0.9rem] font-semibold text-gray-900 dark:text-white">
+                          {ev.title}
+                          {isCancelled ? (
+                            <span className="ml-2 text-[0.72rem] font-normal text-gray-400 dark:text-white/40">
+                              Cancelled
+                            </span>
+                          ) : null}
+                        </p>
+                        <p className="mt-0.5 text-[0.78rem] text-gray-500 dark:text-white/55">
+                          {[formatEventDateLabel(ev.event_date), formatEventTimeRange(ev.start_time, ev.end_time)]
+                            .filter(Boolean)
+                            .join(" · ") || ev.category}
+                        </p>
+                      </div>
+                      <div className="mt-2 flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => openEditEvent(ev)}
+                          className="text-[0.78rem] font-semibold text-red-600 dark:text-red-400"
+                        >
+                          Edit
+                        </button>
+                        {!isCancelled ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleVendorEventCancel(ev.id)}
+                            disabled={eventActionBusyId === ev.id}
+                            className="text-[0.78rem] font-semibold text-gray-500 dark:text-white/50 disabled:opacity-50"
+                          >
+                            {eventActionBusyId === ev.id ? "Cancelling…" : "Cancel"}
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
-                    <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 flex-none text-gray-400 dark:text-white/40">
-                      <path fillRule="evenodd" d="M11.013 1.427a1.75 1.75 0 012.474 0l1.086 1.086a1.75 1.75 0 010 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 01-.927-.928l.929-3.25a1.75 1.75 0 01.445-.756l8.61-8.61z" />
-                    </svg>
-                  </button>
-                ))}
+                  );
+                })}
               </div>
             )
           ) : vendorPostsLoading ? (

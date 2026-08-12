@@ -7,6 +7,8 @@ import { type ConsumerAccount } from "@/app/lib/localState";
 import {
   createProducerEvent,
   createProducerPost,
+  cancelProducerEvent,
+  deleteProducerPost,
   fetchMyEvents,
   fetchMyPosts,
   fetchMyProducerProfile,
@@ -421,6 +423,8 @@ export function ProducerSection({
   const [evBusy, setEvBusy] = useState(false);
   const [evError, setEvError] = useState<string | null>(null);
   const editingEventId = useRef<number | null>(null);
+  const [eventActionBusy, setEventActionBusy] = useState(false);
+  const [eventActionError, setEventActionError] = useState<string | null>(null);
 
   /* create-post form state */
   const [postText, setPostText] = useState("");
@@ -434,6 +438,7 @@ export function ProducerSection({
   const [postBusy, setPostBusy] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
   const [postSuccess, setPostSuccess] = useState(false);
+  const [postActionBusyId, setPostActionBusyId] = useState<number | null>(null);
 
   /* edit-profile form state */
   const [profName, setProfName] = useState("");
@@ -606,7 +611,10 @@ export function ProducerSection({
     setEvImageUrls(galleryFor(ev.cover_image_url, ev.image_urls));
     setEvUploading(false);
     setEvRsvpLimit(ev.rsvp_limit !== undefined ? String(ev.rsvp_limit) : "");
-    setEvAgeReq(ev.age_requirement ?? "");
+    // age_requirement is an int column (e.g. 18), not a string — despite the
+    // ProducerEvent type claiming string. Must stringify or the later
+    // evAgeReq.trim() in handleEventSubmit throws (evAgeReq.trim is not a function).
+    setEvAgeReq(ev.age_requirement !== undefined ? String(ev.age_requirement) : "");
     setEvError(null);
     setStep("edit-event");
   }
@@ -876,6 +884,36 @@ export function ProducerSection({
       setPostError(err instanceof Error ? err.message : "Could not create post. Please try again.");
     } finally {
       setPostBusy(false);
+    }
+  }
+
+  async function handleCancelEvent(eventId: number) {
+    setEventActionBusy(true);
+    setEventActionError(null);
+    try {
+      await cancelProducerEvent(eventId);
+      setEvents((prev) =>
+        prev.map((e) => (e.id === eventId ? { ...e, status: "cancelled" } : e))
+      );
+      setSelectedEvent((prev) =>
+        prev && prev.id === eventId ? { ...prev, status: "cancelled" } : prev
+      );
+    } catch (err) {
+      setEventActionError(err instanceof Error ? err.message : "Could not cancel event.");
+    } finally {
+      setEventActionBusy(false);
+    }
+  }
+
+  async function handleDeletePost(postId: number) {
+    setPostActionBusyId(postId);
+    try {
+      await deleteProducerPost(postId);
+      setPosts((prev) => prev.filter((p) => p.id !== postId));
+    } catch {
+      /* non-fatal — leave the post in the list, user can retry */
+    } finally {
+      setPostActionBusyId(null);
     }
   }
 
@@ -1378,6 +1416,16 @@ export function ProducerSection({
                       >
                         View post
                       </Link>
+                    ) : null}
+                    {p.id ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleDeletePost(p.id!)}
+                        disabled={postActionBusyId === p.id}
+                        className="text-xs font-semibold text-gray-400 hover:text-red-600 dark:text-white/40 dark:hover:text-red-400 disabled:opacity-50"
+                      >
+                        {postActionBusyId === p.id ? "Deleting…" : "Delete"}
+                      </button>
                     ) : null}
                   </div>
                 </div>
@@ -2141,7 +2189,25 @@ export function ProducerSection({
               </svg>
               Edit
             </button>
+            {selectedEvent.status !== "cancelled" ? (
+              <button
+                type="button"
+                onClick={() => void handleCancelEvent(selectedEvent.id)}
+                disabled={eventActionBusy}
+                className="flex items-center justify-center gap-2 rounded-2xl border border-red-200 dark:border-red-900/40 px-5 py-3 text-sm font-semibold text-red-600 dark:text-red-400 transition hover:border-red-300 disabled:opacity-50"
+              >
+                {eventActionBusy ? "Cancelling…" : "Cancel event"}
+              </button>
+            ) : (
+              <span className="flex items-center justify-center gap-2 rounded-2xl border border-gray-200 dark:border-white/15 px-5 py-3 text-sm font-semibold text-gray-400 dark:text-white/40">
+                Cancelled
+              </span>
+            )}
           </div>
+
+          {eventActionError ? (
+            <p className="text-sm text-red-500">{eventActionError}</p>
+          ) : null}
 
           {/* Description */}
           {selectedEvent.description ? (
