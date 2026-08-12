@@ -31,14 +31,20 @@ export async function GET(request: NextRequest) {
     if (sessionId) params.session_id = sessionId;
     if (sessionToken) params.session_token = sessionToken;
 
+    // Each row from genie/saved_venues is a bookmark record (its own `id`,
+    // pointing at a venue via `venue_id`) with the actual venue embedded
+    // under `venue`. `venue` is null when the venue itself was deleted.
     const result = await xanoFetch<{
-      saved_venues?: RawGenieVenue[];
-      venues?: RawGenieVenue[];
+      saved_venues?: Array<{ venue: RawGenieVenue | null }>;
+      venues?: Array<{ venue: RawGenieVenue | null }>;
       count: number;
     }>("genie/saved_venues", { params });
 
     const raw = result.saved_venues ?? result.venues ?? [];
-    const venues = raw.filter(Boolean).map(mapVenue);
+    const venues = raw
+      .map((entry) => entry.venue)
+      .filter((venue): venue is RawGenieVenue => Boolean(venue))
+      .map(mapVenue);
 
     return NextResponse.json({ venues });
   } catch (error) {

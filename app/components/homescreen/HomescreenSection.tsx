@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 
 import { type ConsumerAccount } from "@/app/lib/localState";
+import { type GenieVenue } from "@/app/lib/genieTypes";
 import {
   fetchFollowedProducers,
   fetchHomescreen,
@@ -550,7 +551,33 @@ function SocialPostCard({
 /*  On-fire venue card                                                 */
 /* ------------------------------------------------------------------ */
 
-function OnFireVenueCard({ item, onViewVenue }: { item: OnFireVenueItem; onViewVenue: () => void }) {
+function OnFireVenueCard({
+  item,
+  onViewVenue,
+  isSaved,
+  isLoggedIn,
+  onRequireAuth,
+  onToggleSaveVenue,
+}: {
+  item: OnFireVenueItem;
+  onViewVenue: () => void;
+  isSaved: boolean;
+  isLoggedIn: boolean;
+  onRequireAuth: () => void;
+  onToggleSaveVenue: (venue: GenieVenue) => void;
+}) {
+  function handleToggleSave() {
+    if (!isLoggedIn) return onRequireAuth();
+    onToggleSaveVenue({
+      id: item.id,
+      venue_name: item.venue_name,
+      image: item.image_url ?? null,
+      image_url: item.image_url ?? null,
+      latitude: item.venue_latitude ?? null,
+      longitude: item.venue_longitude ?? null,
+      area_neighborhood: item.neighborhood ?? null,
+    });
+  }
   function handleGetRide() {
     // Prefer the venue's own prebuilt link; it's empty for most venues in dev
     // data, so fall back to a coordinate-built one rather than hiding the CTA.
@@ -601,14 +628,34 @@ function OnFireVenueCard({ item, onViewVenue }: { item: OnFireVenueItem; onViewV
             <span className="h-1.5 w-1.5 rounded-full bg-yellow-400" />ON FIRE
           </span>
         ) : <span />}
-        {(item.neighborhood || item.category) ? (
-          // Neighborhood names run long ("Washington Avenue Coalition /
-          // Memorial Park"), so truncate rather than let them push the
-          // ON FIRE pill off the card on narrow screens.
-          <span className="min-w-0 truncate text-right text-[0.65rem] text-white/50">
-            {[item.neighborhood, item.category].filter(Boolean).join(" · ")}
-          </span>
-        ) : null}
+        <div className="flex min-w-0 items-center gap-2">
+          {(item.neighborhood || item.category) ? (
+            // Neighborhood names run long ("Washington Avenue Coalition /
+            // Memorial Park"), so truncate rather than let them push the
+            // ON FIRE pill off the card on narrow screens.
+            <span className="min-w-0 truncate text-right text-[0.65rem] text-white/50">
+              {[item.neighborhood, item.category].filter(Boolean).join(" · ")}
+            </span>
+          ) : null}
+          <button
+            type="button"
+            aria-label={isSaved ? "Unsave" : "Save"}
+            onClick={handleToggleSave}
+            className="flex h-7 w-7 flex-none items-center justify-center rounded-full border border-white/25 bg-black/30"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              className={`h-3.5 w-3.5 ${isSaved ? "text-red-500" : "text-white/80"}`}
+              fill={isSaved ? "currentColor" : "none"}
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z" />
+            </svg>
+          </button>
+        </div>
       </div>
       <div className="mt-1.5 flex items-start justify-between gap-3">
         <h3 className="min-w-0 flex-1 text-[1.1rem] font-bold leading-tight text-white">{item.venue_name}</h3>
@@ -849,7 +896,16 @@ function formatOfferBadge(offerType?: string): string | undefined {
 
 function InfluencerOfferCard({ offer }: { offer: HomescreenInfluencerOffer }) {
   const [copied, setCopied] = useState(false);
-  const imageUrl = offer.image_urls?.[0] || offer.venue_info?.image_url;
+  // Xano can return a blank/whitespace-only string (or something that isn't
+  // even a string, despite the type) instead of null for a missing image —
+  // truthy in JS, so it slips past `||` and reaches next/image, which then
+  // rejects it as an empty src. Validate the type before trimming.
+  const firstImageUrl = offer.image_urls?.[0];
+  const venueImageUrl = offer.venue_info?.image_url;
+  const imageUrl =
+    (typeof firstImageUrl === "string" && firstImageUrl.trim()) ||
+    (typeof venueImageUrl === "string" && venueImageUrl.trim()) ||
+    null;
   const context = offer.venue_info?.name ?? offer.event?.title ?? "Offer";
   const badge = formatOfferBadge(offer.offer_type);
   const promoCode = offer.promo_code?.trim();
@@ -1033,6 +1089,8 @@ function FeedCard({
   onOffersOpen,
   isLoggedIn,
   onRequireAuth,
+  savedVenueIds,
+  onToggleSaveVenue,
 }: {
   item: HomeFeedItem;
   onEventOpen: (evt: UpcomingEvent) => void;
@@ -1040,6 +1098,8 @@ function FeedCard({
   onOffersOpen: () => void;
   isLoggedIn: boolean;
   onRequireAuth: () => void;
+  savedVenueIds: string[];
+  onToggleSaveVenue: (venue: GenieVenue) => void;
 }) {
   switch (item.feed_type) {
     case "event":
@@ -1054,7 +1114,16 @@ function FeedCard({
     case "social_post":
       return <SocialPostCard item={item} isLoggedIn={isLoggedIn} onRequireAuth={onRequireAuth} />;
     case "on_fire_venue":
-      return <OnFireVenueCard item={item} onViewVenue={() => onVenueOpen(item.id)} />;
+      return (
+        <OnFireVenueCard
+          item={item}
+          onViewVenue={() => onVenueOpen(item.id)}
+          isSaved={savedVenueIds.includes(String(item.id))}
+          isLoggedIn={isLoggedIn}
+          onRequireAuth={onRequireAuth}
+          onToggleSaveVenue={onToggleSaveVenue}
+        />
+      );
     case "suggested_producers":
       return (
         <SuggestedProducersRow
@@ -1118,6 +1187,8 @@ type HomescreenSectionProps = {
   locationPromptVariant?: "guest" | "registered" | "blocked" | null;
   onAllowLocation?: () => void;
   onDismissLocationPrompt?: () => void;
+  savedVenueIds: string[];
+  onToggleSaveVenue: (venue: GenieVenue) => void;
 };
 
 // Distance scrolled before the header is allowed to hide. Roughly its own
@@ -1139,6 +1210,8 @@ export function HomescreenSection({
   locationPromptVariant,
   onAllowLocation,
   onDismissLocationPrompt,
+  savedVenueIds,
+  onToggleSaveVenue,
 }: HomescreenSectionProps) {
   const isLoggedIn = !!account;
 
@@ -1786,6 +1859,8 @@ export function HomescreenSection({
                 onOffersOpen={() => navigateTo("offers")}
                 isLoggedIn={isLoggedIn}
                 onRequireAuth={requireAuth}
+                savedVenueIds={savedVenueIds}
+                onToggleSaveVenue={onToggleSaveVenue}
               />
             ))}
           </div>

@@ -3849,6 +3849,7 @@ activeScreen === "vibbee-trial" ||
                       logVenueInteraction("tap", Number(item.venue.id), "decision");
                     }}
                     onSave={() => handleSaveVenue(item.venue)}
+                    isSaved={savedVenueIds.includes(getVenueId(item.venue))}
                   />
                 ) : (
                   <EventResultCard
@@ -4738,6 +4739,9 @@ activeScreen === "vibbee-trial" ||
             onAllowLocation={requestLocationPermission}
             isLoggedIn={!!account}
             onRequireAuth={() => navigateTo("account")}
+            onSignIn={() => navigateTo("account")}
+            savedVenueIds={savedVenueIds}
+            onToggleSaveVenue={handleSaveVenue}
             onSelectVenue={(venueId) => {
               setSharedVenueLoading(true);
               setSelectedVenueId(String(venueId));
@@ -6735,6 +6739,8 @@ activeScreen === "vibbee-trial" ||
     unreadNotifCount={unreadNotifCount}
     onMessages={() => navigateTo("messages")}
     unreadMessageCount={unreadMessageCount}
+    savedVenueIds={savedVenueIds}
+    onToggleSaveVenue={handleSaveVenue}
   />
 ) : null}
 

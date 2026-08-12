@@ -847,6 +847,7 @@ export function ResultCard({
   index,
   onOpen,
   onSave,
+  isSaved,
   userCoords,
   tagline,
   description,
@@ -857,6 +858,7 @@ export function ResultCard({
   index: number;
   onOpen: () => void;
   onSave?: () => void;
+  isSaved?: boolean;
   userCoords?: { lat: number; lng: number } | null;
   /**
    * Overrides the derived energy tagline. Pass `null` to drop the line
@@ -879,7 +881,6 @@ export function ResultCard({
    */
   fallbackImage?: string | null;
 }) {
-  void onSave;
   // Many venue photos are dead Google Places URLs (403). Without this the card
   // renders a broken-image glyph and its alt text.
   const [imageFailed, setImageFailed] = useState(false);
@@ -897,10 +898,17 @@ export function ResultCard({
   const statusText = status === undefined ? getVenueStatus(venue, index) : status;
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onOpen}
-      className="w-full overflow-hidden rounded-[20px] border border-red-200 bg-white text-left shadow-[0_8px_24px_rgba(0,0,0,0.06)] transition hover:shadow-[0_10px_26px_rgba(0,0,0,0.1)] dark:border-[#6a1d1d] dark:bg-black/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.4)] dark:hover:border-[#ff7b7b]"
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+      className="w-full cursor-pointer overflow-hidden rounded-[20px] border border-red-200 bg-white text-left shadow-[0_8px_24px_rgba(0,0,0,0.06)] transition hover:shadow-[0_10px_26px_rgba(0,0,0,0.1)] dark:border-[#6a1d1d] dark:bg-black/30 dark:shadow-[0_18px_40px_rgba(0,0,0,0.4)] dark:hover:border-[#ff7b7b]"
     >
       <div className="flex gap-3 p-3">
         <div className="relative h-28 w-28 flex-none overflow-hidden rounded-2xl bg-gray-100 dark:bg-white/5">
@@ -913,6 +921,29 @@ export function ResultCard({
               sizes="112px"
               onError={() => setImageFailed(true)}
             />
+          ) : null}
+          {onSave ? (
+            <button
+              type="button"
+              aria-label={isSaved ? "Unsave" : "Save"}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSave();
+              }}
+              className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-black/40 backdrop-blur-sm"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                className={`h-3.5 w-3.5 ${isSaved ? "text-red-500" : "text-white"}`}
+                fill={isSaved ? "currentColor" : "none"}
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z" />
+              </svg>
+            </button>
           ) : null}
         </div>
 
@@ -948,7 +979,7 @@ export function ResultCard({
           ) : null}
         </div>
       </div>
-    </button>
+    </div>
   );
 }
 export function EventResultCard({
