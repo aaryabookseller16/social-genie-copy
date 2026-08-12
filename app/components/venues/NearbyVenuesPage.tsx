@@ -6,9 +6,13 @@ import { BackIcon, ResultCard } from "@/app/components/single-page/ui";
 import { nearbyVenueToGenieVenue } from "@/app/lib/genieMappers";
 import {
   fetchNearbyVenues,
+  fetchSavedVenues,
   type NearbyVenue,
   type NearbyVenuesResponse,
 } from "@/app/lib/publicApiClient";
+import { type GenieVenue } from "@/app/lib/genieTypes";
+
+type VenuesTab = "explore" | "saved";
 
 /** Downtown Houston — the explicit stand-in when we have no fix on the user. */
 const HOUSTON = { lat: 29.7604, lng: -95.3698 };
@@ -70,20 +74,22 @@ function VenueSkeleton() {
   );
 }
 
-export default function NearbyVenuesPage({
+function ExploreVenuesList({
   userCoords,
-  onBack,
   onSelectVenue,
   onAllowLocation,
   isLoggedIn,
   onRequireAuth,
+  savedVenueIds,
+  onToggleSaveVenue,
 }: {
   userCoords?: { lat: number; lng: number } | null;
-  onBack: () => void;
   onSelectVenue: (venueId: number) => void;
   onAllowLocation?: () => void;
   isLoggedIn: boolean;
   onRequireAuth: () => void;
+  savedVenueIds: string[];
+  onToggleSaveVenue: (venue: GenieVenue) => void;
 }) {
   // No fix means we search Houston *explicitly* and say so — silently serving
   // Houston to someone who declined location looks like we ignored them.
@@ -309,21 +315,7 @@ export default function NearbyVenuesPage({
       : null;
 
   return (
-    <section className="pb-28">
-      <div className="mb-5 flex items-center">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label="Go back"
-          className="inline-flex h-9 w-9 items-center justify-center rounded-full text-red-600 dark:border dark:border-white/12 dark:bg-black/24 dark:text-white/82"
-        >
-          <BackIcon size={20} />
-        </button>
-        <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
-          Venues Near You
-        </h2>
-      </div>
-
+    <>
       {!hasFix ? (
         <Banner>
           We don&apos;t have your location, so these are venues in Houston.{" "}
@@ -393,6 +385,8 @@ export default function NearbyVenuesPage({
               fallbackImage={null}
               description={venue.short_description}
               onOpen={() => gatedVenueOpen(venue.id)}
+              isSaved={savedVenueIds.includes(String(venue.id))}
+              onSave={() => onToggleSaveVenue(nearbyVenueToGenieVenue(venue))}
             />
           ))}
 
@@ -426,6 +420,222 @@ export default function NearbyVenuesPage({
             </p>
           )}
         </div>
+      )}
+    </>
+  );
+}
+
+function SavedVenuesList({
+  userCoords,
+  onSelectVenue,
+  isLoggedIn,
+  onRequireAuth,
+  onSignIn,
+  savedVenueIds,
+  onToggleSaveVenue,
+}: {
+  userCoords?: { lat: number; lng: number } | null;
+  onSelectVenue: (venueId: number) => void;
+  isLoggedIn: boolean;
+  onRequireAuth: () => void;
+  onSignIn: () => void;
+  savedVenueIds: string[];
+  onToggleSaveVenue: (venue: GenieVenue) => void;
+}) {
+  const [venues, setVenues] = useState<GenieVenue[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  const gatedVenueOpen = useCallback(
+    (venueId: number) => (isLoggedIn ? onSelectVenue(venueId) : onRequireAuth()),
+    [isLoggedIn, onSelectVenue, onRequireAuth]
+  );
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setVenues([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    fetchSavedVenues()
+      .then((list) => {
+        if (!cancelled) setVenues(list);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Could not load saved venues.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn, reloadKey]);
+
+  if (!isLoggedIn) {
+    return (
+      <div className="mt-10 flex flex-col items-center gap-3 rounded-[20px] border border-gray-200 bg-white/90 px-4 py-10 text-center dark:border-white/15 dark:bg-black/20">
+        <p className="text-sm font-semibold text-gray-900 dark:text-white">Sign in to see your saved venues</p>
+        <p className="max-w-xs text-xs text-gray-600 dark:text-white/60">
+          Create a free account to save venues and find them here.
+        </p>
+        <button
+          type="button"
+          onClick={onSignIn}
+          className="mt-1 rounded-full bg-red-600 px-6 py-2.5 text-sm font-semibold text-white"
+        >
+          Sign In
+        </button>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        <VenueSkeleton />
+        <VenueSkeleton />
+        <VenueSkeleton />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="mt-16 flex flex-col items-center gap-3 px-6 text-center">
+        <p className="text-[0.85rem] text-white/40">Could not load saved venues.</p>
+        <p className="text-[0.72rem] text-white/25">{error}</p>
+        <button
+          type="button"
+          onClick={() => setReloadKey((k) => k + 1)}
+          className="mt-2 rounded-full border border-white/20 px-5 py-2 text-[0.78rem] font-semibold text-white/70"
+        >
+          Try Again
+        </button>
+      </div>
+    );
+  }
+
+  if (venues.length === 0) {
+    return (
+      <p className="mt-16 text-center text-[0.85rem] text-white/40">
+        You haven&apos;t saved any venues yet.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {venues.map((venue, index) => (
+        <ResultCard
+          key={venue.id}
+          venue={venue}
+          index={index}
+          userCoords={userCoords}
+          tagline={null}
+          status={null}
+          fallbackImage={null}
+          description={venue.vibe_notes ?? null}
+          onOpen={() => gatedVenueOpen(Number(venue.id))}
+          isSaved={savedVenueIds.includes(String(venue.id))}
+          onSave={() => {
+            onToggleSaveVenue(venue);
+            // Optimistic: this list only shows saved venues, so unsaving
+            // one should drop it immediately rather than wait for a refetch.
+            setVenues((prev) => prev.filter((v) => String(v.id) !== String(venue.id)));
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+export default function NearbyVenuesPage({
+  userCoords,
+  onBack,
+  onSelectVenue,
+  onAllowLocation,
+  isLoggedIn,
+  onRequireAuth,
+  onSignIn,
+  savedVenueIds,
+  onToggleSaveVenue,
+}: {
+  userCoords?: { lat: number; lng: number } | null;
+  onBack: () => void;
+  onSelectVenue: (venueId: number) => void;
+  onAllowLocation?: () => void;
+  isLoggedIn: boolean;
+  onRequireAuth: () => void;
+  onSignIn: () => void;
+  savedVenueIds: string[];
+  onToggleSaveVenue: (venue: GenieVenue) => void;
+}) {
+  const [tab, setTab] = useState<VenuesTab>("explore");
+
+  return (
+    <section className="pb-28">
+      <div className="mb-5 flex items-center">
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="Go back"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-full text-red-600 dark:border dark:border-white/12 dark:bg-black/24 dark:text-white/82"
+        >
+          <BackIcon size={20} />
+        </button>
+        <h2 className="flex-1 pr-9 text-center font-[family:var(--font-display)] text-[1.35rem] font-semibold text-gray-900 dark:text-white">
+          Venues Near You
+        </h2>
+      </div>
+
+      <div className="mb-4 flex items-center gap-1 rounded-full border border-red-200 bg-white/70 p-1 dark:border-white/10 dark:bg-black/24">
+        {([
+          { id: "explore", label: "Explore" },
+          { id: "saved", label: "Saved" },
+        ] as { id: VenuesTab; label: string }[]).map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={`flex-1 rounded-full py-2 text-sm font-semibold transition ${
+              tab === t.id
+                ? "bg-red-600 text-white shadow-[0_6px_16px_rgba(230,20,20,0.35)]"
+                : "text-gray-500 dark:text-white/60"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "explore" ? (
+        <ExploreVenuesList
+          key="explore"
+          userCoords={userCoords}
+          onSelectVenue={onSelectVenue}
+          onAllowLocation={onAllowLocation}
+          isLoggedIn={isLoggedIn}
+          onRequireAuth={onRequireAuth}
+          savedVenueIds={savedVenueIds}
+          onToggleSaveVenue={onToggleSaveVenue}
+        />
+      ) : (
+        <SavedVenuesList
+          key="saved"
+          userCoords={userCoords}
+          onSelectVenue={onSelectVenue}
+          isLoggedIn={isLoggedIn}
+          onRequireAuth={onRequireAuth}
+          onSignIn={onSignIn}
+          savedVenueIds={savedVenueIds}
+          onToggleSaveVenue={onToggleSaveVenue}
+        />
       )}
     </section>
   );
