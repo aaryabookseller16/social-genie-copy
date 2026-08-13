@@ -142,6 +142,7 @@ type SocialPostFeedItem = {
   id: number;
   post: PublicPost;
   author: PublicPostAuthor | null;
+  is_followed_producer?: boolean;
 };
 type NeighborhoodPulseFeedItem = {
   feed_type: "neighborhood_pulse";
@@ -509,10 +510,15 @@ function SocialPostCard({
           ) : (
             <ProducerAvatar name={authorName} size={32} />
           )}
-          <div>
+          <div className="min-w-0 flex-1">
             <p className="text-[0.78rem] font-semibold text-gray-900 dark:text-white">{authorName}</p>
             <p className="text-[0.65rem] text-gray-500 dark:text-white/50">{formatShortRelativeTime(post.created_at)}</p>
           </div>
+          {item.is_followed_producer ? (
+            <span className="flex-none rounded-full bg-red-600 px-2.5 py-1 text-[0.62rem] font-bold uppercase tracking-wide text-white">
+              Following
+            </span>
+          ) : null}
         </div>
         {post.post_text ? (
           <p className="mt-2 px-3 text-[0.82rem] leading-5 text-gray-700 dark:text-white/80">{post.post_text}</p>
@@ -1315,31 +1321,40 @@ export function HomescreenSection({
 
   // Events arrive 10 at a time; posts have to keep roughly that pace or the
   // weave below runs dry and the feed turns back into a wall of events.
-  const POSTS_PER_LOAD = 3;
+  const POSTS_PER_LOAD = 5;
 
   const [homescreenPosts, setHomescreenPosts] = useState<SocialPostFeedItem[]>([]);
-  const [postsPage, setPostsPage] = useState(1);
+  // created_at cursors (undefined = "from now"), not a page number — see
+  // fetchHomescreenPosts.
+  const [postsFollowedBefore, setPostsFollowedBefore] = useState<number | undefined>(undefined);
+  const [postsNewBefore, setPostsNewBefore] = useState<number | undefined>(undefined);
   const [hasMorePosts, setHasMorePosts] = useState(true);
 
-  const toFeedItem = (pair: { post: PublicPost; author: PublicPostAuthor | null }): SocialPostFeedItem => ({
+  const toFeedItem = (pair: {
+    post: PublicPost;
+    author: PublicPostAuthor | null;
+    is_followed_producer?: boolean;
+  }): SocialPostFeedItem => ({
     feed_type: "social_post",
     id: pair.post.id,
     post: pair.post,
     author: pair.author,
+    is_followed_producer: pair.is_followed_producer,
   });
 
   useEffect(() => {
     let cancelled = false;
-    setPostsPage(1);
+    setPostsFollowedBefore(undefined);
+    setPostsNewBefore(undefined);
     setHasMorePosts(true);
-    // Guests only ever get the single curated post on page 1, so a short
-    // first page correctly ends their post feed here.
-    fetchHomescreenPosts(1, POSTS_PER_LOAD)
+    fetchHomescreenPosts({ limit: POSTS_PER_LOAD, userId: account?.id })
       .then((result) => {
         if (cancelled) return;
         const posts = result.posts ?? [];
         setHomescreenPosts(posts.map(toFeedItem));
-        if (posts.length < POSTS_PER_LOAD) setHasMorePosts(false);
+        setPostsFollowedBefore(result.followed_before);
+        setPostsNewBefore(result.new_before);
+        setHasMorePosts(result.has_more);
       })
       .catch(() => {
         if (!cancelled) {
@@ -1529,10 +1544,14 @@ export function HomescreenSection({
       : Promise.resolve();
 
     const postsRequest = hasMorePosts
-      ? fetchHomescreenPosts(postsPage + 1, POSTS_PER_LOAD)
+      ? fetchHomescreenPosts({
+          followedBefore: postsFollowedBefore,
+          newBefore: postsNewBefore,
+          limit: POSTS_PER_LOAD,
+          userId: account?.id,
+        })
           .then((result) => {
             const newPosts = result.posts ?? [];
-            if (newPosts.length < POSTS_PER_LOAD) setHasMorePosts(false);
             setHomescreenPosts((prev) => {
               const seenIds = new Set(prev.map((p) => p.id));
               const deduped: typeof newPosts = [];
@@ -1541,10 +1560,11 @@ export function HomescreenSection({
                 seenIds.add(p.post.id);
                 deduped.push(p);
               }
-              if (deduped.length === 0) setHasMorePosts(false);
               return [...prev, ...deduped.map(toFeedItem)];
             });
-            setPostsPage(postsPage + 1);
+            setPostsFollowedBefore(result.followed_before);
+            setPostsNewBefore(result.new_before);
+            setHasMorePosts(result.has_more);
           })
           .catch(() => setHasMorePosts(false))
       : Promise.resolve();
@@ -1562,7 +1582,8 @@ export function HomescreenSection({
     eventsOffset,
     venuesOffset,
     offersOffset,
-    postsPage,
+    postsFollowedBefore,
+    postsNewBefore,
     account?.id,
     shuffleSeed,
   ]);
