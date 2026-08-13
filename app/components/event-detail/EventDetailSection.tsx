@@ -338,7 +338,6 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
   const [vibbeeOffers, setVibbeeOffers] = useState<VibbeeEventOffer[]>([]);
   const [influencerOffers, setInfluencerOffers] = useState<InfluencerEventOffer[]>([]);
   const [showCalendarMenu, setShowCalendarMenu] = useState(false);
-  const [rideError, setRideError] = useState(false);
   const calendarMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -707,24 +706,16 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
           <button
             type="button"
             onClick={() => {
-              // Only a lat/lng dropoff reliably preselects in Uber — a
-              // formatted-address-only link routinely opens with nothing
-              // preselected. Without coordinates, fail loudly instead of
-              // shipping that broken experience.
-              if (venueLat == null || venueLng == null) {
-                console.log("[ride_click] no venue coordinates available", {
-                  event_id: ev.id,
-                  venue_name: venueName,
-                  venue_address: venueAddr,
-                });
-                setRideError(true);
-                window.setTimeout(() => setRideError(false), 4000);
-                return;
-              }
+              // Use precise coordinates when we have them; otherwise fall
+              // back to the address text and let Uber geocode it.
               const addr = venueAddr || venueName || "Houston, TX";
+              const coordParams =
+                venueLat != null && venueLng != null
+                  ? `&dropoff[latitude]=${venueLat}&dropoff[longitude]=${venueLng}`
+                  : "";
               onRideClick?.(addr);
               window.open(
-                `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[latitude]=${venueLat}&dropoff[longitude]=${venueLng}&dropoff[nickname]=${encodeURIComponent(venueName || addr)}&dropoff[formatted_address]=${encodeURIComponent(addr)}`,
+                `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[nickname]=${encodeURIComponent(venueName || addr)}${coordParams}&dropoff[formatted_address]=${encodeURIComponent(addr)}`,
                 "_blank",
                 "noopener,noreferrer"
               );
@@ -994,12 +985,6 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
 
       </div>
       </div>
-
-      {rideError ? (
-        <div className="fixed inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+4.5rem)] z-50 mx-auto max-w-sm rounded-xl bg-gray-900 px-4 py-3 text-center text-[0.82rem] font-medium text-white shadow-lg dark:bg-black">
-          Ride directions aren&apos;t available for this location yet.
-        </div>
-      ) : null}
     </section>
   );
 }

@@ -2957,6 +2957,7 @@ export type UpcomingEvent = {
 export type TrendingVenue = {
   id: number;
   name: string;
+  address?: string;
   category?: string;
   neighborhood?: string;
   social_energy_state?: SocialEnergyState;
@@ -3097,6 +3098,7 @@ export type OnFireVenueItem = {
   feed_type: "on_fire_venue";
   id: number;
   venue_name: string;
+  venue_address?: string;
   venue_latitude?: number;
   venue_longitude?: number;
   neighborhood?: string;

@@ -117,6 +117,7 @@ function trendingVenueToFeedItem(v: TrendingVenue): OnFireVenueItem {
     feed_type: "on_fire_venue",
     id: v.id,
     venue_name: v.name,
+    venue_address: v.address || undefined,
     venue_latitude: v.latitude,
     venue_longitude: v.longitude,
     neighborhood: v.neighborhood || undefined,
@@ -602,9 +603,13 @@ function OnFireVenueCard({
         return false;
       }
     };
+    // dropoff[formatted_address] must be the street address, not the venue
+    // name — Uber geocodes this text when no lat/long is present, so passing
+    // the name here silently sent riders to the wrong place.
+    const dropoffAddress = item.venue_address || item.venue_name;
     const url = isWebUrl(item.uber_deeplink)
       ? (item.uber_deeplink as string)
-      : `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[nickname]=${encodeURIComponent(item.venue_name)}${coordParams}&dropoff[formatted_address]=${encodeURIComponent(item.venue_name)}`;
+      : `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[nickname]=${encodeURIComponent(item.venue_name)}${coordParams}&dropoff[formatted_address]=${encodeURIComponent(dropoffAddress)}`;
     window.open(url, "_blank", "noopener,noreferrer");
   }
   return (

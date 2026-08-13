@@ -112,7 +112,9 @@ export function VenueDetailClient({ venue }: { venue: GenieVenue }) {
 
   const lat = venue.latitude;
   const lng = venue.longitude;
-  const hasCoords = lat !== null && lng !== null;
+  // Xano stores unset coordinates as 0, not null — vendor-created venues
+  // routinely have no coordinates, so treat (0, 0) as missing too.
+  const hasCoords = lat !== null && lng !== null && !(lat === 0 && lng === 0);
 
   const raw = venue as unknown as Record<string, unknown>;
   const phone = typeof raw.phone === "string" ? raw.phone.trim() : null;
@@ -132,9 +134,11 @@ export function VenueDetailClient({ venue }: { venue: GenieVenue }) {
     (raw.neighborhood_text as string | undefined) ||
     venue.city;
 
-  const uberUrl = hasCoords
-    ? `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[latitude]=${lat}&dropoff[longitude]=${lng}&dropoff[nickname]=${encodeURIComponent(venue.venue_name)}&dropoff[formatted_address]=${encodeURIComponent(venue.venue_name)}`
-    : null;
+  // Use precise coordinates when available; otherwise fall back to the
+  // address text and let Uber geocode it. Always builds a link — never
+  // hides the ride button for lack of coordinates.
+  const dropoffAddress = venue.address || venue.venue_name;
+  const uberUrl = `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[nickname]=${encodeURIComponent(venue.venue_name)}${hasCoords ? `&dropoff[latitude]=${lat}&dropoff[longitude]=${lng}` : ""}&dropoff[formatted_address]=${encodeURIComponent(dropoffAddress)}`;
 
   const mapsUrl = venue.google_maps_url
     ? venue.google_maps_url
