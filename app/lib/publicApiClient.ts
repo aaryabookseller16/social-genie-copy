@@ -1,5 +1,5 @@
 import { mapVenue } from "./genieMappers";
-import { type GenieVenue } from "./genieTypes";
+import { type GenieVenue, type RawGenieOffer, type RawGenieEvent } from "./genieTypes";
 import {
   clearConsumerSession,
   readAuthToken,
@@ -901,6 +901,44 @@ export async function fetchVenueById(venueId: string | number) {
     { auth: false }
   );
   return mapVenue(response.venue);
+}
+
+/**
+ * Second, identity-aware fetch for a venue already rendered without user
+ * context (e.g. server-rendered VenueDetailClient) — same pattern as
+ * usePostLike's mount-time like-status fetch. Resolves whether the current
+ * user/session has saved this venue.
+ */
+export async function fetchVenueIsSaved(venueId: string | number) {
+  const sessionId = readSessionId();
+  const account = readConsumerAccount();
+  if (!account?.id && !sessionId) return false;
+
+  const params = new URLSearchParams({ id: String(venueId) });
+  if (account?.id) params.set("user_id", String(account.id));
+  if (sessionId) params.set("session_id", String(sessionId));
+
+  const response = await apiJson<{ venue?: { is_saved?: boolean } }>(
+    `/api/genie/venue?${params.toString()}`,
+    { auth: false }
+  );
+  return Boolean(response.venue?.is_saved);
+}
+
+export async function fetchVenueOffers(venueId: string | number) {
+  const response = await apiJson<{ offers: RawGenieOffer[] }>(
+    `/api/genie/venue-offers?id=${encodeURIComponent(String(venueId))}`,
+    { auth: false }
+  );
+  return response.offers ?? [];
+}
+
+export async function fetchVenueEvents(venueId: string | number) {
+  const response = await apiJson<{ events: RawGenieEvent[] }>(
+    `/api/genie/venue-events?id=${encodeURIComponent(String(venueId))}`,
+    { auth: false }
+  );
+  return response.events ?? [];
 }
 
 export async function registerPushToken(onesignalPlayerId: string) {
