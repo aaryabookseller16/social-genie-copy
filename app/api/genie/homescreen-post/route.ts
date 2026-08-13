@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { xanoFetch, extractBearerToken } from "@/app/lib/server/xanoProxy";
-import { FEATURED_HOMESCREEN_POST_ID } from "@/app/lib/runtimeConfig";
 
 type FeedPostsResponse = {
   success: boolean;
-  posts: Array<{ id: number }>;
+  posts: Array<{ id: number; is_followed_producer?: boolean }>;
+  followed_before?: number;
+  new_before?: number;
+  has_more?: boolean;
 };
 
 type PostDetailResponse = {
@@ -13,9 +15,9 @@ type PostDetailResponse = {
   author: unknown;
 };
 
-type PostPair = { post: unknown; author: unknown };
+type PostPair = { post: unknown; author: unknown; is_followed_producer: boolean };
 
-async function fetchPostPair(postId: number): Promise<PostPair | null> {
+async function fetchPostPair(postId: number): Promise<Omit<PostPair, "is_followed_producer"> | null> {
   try {
     const result = await xanoFetch<PostDetailResponse>("genie/ep_get_post_dev", {
       params: { post_id: String(postId) },
@@ -29,51 +31,50 @@ async function fetchPostPair(postId: number): Promise<PostPair | null> {
 }
 
 /**
- * GET /api/genie/homescreen-post?page=1&per_page=1
- * Powers the homescreen's paginated Social Post feed (infinite scroll).
+ * GET /api/genie/homescreen-post?followed_before&new_before&limit&user_id
+ * Powers the homescreen's personalized Social Post feed (infinite scroll).
  *
- * - Logged in (Authorization header present): page through the caller's real
- *   global post feed via genie/ep_get_feed_posts_dev (auth-gated), then
- *   re-fetch each post through the public genie/ep_get_post_dev for the full
- *   author-enriched shape the /posts/[id] page already uses.
- * - Logged out: there is no public "list posts" endpoint, so only page 1 is
- *   served — a single curated post id (FEATURED_HOMESCREEN_POST_ID) via the
- *   same public endpoint, so guests still see real content. Later pages
- *   return empty (nothing more to page through without auth).
+ * Proxies to genie/ep_get_feed_posts_dev, which is public and, given a
+ * user_id, composes each page from up to 3 posts by followed producers plus
+ * a global backfill, interleaved newest-first. ep_get_post_dev (also public)
+ * is then called once per post id to get the full author-enriched shape the
+ * /posts/[id] page already uses — ep_get_feed_posts_dev only returns raw
+ * rows, so the is_followed_producer flag it tags each row with has to be
+ * stitched back onto the enriched pair here.
  */
 export async function GET(request: NextRequest) {
   const authToken = extractBearerToken(request);
-  const page = request.nextUrl.searchParams.get("page") ?? "1";
-  const perPage = request.nextUrl.searchParams.get("per_page") ?? "1";
-
-  if (authToken) {
-    try {
-      const feed = await xanoFetch<FeedPostsResponse>("genie/ep_get_feed_posts_dev", {
-        authToken,
-        params: { page, per_page: perPage },
-      });
-      const ids = (feed.posts ?? []).map((p) => p.id).filter(Boolean);
-      if (ids.length > 0) {
-        const pairs = (await Promise.all(ids.map(fetchPostPair))).filter(
-          (p): p is PostPair => p !== null
-        );
-        return NextResponse.json({ posts: pairs });
-      }
-      if (page !== "1") {
-        return NextResponse.json({ posts: [] });
-      }
-      // Logged in but no posts in the feed at all — fall through to the
-      // curated post so page 1 still shows something real.
-    } catch (error) {
-      console.error("[homescreen-post] feed lookup failed", error);
-      if (page !== "1") {
-        return NextResponse.json({ posts: [] });
-      }
-    }
-  } else if (page !== "1") {
-    return NextResponse.json({ posts: [] });
+  const sp = request.nextUrl.searchParams;
+  const params: Record<string, string> = {};
+  for (const key of ["user_id", "followed_before", "new_before", "limit"]) {
+    const value = sp.get(key);
+    if (value) params[key] = value;
   }
 
-  const pair = await fetchPostPair(FEATURED_HOMESCREEN_POST_ID);
-  return NextResponse.json({ posts: pair ? [pair] : [] });
+  try {
+    const feed = await xanoFetch<FeedPostsResponse>("genie/ep_get_feed_posts_dev", {
+      authToken,
+      params,
+    });
+    const items = feed.posts ?? [];
+    const pairs = (
+      await Promise.all(
+        items.map(async (item) => {
+          const pair = await fetchPostPair(item.id);
+          if (!pair) return null;
+          return { ...pair, is_followed_producer: item.is_followed_producer ?? false };
+        })
+      )
+    ).filter((p): p is PostPair => p !== null);
+
+    return NextResponse.json({
+      posts: pairs,
+      followed_before: feed.followed_before,
+      new_before: feed.new_before,
+      has_more: feed.has_more ?? false,
+    });
+  } catch (error) {
+    console.error("[homescreen-post] feed lookup failed", error);
+    return NextResponse.json({ posts: [], has_more: false });
+  }
 }

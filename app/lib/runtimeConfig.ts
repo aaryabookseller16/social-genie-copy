@@ -88,14 +88,6 @@ export function getRuntimeConfig(): RuntimeConfig {
   return runtimeConfig;
 }
 
-/**
- * The genie_posts id shown on the homescreen's Social Post card to logged-out
- * visitors (who have no auth token, so the real feed-list endpoint is out of
- * reach). Staff should update this to feature a different real post.
- * TODO: replace with a real, non-deleted genie_posts id before shipping.
- */
-export const FEATURED_HOMESCREEN_POST_ID = 1;
-
 export type FeaturedVideo = {
   id: string;
   url: string;

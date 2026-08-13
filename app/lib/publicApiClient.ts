@@ -2243,16 +2243,32 @@ export async function fetchMyPostLikeStatus(postId: number) {
 }
 
 /**
- * The homescreen's paginated Social Post feed (infinite scroll). apiJson
- * auto-attaches the caller's auth token when present, so the route handler
- * pages through the visitor's real posts when logged in, or serves a single
- * curated fallback post on page 1 only when logged out.
+ * The homescreen's personalized Social Post feed (infinite scroll). Every
+ * call returns up to `limit` posts, composed as up to 3 from producers
+ * `userId` follows plus a backfill from the global pool, interleaved
+ * newest-first. Pagination is cursor-based (`followedBefore`/`newBefore`,
+ * both `created_at` cutoffs) rather than offset-based, so posts created
+ * mid-scroll can't cause skips — pass back the cursors from the previous
+ * response to continue.
  */
-export async function fetchHomescreenPosts(page = 1, perPage = 1) {
-  const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
-  return apiJson<{ posts: Array<{ post: PublicPost; author: PublicPostAuthor | null }> }>(
-    `/api/genie/homescreen-post?${params.toString()}`
-  );
+export async function fetchHomescreenPosts(options: {
+  followedBefore?: number;
+  newBefore?: number;
+  limit?: number;
+  userId?: number;
+} = {}) {
+  const { followedBefore, newBefore, limit, userId } = options;
+  const params = new URLSearchParams();
+  if (followedBefore != null) params.set("followed_before", String(followedBefore));
+  if (newBefore != null) params.set("new_before", String(newBefore));
+  if (limit != null) params.set("limit", String(limit));
+  if (userId != null) params.set("user_id", String(userId));
+  return apiJson<{
+    posts: Array<{ post: PublicPost; author: PublicPostAuthor | null; is_followed_producer?: boolean }>;
+    followed_before?: number;
+    new_before?: number;
+    has_more: boolean;
+  }>(`/api/genie/homescreen-post?${params.toString()}`);
 }
 
 export type ProducerNotifPrefs = {
