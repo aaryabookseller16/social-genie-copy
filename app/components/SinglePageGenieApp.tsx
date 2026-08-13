@@ -5811,8 +5811,12 @@ activeScreen === "vibbee-trial" ||
           <RoleIdentifierSection
             sectionRef={roleUnlockRef}
             visible={true}
-            onContinue={() => {
+            onContinue={(roles) => {
               // TODO: pending states (vendor claim, producer/influencer approval) come later
+              // Reflect the newly unlocked role(s) in account state immediately —
+              // otherwise the Role Switcher (fed by account?.roles) stays stale
+              // until the next login-triggered hydrateAuthenticatedSession().
+              setAccount((prev) => (prev ? { ...prev, roles } : prev));
               // goHome() → "homescreen" (the genie home feed), not "home" (the
               // chat/ask screen), and clears the unlock flow off the back stack.
               goHome();
