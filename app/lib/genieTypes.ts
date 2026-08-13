@@ -68,6 +68,8 @@ export type RawGenieVenue = {
     open_now?: boolean;
     weekday_text?: string[];
   } | null;
+  /** Whether the requesting user/session has saved this venue. False for guests with no session. */
+  is_saved?: boolean | null;
 };
 
 export type GenieVenue = Omit<RawGenieVenue, "latitude" | "longitude"> & {
@@ -105,11 +107,31 @@ export type RawGenieEvent = {
   user_rsvp_status?: "going" | "interested" | "saved" | null;
   category?: string;
   event_category?: string;
+  venue_id?: number | null;
   venue_address?: string;
   neighborhood?: string;
   city?: string;
   source_type?: string;
   discovery_source?: string[];
+};
+
+/** An influencer_offers row, as returned by ep_get_venue_offers_dev. */
+export type RawGenieOffer = {
+  id: number;
+  influencer_id: number;
+  venue_id?: number | null;
+  event_id?: number | null;
+  offer_title: string;
+  offer_description?: string;
+  offer_type: string;
+  discount_value?: string;
+  discount_type?: string | null;
+  unique_code?: string;
+  unique_url_slug?: string;
+  image_urls?: string[];
+  influencer_name?: string;
+  influencer_handle?: string;
+  influencer_profile_image_url?: string;
 };
 export type RawHandleMessageResponse = {
   reply?: string;

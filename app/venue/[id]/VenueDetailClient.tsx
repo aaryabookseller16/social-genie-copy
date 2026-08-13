@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { type GenieVenue } from "@/app/lib/genieTypes";
+import { type GenieVenue, type RawGenieOffer, type RawGenieEvent } from "@/app/lib/genieTypes";
 import { galleryFor } from "@/app/lib/image";
 import ImageGallery from "@/app/components/ImageGallery";
 import {
@@ -13,7 +13,16 @@ import {
   getOpenUntil,
 } from "@/app/components/single-page/ui";
 import { readAuthToken } from "@/app/lib/localState";
-import { checkInToVenue, checkOutOfVenue, fetchVenueCheckins } from "@/app/lib/publicApiClient";
+import {
+  checkInToVenue,
+  checkOutOfVenue,
+  fetchVenueCheckins,
+  fetchVenueOffers,
+  fetchVenueEvents,
+  logEventInteraction,
+} from "@/app/lib/publicApiClient";
+import { useVenueSave } from "@/app/lib/useVenueSave";
+import { EventDetailSection } from "@/app/components/event-detail/EventDetailSection";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -141,6 +150,45 @@ export function VenueDetailClient({ venue }: { venue: GenieVenue }) {
     window.open(mapsUrl, "_blank", "noopener,noreferrer");
   }, [mapsUrl]);
 
+  const goToLogin = useCallback(() => {
+    router.push(`/?screen=login&redirect=/venue/${venue.id}`);
+  }, [router, venue.id]);
+
+  const { isSaved, busy: saveBusy, toggleSave } = useVenueSave(
+    venue.id,
+    Boolean(raw.is_saved),
+    goToLogin
+  );
+
+  // ── Offers + Events (venue-scoped) ──────────────────────────────────────
+  const [offers, setOffers] = useState<RawGenieOffer[]>([]);
+  const [events, setEvents] = useState<RawGenieEvent[]>([]);
+  // In-app event detail overlay — same EventDetailSection component the home
+  // feed opens, swapped in place of the venue content rather than navigating
+  // to /events/[slug].
+  const [openEvent, setOpenEvent] = useState<RawGenieEvent | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchVenueOffers(venue.id).then((result) => {
+      if (!cancelled) setOffers(result);
+    }).catch(() => {});
+    void fetchVenueEvents(venue.id).then((result) => {
+      if (!cancelled) setEvents(result);
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [venue.id]);
+
+  const offerTypeLabels: Record<string, string> = {
+    happy_hour: "Happy Hour",
+    perk: "Perk",
+    brunch: "Brunch",
+    late_night: "Late Night",
+    discount: "Discount",
+  };
+
   const handleShare = useCallback(async () => {
     const url = `https://genie.socialbevy.com/venue/${venue.id}`;
     if (navigator.share) {
@@ -167,7 +215,16 @@ export function VenueDetailClient({ venue }: { venue: GenieVenue }) {
 
       {/* ── PHONE-FRAME COLUMN — matches SinglePageGenieApp's max-w-md container ── */}
       <div className="relative z-10 mx-auto flex w-full max-w-md flex-col gap-3 px-4 pb-8 pt-3">
-
+        {openEvent ? (
+          <EventDetailSection
+            eventId={Number(openEvent.id)}
+            initialData={openEvent as unknown as Record<string, unknown>}
+            onBack={() => setOpenEvent(null)}
+            onAuthRequired={() => router.push(`/?screen=login&redirect=/venue/${venue.id}`)}
+            logInteraction={logEventInteraction}
+          />
+        ) : (
+        <>
         {/* ── BACK ARROW ──────────────────────────────────────────────── */}
         <div className="flex items-center">
           <Link
@@ -183,6 +240,26 @@ export function VenueDetailClient({ venue }: { venue: GenieVenue }) {
 
         {/* ── HERO IMAGE — rounded card, same width as content ────────── */}
         <div className="relative h-56 w-full overflow-hidden rounded-[22px]">
+          <button
+            type="button"
+            disabled={saveBusy}
+            onClick={() => void toggleSave()}
+            aria-label={isSaved ? "Unsave venue" : "Save venue"}
+            aria-pressed={isSaved}
+            className="absolute right-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/35 backdrop-blur-sm transition disabled:opacity-60"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              className="h-[18px] w-[18px]"
+              fill={isSaved ? "#ef4444" : "none"}
+              stroke={isSaved ? "#ef4444" : "white"}
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+            </svg>
+          </button>
           {gallery.length > 1 ? (
             <ImageGallery
               images={gallery}
@@ -336,6 +413,90 @@ export function VenueDetailClient({ venue }: { venue: GenieVenue }) {
           </p>
         </div>
 
+        {/* ── OFFERS ───────────────────────────────────────────────────── */}
+        {offers.length > 0 ? (
+          <div>
+            <h3 className="mb-2 text-[1.05rem] font-semibold text-gray-900 dark:text-white">Offers</h3>
+            <div className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {offers.map((offer) => {
+                const label =
+                  offerTypeLabels[offer.offer_type] || offer.offer_type.replaceAll("_", " ");
+                const card = (
+                  <div className="h-[122px] w-52 flex-none snap-start overflow-hidden rounded-[18px] border border-[#E7070380] bg-white/90 p-3.5 transition hover:border-red-400 dark:bg-black/35">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="line-clamp-2 min-w-0 flex-1 text-[0.9rem] font-bold leading-snug text-red-500 dark:text-[#ff9d7d]">
+                        {offer.offer_title}
+                      </p>
+                      <span className="flex-none rounded-full bg-[#e8900a] px-2 py-1 text-[0.62rem] font-bold uppercase tracking-wide text-white">
+                        {label}
+                      </span>
+                    </div>
+                    {offer.offer_description ? (
+                      <p className="mt-2 line-clamp-2 text-[0.78rem] leading-5 text-gray-600 dark:text-white/72">
+                        {offer.offer_description}
+                      </p>
+                    ) : null}
+                  </div>
+                );
+                return offer.unique_url_slug ? (
+                  <Link key={offer.id} href={`/offers/${offer.unique_url_slug}`} className="flex-none">
+                    {card}
+                  </Link>
+                ) : (
+                  <div key={offer.id} className="flex-none">{card}</div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        {/* ── EVENTS ───────────────────────────────────────────────────── */}
+        {events.length > 0 ? (
+          <div>
+            <h3 className="mb-2 text-[1.05rem] font-semibold text-gray-900 dark:text-white">Events</h3>
+            <div className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {events.map((event) => {
+                const content = (
+                  <>
+                    <div className="relative h-24 w-36 overflow-hidden rounded-2xl">
+                      <Image
+                        src={event.cover_image_url || "/sample-venue-1.jpeg"}
+                        alt={event.title}
+                        fill
+                        className="object-cover"
+                        sizes="144px"
+                      />
+                    </div>
+                    <p className="mt-1.5 truncate text-[0.82rem] font-semibold text-gray-900 dark:text-white">
+                      {event.title}
+                    </p>
+                    <p className="truncate text-[0.74rem] text-red-500 dark:text-[#ff9d7d]">
+                      {event.event_date
+                        ? new Date(event.event_date).toLocaleDateString("en-US", {
+                            weekday: "long",
+                            month: "short",
+                            day: "numeric",
+                          })
+                        : ""}
+                      {event.start_time ? `, ${event.start_time.slice(0, 5)}` : ""}
+                    </p>
+                  </>
+                );
+                return (
+                  <button
+                    key={event.id}
+                    type="button"
+                    onClick={() => setOpenEvent(event)}
+                    className="h-[136px] w-36 flex-none snap-start overflow-hidden text-left"
+                  >
+                    {content}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
         {/* ── MAP + ADDRESS ────────────────────────────────────────────── */}
         <div className="overflow-hidden rounded-[20px] border border-gray-100 bg-white/90 shadow-sm dark:border-white/10 dark:bg-black/25">
           <iframe
@@ -374,7 +535,8 @@ export function VenueDetailClient({ venue }: { venue: GenieVenue }) {
             {venue.website_url.replace(/^https?:\/\//, "").replace(/\/$/, "")}
           </a>
         ) : null}
-
+        </>
+        )}
       </div>
     </main>
   );

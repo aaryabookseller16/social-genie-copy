@@ -18,13 +18,22 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "id is required" }, { status: 400 });
   }
 
+  // Optional — resolves venue.is_saved for the caller. Omitted for guests
+  // with no session yet.
+  const userId = request.nextUrl.searchParams.get("user_id");
+  const sessionId = request.nextUrl.searchParams.get("session_id");
+
   try {
     const response = await xanoFetch<{
       venue?: RawGenieVenue;
       success?: boolean;
       error?: string | null;
     }>("genie/ep_get_venue_dev", {
-      params: { venue_id: venueId },
+      params: {
+        venue_id: venueId,
+        ...(userId ? { user_id: userId } : {}),
+        ...(sessionId ? { session_id: sessionId } : {}),
+      },
     });
 
     if (response.venue) {
