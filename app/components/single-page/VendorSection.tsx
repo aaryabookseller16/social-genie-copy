@@ -6,6 +6,7 @@ import {
   type RefObject,
   useCallback,
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -18,6 +19,13 @@ import {
   createSubscriptionCheckout,
   createVendorBusiness,
   createVendorOffer,
+  createProducerEvent,
+  createProducerPost,
+  cancelProducerEvent,
+  updateProducerPost,
+  deleteProducerPost,
+  fetchMyEvents,
+  fetchMyPosts,
   fetchMyVendorProfile,
   fetchVendorAnalytics,
   fetchVendorDashboard,
@@ -39,6 +47,9 @@ import {
   type VendorInfluencerCode,
   type VendorAnalyticsTotals,
   type VendorAnalyticsDailyRecord,
+  type ProducerEvent,
+  type ProducerPost,
+  type VideoItem,
 } from "@/app/lib/publicApiClient";
 import { readExternalUserId } from "@/app/lib/sessionToken";
 import {
@@ -46,8 +57,10 @@ import {
   writeVendorDraft,
   clearVendorDraft,
 } from "@/app/lib/vendorOnboarding";
+import { galleryFor } from "@/app/lib/image";
 
 import ImageUploader from "@/app/components/ImageUploader";
+import VideoUploader, { type VideoSlotValue } from "@/app/components/VideoUploader";
 import { ActionButton } from "./ui";
 
 /* ------------------------------------------------------------------ */
@@ -95,7 +108,10 @@ type VendorStep =
   | "create-offer"
   | "boost"
   | "influencer-codes"
-  | "settings";
+  | "settings"
+  | "my-content"
+  | "create-event"
+  | "create-post";
 
 type VendorContactState = {
   firstName: string;
@@ -208,6 +224,40 @@ type FullDashboardData = {
 
 function isEmailValid(value: string) {
   return /\S+@\S+\.\S+/.test(value);
+}
+
+const EVENT_CATEGORIES = [
+  "Concert",
+  "Club Night",
+  "Comedy",
+  "Art & Culture",
+  "Sports",
+  "Food & Drink",
+  "Festival",
+  "Networking",
+  "Private Event",
+  "Other",
+];
+
+function formatEventTime(t: string): string {
+  const [h, m] = t.split(":").map(Number);
+  const ampm = h >= 12 ? "PM" : "AM";
+  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+
+function formatEventTimeRange(start?: string, end?: string): string {
+  if (!start && !end) return "";
+  if (start && end) return `${formatEventTime(start)} – ${formatEventTime(end)}`;
+  return start ? formatEventTime(start) : end ? formatEventTime(end) : "";
+}
+
+function formatEventDateLabel(dateStr?: string): string {
+  if (!dateStr) return "";
+  const [y, mo, d] = dateStr.split("-").map(Number);
+  const dt = new Date(y, mo - 1, d);
+  return dt.toLocaleDateString("en-US", {
+    weekday: "short", day: "numeric", month: "short", year: "numeric",
+  });
 }
 
 // Xano tag fields come back as arrays, objects keyed by tag, or strings.
@@ -664,6 +714,48 @@ export function VendorSection({
   const [dashboardData, setDashboardData] =
     useState<FullDashboardData | null>(null);
   const [isDashboardLoading, setIsDashboardLoading] = useState(false);
+
+  /* ---- Venue's own events + posts (acting_as: "venue") ---- */
+  const [vendorEvents, setVendorEvents] = useState<ProducerEvent[]>([]);
+  const [vendorEventsLoading, setVendorEventsLoading] = useState(false);
+  const [vendorPosts, setVendorPosts] = useState<ProducerPost[]>([]);
+  const [vendorPostsLoading, setVendorPostsLoading] = useState(false);
+  const [contentTab, setContentTab] = useState<"events" | "posts">("events");
+  const [contentMessage, setContentMessage] = useState<string | null>(null);
+  const [eventActionBusyId, setEventActionBusyId] = useState<number | null>(null);
+
+  /* create/edit-event form state */
+  const [evTitle, setEvTitle] = useState("");
+  const [evCategory, setEvCategory] = useState("");
+  const [evDescription, setEvDescription] = useState("");
+  const [evDate, setEvDate] = useState("");
+  const [evStartTime, setEvStartTime] = useState("");
+  const [evEndTime, setEvEndTime] = useState("");
+  const [evFree, setEvFree] = useState(false);
+  const [evTicketPrice, setEvTicketPrice] = useState("");
+  const [evTicketUrl, setEvTicketUrl] = useState("");
+  /** Ordered event gallery; index 0 is the cover. Capped at 5 by Xano. */
+  const [evImageUrls, setEvImageUrls] = useState<string[]>([]);
+  const [evUploading, setEvUploading] = useState(false);
+  /** Separate video list; combined count with evImageUrls is capped at 5 by Xano. */
+  const [evVideos, setEvVideos] = useState<VideoSlotValue[]>([]);
+  const [evVideoUploading, setEvVideoUploading] = useState(false);
+  const [evRsvpLimit, setEvRsvpLimit] = useState("");
+  const [evAgeReq, setEvAgeReq] = useState("");
+  const [evBusy, setEvBusy] = useState(false);
+  const [evError, setEvError] = useState<string | null>(null);
+  const editingEventId = useRef<number | null>(null);
+
+  /* create/edit-post form state */
+  const [postText, setPostText] = useState("");
+  const [postImageUrls, setPostImageUrls] = useState<string[]>([]);
+  const [postShowImageInput, setPostShowImageInput] = useState(false);
+  const [postUploading, setPostUploading] = useState(false);
+  const [postVideos, setPostVideos] = useState<VideoSlotValue[]>([]);
+  const [postVideoUploading, setPostVideoUploading] = useState(false);
+  const [postBusy, setPostBusy] = useState(false);
+  const [postError, setPostError] = useState<string | null>(null);
+  const editingPostId = useRef<number | null>(null);
   const [profileForm, setProfileForm] = useState({
     description: "",
     phone: "",
@@ -768,6 +860,9 @@ export function VendorSection({
     boost: 4,
     "influencer-codes": 4,
     settings: 4,
+    "my-content": 4,
+    "create-event": 4,
+    "create-post": 4,
   };
 
   // Gate check — runs once when the section becomes visible.
@@ -1072,10 +1167,39 @@ export function VendorSection({
     }
   }, []);
 
+  /* ---- Venue's own events + posts (acting_as: "venue") ---- */
+  const refreshVendorEvents = useCallback(async () => {
+    setVendorEventsLoading(true);
+    try {
+      const data = await fetchMyEvents(1, 50, "venue");
+      setVendorEvents(Array.isArray(data.events) ? data.events : []);
+    } catch {
+      /* non-fatal — keep existing list */
+    } finally {
+      setVendorEventsLoading(false);
+    }
+  }, []);
+
+  const refreshVendorPosts = useCallback(async () => {
+    setVendorPostsLoading(true);
+    try {
+      const data = await fetchMyPosts(1, 50, "venue");
+      setVendorPosts(Array.isArray(data.posts) ? data.posts : []);
+    } catch {
+      /* non-fatal — keep existing list */
+    } finally {
+      setVendorPostsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!visible || step !== "dashboard") return;
     void loadDashboard();
-  }, [visible, step, loadDashboard]);
+    // Counts for the "Events & Posts" dashboard card — fetched here so it's
+    // accurate on first load, not just after visiting "My Events & Posts".
+    void refreshVendorEvents();
+    void refreshVendorPosts();
+  }, [visible, step, loadDashboard, refreshVendorEvents, refreshVendorPosts]);
 
   // ── Influencer offer review queue (venue owner) ────────────────────────────
 
@@ -1253,12 +1377,17 @@ export function VendorSection({
       case "create-offer":
         setStep("offers");
         break;
+      case "create-event":
+      case "create-post":
+        setStep("my-content");
+        break;
       case "profile":
       case "analytics":
       case "offers":
       case "boost":
       case "influencer-codes":
       case "settings":
+      case "my-content":
         setStep("dashboard");
         break;
       case "finding":
@@ -1642,6 +1771,170 @@ export function VendorSection({
     }
   };
 
+  function openMyContent() {
+    setContentMessage(null);
+    setStep("my-content");
+    void refreshVendorEvents();
+    void refreshVendorPosts();
+  }
+
+  function openCreateEvent() {
+    editingEventId.current = null;
+    setEvTitle(""); setEvCategory(""); setEvDescription(""); setEvDate("");
+    setEvStartTime(""); setEvEndTime("");
+    setEvFree(false); setEvTicketPrice(""); setEvTicketUrl("");
+    setEvImageUrls([]); setEvUploading(false);
+    setEvVideos([]); setEvVideoUploading(false);
+    setEvRsvpLimit(""); setEvAgeReq(""); setEvError(null);
+    setStep("create-event");
+  }
+
+  function openEditEvent(ev: ProducerEvent) {
+    editingEventId.current = ev.id;
+    setEvTitle(ev.title ?? "");
+    setEvCategory(ev.category ?? "");
+    setEvDescription(ev.description ?? "");
+    setEvDate(ev.event_date ?? "");
+    setEvStartTime(ev.start_time ?? "");
+    setEvEndTime(ev.end_time ?? "");
+    setEvFree(ev.is_free ?? false);
+    setEvTicketPrice(ev.ticket_price_min !== undefined ? String(ev.ticket_price_min) : "");
+    setEvTicketUrl(ev.ticket_url ?? "");
+    setEvImageUrls(galleryFor(ev.cover_image_url, ev.image_urls));
+    setEvUploading(false);
+    setEvVideos([]);
+    setEvVideoUploading(false);
+    setEvRsvpLimit(ev.rsvp_limit !== undefined ? String(ev.rsvp_limit) : "");
+    // age_requirement is an int column (e.g. 18), not a string — must stringify
+    // or the later evAgeReq.trim() in handleVendorEventSubmit throws.
+    setEvAgeReq(ev.age_requirement !== undefined ? String(ev.age_requirement) : "");
+    setEvError(null);
+    setStep("create-event");
+  }
+
+  function openCreatePost() {
+    editingPostId.current = null;
+    setPostText(""); setPostImageUrls([]); setPostShowImageInput(false);
+    setPostUploading(false);
+    setPostVideos([]); setPostVideoUploading(false);
+    setPostError(null);
+    setStep("create-post");
+  }
+
+  function openEditPost(p: ProducerPost) {
+    editingPostId.current = p.id;
+    setPostText(p.post_text ?? "");
+    setPostImageUrls(galleryFor(p.image_url, p.image_urls));
+    setPostShowImageInput((p.image_urls?.length ?? 0) > 0);
+    setPostUploading(false);
+    setPostVideos([]);
+    setPostVideoUploading(false);
+    setPostError(null);
+    setStep("create-post");
+  }
+
+  async function handleVendorEventSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!evTitle.trim()) { setEvError("Event title is required."); return; }
+    if (!evCategory) { setEvError("Please select a category."); return; }
+    if (evUploading || evVideoUploading) { setEvError("Please wait for your photos and videos to finish uploading."); return; }
+    setEvBusy(true);
+    setEvError(null);
+    try {
+      const videoUrls: VideoItem[] = evVideos.map((v) => ({ url: v.url, thumbnail_url: v.thumbnailUrl }));
+      await createProducerEvent({
+        title: evTitle.trim(),
+        category: evCategory,
+        description: evDescription.trim() || undefined,
+        event_date: evDate || undefined,
+        start_time: evStartTime || undefined,
+        end_time: evEndTime || undefined,
+        is_free: evFree,
+        ticket_price_min: evTicketPrice ? Number(evTicketPrice) : undefined,
+        ticket_url: evTicketUrl.trim() || undefined,
+        cover_image_url: evImageUrls[0] || undefined,
+        image_urls: evImageUrls,
+        video_urls: videoUrls.length > 0 ? videoUrls : undefined,
+        rsvp_limit: evRsvpLimit ? Number(evRsvpLimit) : undefined,
+        age_requirement: evAgeReq.trim() || undefined,
+        event_id: editingEventId.current ?? undefined,
+        acting_as: "venue",
+      });
+      setContentMessage(editingEventId.current ? "Event updated." : "Event created.");
+      setStep("my-content");
+      setContentTab("events");
+      void refreshVendorEvents();
+    } catch (err) {
+      setEvError(err instanceof Error ? err.message : "Could not save event. Please try again.");
+    } finally {
+      setEvBusy(false);
+    }
+  }
+
+  async function handleVendorPostSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!postText.trim()) { setPostError("Post text is required."); return; }
+    if (postUploading || postVideoUploading) { setPostError("Please wait for your photos and videos to finish uploading."); return; }
+    setPostBusy(true);
+    setPostError(null);
+    try {
+      const postVideoUrls: VideoItem[] = postVideos.map((v) => ({ url: v.url, thumbnail_url: v.thumbnailUrl }));
+      if (editingPostId.current) {
+        await updateProducerPost({
+          post_id: editingPostId.current,
+          post_text: postText.trim(),
+          image_url: postImageUrls[0] || undefined,
+          image_urls: postImageUrls,
+          video_urls: postVideoUrls.length > 0 ? postVideoUrls : undefined,
+          acting_as: "venue",
+        });
+      } else {
+        await createProducerPost({
+          post_text: postText.trim(),
+          image_url: postImageUrls[0] || undefined,
+          image_urls: postImageUrls,
+          video_urls: postVideoUrls.length > 0 ? postVideoUrls : undefined,
+          acting_as: "venue",
+        });
+      }
+      setContentMessage(editingPostId.current ? "Post updated." : "Post published.");
+      setStep("my-content");
+      setContentTab("posts");
+      void refreshVendorPosts();
+    } catch (err) {
+      setPostError(err instanceof Error ? err.message : "Could not save post. Please try again.");
+    } finally {
+      setPostBusy(false);
+    }
+  }
+
+  async function handleVendorPostDelete(postId: number) {
+    setContentMessage(null);
+    try {
+      await deleteProducerPost(postId, "venue");
+      setVendorPosts((prev) => prev.filter((p) => p.id !== postId));
+      setContentMessage("Post deleted.");
+    } catch (err) {
+      setContentMessage(err instanceof Error ? err.message : "Could not delete post.");
+    }
+  }
+
+  async function handleVendorEventCancel(eventId: number) {
+    setContentMessage(null);
+    setEventActionBusyId(eventId);
+    try {
+      await cancelProducerEvent(eventId, "venue");
+      setVendorEvents((prev) =>
+        prev.map((e) => (e.id === eventId ? { ...e, status: "cancelled" } : e))
+      );
+      setContentMessage("Event cancelled.");
+    } catch (err) {
+      setContentMessage(err instanceof Error ? err.message : "Could not cancel event.");
+    } finally {
+      setEventActionBusyId(null);
+    }
+  }
+
   const stepTitle: Record<VendorStep, string> = {
     loading: "",
     claim:
@@ -1668,6 +1961,9 @@ export function VendorSection({
     boost: "Boost Your Listing",
     "influencer-codes": "Influencer Codes",
     settings: "Settings",
+    "my-content": "Events & Posts",
+    "create-event": editingEventId.current ? "Edit Event" : "Create Event",
+    "create-post": editingPostId.current ? "Edit Post" : "Create Post",
   };
 
   const isPro = Boolean(dashboardData?.is_pro);
@@ -2408,6 +2704,28 @@ export function VendorSection({
                       );
                     })()}
                   </div>
+
+                  {/* ── Events & Posts (venue owner's own — acting_as: "venue") ── */}
+                  <button
+                    type="button"
+                    onClick={openMyContent}
+                    disabled={!isClaimed}
+                    className="flex w-full items-center justify-between rounded-2xl border border-[#E7070380] bg-white/5 px-5 py-4 text-left transition hover:bg-white/10 disabled:opacity-50 dark:bg-black/25 dark:hover:bg-black/35"
+                  >
+                    <div>
+                      <p className="text-[1rem] font-semibold text-gray-900 dark:text-white">
+                        Events & Posts
+                      </p>
+                      <p className="mt-0.5 text-[0.78rem] text-gray-500 dark:text-white/55">
+                        {!isClaimed
+                          ? "Claim your venue to create events and posts."
+                          : `${vendorEvents.length} events · ${vendorPosts.length} posts`}
+                      </p>
+                    </div>
+                    <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 flex-none text-gray-400 dark:text-white/40">
+                      <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+                    </svg>
+                  </button>
 
                   {/* ── Business Details ── */}
                   <div className="rounded-2xl border border-[#E7070380] bg-white/5 px-5 dark:bg-black/25">
@@ -3167,6 +3485,337 @@ export function VendorSection({
               {offerMessage}
             </div>
           )}
+        </form>
+      )}
+
+      {/* ======== STEP: MY CONTENT (events + posts, acting_as: "venue") ======== */}
+      {step === "my-content" && (
+        <div className="mt-2 space-y-4 pb-28">
+          <div className="flex gap-2 rounded-2xl border border-[#E7070380] bg-white/5 p-1 dark:bg-black/25">
+            {(["events", "posts"] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setContentTab(tab)}
+                className={`flex-1 rounded-xl py-2 text-[0.85rem] font-semibold capitalize transition ${
+                  contentTab === tab
+                    ? "bg-red-600 text-white"
+                    : "text-gray-500 dark:text-white/55"
+                }`}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+
+          <ActionButton
+            onClick={contentTab === "events" ? openCreateEvent : openCreatePost}
+            className="w-full"
+          >
+            + {contentTab === "events" ? "Create Event" : "Create Post"}
+          </ActionButton>
+
+          {contentMessage && (
+            <p className="text-center text-sm text-gray-500 dark:text-white/55">
+              {contentMessage}
+            </p>
+          )}
+
+          {contentTab === "events" ? (
+            vendorEventsLoading ? (
+              <p className="py-8 text-center text-[0.85rem] text-gray-400 dark:text-white/50">
+                Loading your events…
+              </p>
+            ) : vendorEvents.length === 0 ? (
+              <p className="py-8 text-center text-[0.85rem] text-gray-400 dark:text-white/50">
+                No events yet. Create your first one.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {vendorEvents.map((ev) => {
+                  const isCancelled = ev.status === "cancelled";
+                  return (
+                    <div
+                      key={ev.id}
+                      className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-3.5 dark:bg-black/25"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-[0.9rem] font-semibold text-gray-900 dark:text-white">
+                          {ev.title}
+                          {isCancelled ? (
+                            <span className="ml-2 text-[0.72rem] font-normal text-gray-400 dark:text-white/40">
+                              Cancelled
+                            </span>
+                          ) : null}
+                        </p>
+                        <p className="mt-0.5 text-[0.78rem] text-gray-500 dark:text-white/55">
+                          {[formatEventDateLabel(ev.event_date), formatEventTimeRange(ev.start_time, ev.end_time)]
+                            .filter(Boolean)
+                            .join(" · ") || ev.category}
+                        </p>
+                      </div>
+                      <div className="mt-2 flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => openEditEvent(ev)}
+                          className="text-[0.78rem] font-semibold text-red-600 dark:text-red-400"
+                        >
+                          Edit
+                        </button>
+                        {!isCancelled ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleVendorEventCancel(ev.id)}
+                            disabled={eventActionBusyId === ev.id}
+                            className="text-[0.78rem] font-semibold text-gray-500 dark:text-white/50 disabled:opacity-50"
+                          >
+                            {eventActionBusyId === ev.id ? "Cancelling…" : "Cancel"}
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )
+          ) : vendorPostsLoading ? (
+            <p className="py-8 text-center text-[0.85rem] text-gray-400 dark:text-white/50">
+              Loading your posts…
+            </p>
+          ) : vendorPosts.length === 0 ? (
+            <p className="py-8 text-center text-[0.85rem] text-gray-400 dark:text-white/50">
+              No posts yet. Share your first one.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {vendorPosts.map((p) => (
+                <div
+                  key={p.id}
+                  className="rounded-2xl border border-[#E7070380] bg-white/5 px-4 py-3.5 dark:bg-black/25"
+                >
+                  <p className="line-clamp-2 text-[0.88rem] text-gray-900 dark:text-white">
+                    {p.post_text}
+                  </p>
+                  <div className="mt-2 flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => openEditPost(p)}
+                      className="text-[0.78rem] font-semibold text-red-600 dark:text-red-400"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleVendorPostDelete(p.id)}
+                      className="text-[0.78rem] font-semibold text-gray-500 dark:text-white/50"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ======== STEP: CREATE / EDIT EVENT (venue owner — acting_as: "venue") ======== */}
+      {step === "create-event" && (
+        <form onSubmit={(e) => void handleVendorEventSubmit(e)} className="mt-2 space-y-4 pb-28">
+          <VendorInput
+            label="Event title *"
+            value={evTitle}
+            placeholder="e.g. Live Music Friday"
+            onChange={setEvTitle}
+          />
+
+          <div>
+            <label className="mb-1.5 block text-[13px] font-medium text-gray-500 dark:text-white/55">
+              Category *
+            </label>
+            <select
+              value={evCategory}
+              onChange={(e) => setEvCategory(e.target.value)}
+              className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3.5 text-[15px] text-gray-900 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:focus:border-[#ff6a6a]"
+            >
+              <option value="">Select a category…</option>
+              {EVENT_CATEGORIES.map((cat) => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-[13px] font-medium text-gray-500 dark:text-white/55">
+              Description
+            </label>
+            <textarea
+              value={evDescription}
+              onChange={(e) => setEvDescription(e.target.value)}
+              placeholder="Describe your event…"
+              rows={3}
+              className="w-full resize-none rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-[15px] text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <VendorInput label="Date" type="date" value={evDate} placeholder="" onChange={setEvDate} />
+            <VendorInput label="Start time" type="time" value={evStartTime} placeholder="" onChange={setEvStartTime} />
+          </div>
+
+          <VendorInput label="End time" type="time" value={evEndTime} placeholder="" onChange={setEvEndTime} />
+
+          <div className="flex items-center gap-3 rounded-2xl border border-gray-200 px-4 py-3 dark:border-white/15">
+            <input
+              id="vev-free"
+              type="checkbox"
+              checked={evFree}
+              onChange={(e) => setEvFree(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 accent-red-600"
+            />
+            <label htmlFor="vev-free" className="text-sm text-gray-700 dark:text-white/80">
+              This is a free event
+            </label>
+          </div>
+
+          {!evFree ? (
+            <VendorInput
+              label="Minimum ticket price ($)"
+              type="number"
+              value={evTicketPrice}
+              placeholder="e.g. 25"
+              onChange={setEvTicketPrice}
+            />
+          ) : null}
+
+          <VendorInput
+            label="Ticket / RSVP link"
+            type="url"
+            value={evTicketUrl}
+            placeholder="https://…"
+            onChange={setEvTicketUrl}
+          />
+
+          <div>
+            <label className="mb-1.5 block text-[13px] font-medium text-gray-500 dark:text-white/55">
+              Photos
+            </label>
+            <ImageUploader
+              mode="multi"
+              max={Math.max(0, 5 - evVideos.length)}
+              folder="events"
+              value={evImageUrls}
+              onChange={setEvImageUrls}
+              onUploadingChange={setEvUploading}
+            />
+            <p className="mt-1.5 text-[11px] text-gray-400 dark:text-white/40">
+              Up to 5 photos and videos combined. The first one is used as the event cover.
+            </p>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-[13px] font-medium text-gray-500 dark:text-white/55">
+              Videos
+            </label>
+            <VideoUploader
+              value={evVideos}
+              onChange={setEvVideos}
+              folder="events"
+              max={Math.max(0, 5 - evImageUrls.length)}
+              onUploadingChange={setEvVideoUploading}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <VendorInput
+              label="RSVP limit"
+              type="number"
+              value={evRsvpLimit}
+              placeholder="Optional"
+              onChange={setEvRsvpLimit}
+            />
+            <VendorInput
+              label="Age requirement"
+              value={evAgeReq}
+              placeholder="e.g. 21+"
+              onChange={setEvAgeReq}
+            />
+          </div>
+
+          {evError ? <p className="text-sm text-red-500">{evError}</p> : null}
+
+          <ActionButton
+            type="submit"
+            className="w-full"
+            disabled={evBusy || evUploading || evVideoUploading}
+          >
+            {evUploading || evVideoUploading
+              ? "Uploading…"
+              : evBusy
+                ? "Saving…"
+                : editingEventId.current
+                  ? "Save changes"
+                  : "Create event"}
+          </ActionButton>
+        </form>
+      )}
+
+      {/* ======== STEP: CREATE / EDIT POST (venue owner — acting_as: "venue") ======== */}
+      {step === "create-post" && (
+        <form onSubmit={(e) => void handleVendorPostSubmit(e)} className="mt-2 space-y-4 pb-28">
+          <textarea
+            value={postText}
+            onChange={(e) => setPostText(e.target.value)}
+            placeholder="What's happening at your venue?"
+            rows={6}
+            className="w-full resize-none rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4 text-[15px] text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
+            autoFocus
+          />
+
+          {postShowImageInput || postImageUrls.length > 0 ? (
+            <ImageUploader
+              mode="multi"
+              max={Math.max(0, 5 - postVideos.length)}
+              folder="posts"
+              value={postImageUrls}
+              onChange={setPostImageUrls}
+              onUploadingChange={setPostUploading}
+            />
+          ) : null}
+
+          {postShowImageInput || postVideos.length > 0 ? (
+            <VideoUploader
+              value={postVideos}
+              onChange={setPostVideos}
+              folder="posts"
+              max={Math.max(0, 5 - postImageUrls.length)}
+              onUploadingChange={setPostVideoUploading}
+            />
+          ) : null}
+
+          <button
+            type="button"
+            onClick={() => setPostShowImageInput((v) => !v)}
+            className="text-[0.82rem] font-semibold text-red-600 dark:text-red-400"
+          >
+            {postShowImageInput ? "Hide photo/video" : "+ Add photo or video"}
+          </button>
+
+          {postError ? <p className="text-sm text-red-500">{postError}</p> : null}
+
+          <ActionButton
+            type="submit"
+            className="w-full"
+            disabled={postBusy || postUploading || postVideoUploading || !postText.trim()}
+          >
+            {postUploading || postVideoUploading
+              ? "Uploading…"
+              : postBusy
+                ? "Saving…"
+                : editingPostId.current
+                  ? "Save changes"
+                  : "Post It"}
+          </ActionButton>
         </form>
       )}
 

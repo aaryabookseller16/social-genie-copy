@@ -1961,13 +1961,16 @@ export type ProducerEvent = {
   ticket_url?: string;
   ticket_price_min?: number;
   is_free?: boolean;
-  age_requirement?: string;
+  /** An int column in Xano (e.g. 18), despite the name suggesting free text. */
+  age_requirement?: number;
   rsvp_limit?: number;
   rsvp_count?: number;
   going_count?: number;
   created_at?: number;
   /** Powers the public event microsite at /events/{slug}. May be empty for older rows. */
   public_slug?: string;
+  /** e.g. "active", "cancelled". */
+  status?: string;
 };
 
 export type ProducerPost = {
@@ -2022,15 +2025,17 @@ export async function fetchMyProducerProfile() {
   return apiJson<{ profile: ProducerProfile | null }>(`/api/producer/profile`);
 }
 
-export async function fetchMyEvents(page = 1, perPage = 20) {
+export async function fetchMyEvents(page = 1, perPage = 20, actingAs?: "venue") {
+  const acting = actingAs ? `&acting_as=${actingAs}` : "";
   return apiJson<{ success: boolean; events: ProducerEvent[]; total: number }>(
-    `/api/producer/events?page=${page}&per_page=${perPage}`
+    `/api/producer/events?page=${page}&per_page=${perPage}${acting}`
   );
 }
 
-export async function fetchMyPosts(page = 1, perPage = 20) {
+export async function fetchMyPosts(page = 1, perPage = 20, actingAs?: "venue") {
+  const acting = actingAs ? `&acting_as=${actingAs}` : "";
   return apiJson<{ success: boolean; posts: ProducerPost[]; total: number }>(
-    `/api/producer/post?page=${page}&per_page=${perPage}`
+    `/api/producer/post?page=${page}&per_page=${perPage}${acting}`
   );
 }
 
@@ -2068,10 +2073,27 @@ export async function createProducerEvent(payload: {
   age_requirement?: string;
   rsvp_limit?: number;
   event_id?: number;
+  // "venue" when creating/editing from the venue-owner dashboard, for its own
+  // venue. Omit for the producer dashboard (defaults to producer server-side).
+  acting_as?: "venue";
 }) {
   return apiJson<ProducerEvent>("/api/producer/event", {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+/** Owner-only: sets an event's status to "cancelled". No hard-delete exists for
+ * events anywhere in this Xano workspace, for either role — this is the closest
+ * available action. */
+export async function cancelProducerEvent(eventId: number, actingAs?: "venue") {
+  return apiJson<ProducerEvent>("/api/producer/event", {
+    method: "POST",
+    body: JSON.stringify({
+      event_id: eventId,
+      status: "cancelled",
+      acting_as: actingAs,
+    }),
   });
 }
 
@@ -2096,11 +2118,36 @@ export async function createProducerPost(payload: {
   image_url?: string;
   image_urls?: string[];
   video_urls?: VideoItem[];
+  // "venue" when posting from the venue-owner dashboard, for its own venue.
+  // Omit for the producer dashboard (defaults to producer server-side).
+  acting_as?: "venue";
 }) {
   return apiJson<ProducerPost>("/api/producer/post", {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export async function updateProducerPost(payload: {
+  post_id: number;
+  post_text?: string;
+  image_url?: string;
+  image_urls?: string[];
+  video_urls?: VideoItem[];
+  acting_as?: "venue";
+}) {
+  return apiJson<ProducerPost>("/api/producer/post", {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteProducerPost(postId: number, actingAs?: "venue") {
+  const acting = actingAs ? `&acting_as=${actingAs}` : "";
+  return apiJson<{ success: boolean; post_id: number }>(
+    `/api/producer/post?post_id=${postId}${acting}`,
+    { method: "DELETE" }
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -2112,6 +2159,9 @@ export type PublicPostAuthor = {
   display_name?: string;
   profile_photo_url?: string;
   is_verified?: boolean;
+  /** Set only for a venue author — the genie_venues.id to link to (/venue/{id}),
+   * distinct from PublicPost.author_id (which is the genie_vendor.id). */
+  venue_id?: number;
 };
 
 export type PublicPost = {

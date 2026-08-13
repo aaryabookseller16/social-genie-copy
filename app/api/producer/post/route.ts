@@ -11,10 +11,14 @@ export async function GET(request: NextRequest) {
     const authToken = extractBearerToken(request);
     const page = request.nextUrl.searchParams.get("page") ?? "1";
     const perPage = request.nextUrl.searchParams.get("per_page") ?? "20";
+    const actingAs = request.nextUrl.searchParams.get("acting_as");
+
+    const params: Record<string, string> = { page, per_page: perPage };
+    if (actingAs === "venue") params.acting_as = "venue";
 
     const result = await xanoFetch("genie/ep_get_my_posts_dev", {
       authToken,
-      params: { page, per_page: perPage },
+      params,
     });
 
     return NextResponse.json(result);
@@ -76,6 +80,7 @@ export async function POST(request: NextRequest) {
         image_url: String(body.image_url ?? "").trim() || undefined,
         image_urls: imageUrls,
         video_urls: videoUrls && videoUrls.length > 0 ? videoUrls : undefined,
+        acting_as: body.acting_as === "venue" ? "venue" : undefined,
       },
     });
 
@@ -104,6 +109,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const payload: Record<string, unknown> = { post_id: postId };
+    if (body.acting_as === "venue") payload.acting_as = "venue";
     if (body.post_text !== undefined) payload.post_text = String(body.post_text).trim();
     if (body.image_url !== undefined) payload.image_url = String(body.image_url).trim();
 
@@ -147,6 +153,7 @@ export async function DELETE(request: NextRequest) {
   try {
     const authToken = extractBearerToken(request);
     const postId = Number(request.nextUrl.searchParams.get("post_id"));
+    const actingAs = request.nextUrl.searchParams.get("acting_as");
     if (!postId) {
       return NextResponse.json({ error: "post_id is required" }, { status: 400 });
     }
@@ -154,7 +161,10 @@ export async function DELETE(request: NextRequest) {
     const result = await xanoFetch("genie/ep_delete_post_dev", {
       method: "POST",
       authToken,
-      body: { post_id: postId },
+      body: {
+        post_id: postId,
+        acting_as: actingAs === "venue" ? "venue" : undefined,
+      },
     });
 
     return NextResponse.json(result);

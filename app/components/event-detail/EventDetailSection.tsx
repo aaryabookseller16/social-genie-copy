@@ -471,6 +471,12 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
   const category   = (ev.category as string) || (ev.event_category as string) || "";
   const producer   = ev.producer as { id?: number; name?: string; image_url?: string; event_count?: number; is_verified?: boolean; is_following?: boolean } | undefined;
   const producerId = producer?.id ?? (ev.producer_id as number | undefined);
+  // Venue-authored events (created_by_type === "venue") have no producer at all —
+  // the host card below sources from the venue instead, same slot, no follow button
+  // since venues aren't followable yet.
+  const isVenueAuthored = ev.created_by_type === "venue";
+  const venueHostName = typeof venueRecord?.venue_name === "string" ? venueRecord.venue_name : "";
+  const venueHostId = typeof venueRecord?.id === "number" ? venueRecord.id : undefined;
   const ticketUrl  = ev.ticket_url as string | undefined;
   const isFree     = ev.is_free === true;
   const ticketHref = ticketUrl || (ev.public_slug ? `/events/${ev.public_slug as string}` : null);
@@ -848,7 +854,7 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
         </div>
 
         {/* ── Event Producers ── */}
-        {producer?.name ? (
+        {producer?.name && !isVenueAuthored ? (
           <div>
             <h3 className="mb-3 text-[1rem] font-semibold text-gray-900 dark:text-white">Event Producers</h3>
             <div className="flex items-center gap-3">
@@ -910,6 +916,45 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
                     {producer.event_count} upcoming event{producer.event_count === 1 ? "" : "s"}
                   </p>
                 ) : null}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {/* ── Hosted by (venue-authored events — same card slot, sourced from the venue) ── */}
+        {isVenueAuthored && venueHostName ? (
+          <div>
+            <h3 className="mb-3 text-[1rem] font-semibold text-gray-900 dark:text-white">Hosted By</h3>
+            <div className="flex items-center gap-3">
+              {venueHostId ? (
+                <a href={`/venue/${venueHostId}`} aria-label={`View ${venueHostName} profile`} className="flex h-12 w-12 flex-none items-center justify-center overflow-hidden rounded-full border border-gray-200 bg-white/90 dark:border-white/10 dark:bg-black/40">
+                  <div className="flex h-12 w-12 items-center justify-center bg-red-900/50 text-[0.7rem] font-bold text-white/70">
+                    {venueHostName.slice(0, 2).toUpperCase()}
+                  </div>
+                </a>
+              ) : (
+                <div className="flex h-12 w-12 flex-none items-center justify-center overflow-hidden rounded-full border border-gray-200 bg-white/90 dark:border-white/10 dark:bg-black/40">
+                  <div className="flex h-12 w-12 items-center justify-center bg-red-900/50 text-[0.7rem] font-bold text-white/70">
+                    {venueHostName.slice(0, 2).toUpperCase()}
+                  </div>
+                </div>
+              )}
+              <div className="flex flex-1 flex-col gap-0.5">
+                {venueHostId ? (
+                  <a href={`/venue/${venueHostId}`} className="text-[0.9rem] font-semibold text-gray-900 hover:text-red-600 dark:text-white dark:hover:text-red-300">
+                    {venueHostName}
+                  </a>
+                ) : (
+                  <span className="text-[0.9rem] font-semibold text-gray-900 dark:text-white">
+                    {venueHostName}
+                  </span>
+                )}
+                <p className="flex items-center gap-1 text-[0.75rem] text-gray-500 dark:text-white/55">
+                  <svg viewBox="0 0 24 24" className="h-3 w-3 flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
+                  </svg>
+                  {category || "Events"}
+                </p>
               </div>
             </div>
           </div>

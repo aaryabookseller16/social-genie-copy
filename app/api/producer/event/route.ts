@@ -80,6 +80,13 @@ export async function POST(request: NextRequest) {
     if (body.is_free !== undefined) payload.is_free = Boolean(body.is_free);
     if (body.age_requirement) payload.age_requirement = String(body.age_requirement).trim();
     if (body.rsvp_limit !== undefined) payload.rsvp_limit = Number(body.rsvp_limit) || undefined;
+    // Owner-only housekeeping (e.g. "cancelled") — not a general-purpose status editor.
+    if (body.status) payload.status = String(body.status).trim();
+    // "venue" when the venue-owner dashboard is creating/editing its own event;
+    // omitted (defaults to producer) for the producer dashboard. Xano still verifies
+    // real ownership of whichever identity this names — the flag only selects which
+    // check runs.
+    if (body.acting_as === "venue") payload.acting_as = "venue";
 
     const endpoint = isEdit ? "genie/ep_update_event_dev" : "genie/ep_create_event_dev";
 
