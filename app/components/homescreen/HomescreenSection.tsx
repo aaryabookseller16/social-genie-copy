@@ -705,8 +705,8 @@ function OnFireVenueCard({
 
         <div className="mt-3 flex gap-2">
           <button type="button" onClick={handleGetRide} className="flex flex-1 items-center justify-center gap-1.5 rounded-[12px] bg-red-600 py-2.5 text-[0.72rem] font-semibold text-white">
-            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="1" y="3" width="15" height="13" rx="2" /><path d="M16 8h4l3 5v3h-7V8z" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" />
+            <svg viewBox="0 0 15 12" className="h-3.5 w-3.5" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+              <path d="M13.6875 4.65625C14.4375 4.9375 15 5.65625 15 6.5V8C15 8.53125 14.7812 8.96875 14.5 9.3125V11C14.5 11.5625 14.0312 12 13.5 12H12.5C11.9375 12 11.5 11.5625 11.5 11V10H3.5V11C3.5 11.5625 3.03125 12 2.5 12H1.5C0.9375 12 0.5 11.5625 0.5 11V9.3125C0.1875 8.96875 0 8.53125 0 8V6.5C0 5.65625 0.53125 4.9375 1.28125 4.65625L1.625 3.78125L2.25 2.21875C2.78125 0.875 4.0625 0 5.5 0H9.46875C10.9062 0 12.1875 0.875 12.7188 2.21875L13.3438 3.78125L13.6875 4.65625ZM4.09375 2.96875L3.5 4.5H11.5L10.875 2.96875C10.625 2.375 10.0938 2 9.46875 2H5.5C4.875 2 4.34375 2.375 4.09375 2.96875ZM2.5 8C3.09375 8 4 8.09375 4 7.5C4 6.90625 3.09375 6 2.5 6C1.875 6 1.5 6.40625 1.5 7C1.5 7.625 1.875 8 2.5 8ZM12.5 8C13.0938 8 13.5 7.625 13.5 7C13.5 6.40625 13.0938 6 12.5 6C11.875 6 11 6.90625 11 7.5C11 8.09375 11.875 8 12.5 8Z" />
             </svg>
             Get a Ride
           </button>
