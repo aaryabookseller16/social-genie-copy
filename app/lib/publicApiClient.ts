@@ -3165,6 +3165,7 @@ export type OnFireVenueItem = {
   image_url?: string;
   going_count?: number;
   is_on_fire?: boolean;
+  social_energy_state?: SocialEnergyState;
   /** Prebuilt ride link. Often empty — fall back to a coordinate-built one. */
   uber_deeplink?: string;
 };

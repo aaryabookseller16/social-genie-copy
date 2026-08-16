@@ -31,6 +31,7 @@ import {
   type UpcomingEvent,
 } from "@/app/lib/publicApiClient";
 import { useFollow, FollowButton } from "@/app/lib/useFollow";
+import { getDistanceLabel } from "@/app/lib/geo";
 import { mediaGalleryFor } from "@/app/lib/image";
 import { getEventBadge } from "@/app/lib/eventBadge";
 import ImageGallery from "@/app/components/ImageGallery";
@@ -130,6 +131,7 @@ function trendingVenueToFeedItem(v: TrendingVenue): OnFireVenueItem {
     image_url: v.image_url || undefined,
     going_count: v.going_count || v.checkin_count,
     is_on_fire: v.social_energy_state === "on_fire",
+    social_energy_state: v.social_energy_state,
     uber_deeplink: v.uber_deeplink || undefined,
   };
 }
@@ -557,6 +559,17 @@ function SocialPostCard({
 /*  On-fire venue card                                                 */
 /* ------------------------------------------------------------------ */
 
+// Same copy as SOCIAL_ENERGY_STATUS in single-page/ui.tsx, keyed on the raw
+// lowercase snake_case state this card actually receives (that map is keyed
+// on Title Case strings meant for a different venue shape) — see venue-card
+// redesign notes.
+const ON_FIRE_STATUS: Record<string, { text: string; dotClass: string; textClass: string }> = {
+  on_fire: { text: "Packed right now", dotClass: "bg-orange-400", textClass: "text-orange-400" },
+  buzzing: { text: "Busy right now", dotClass: "bg-orange-400", textClass: "text-orange-400" },
+  getting_attention: { text: "Good time to go", dotClass: "bg-green-400", textClass: "text-green-400" },
+  quiet: { text: "Picks up after 9pm", dotClass: "bg-blue-300", textClass: "text-blue-300" },
+};
+
 function OnFireVenueCard({
   item,
   onViewVenue,
@@ -564,6 +577,7 @@ function OnFireVenueCard({
   isLoggedIn,
   onRequireAuth,
   onToggleSaveVenue,
+  userCoords,
 }: {
   item: OnFireVenueItem;
   onViewVenue: () => void;
@@ -571,6 +585,7 @@ function OnFireVenueCard({
   isLoggedIn: boolean;
   onRequireAuth: () => void;
   onToggleSaveVenue: (venue: GenieVenue) => void;
+  userCoords?: { latitude: number; longitude: number } | null;
 }) {
   function handleToggleSave() {
     if (!isLoggedIn) return onRequireAuth();
@@ -611,91 +626,97 @@ function OnFireVenueCard({
       : `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[nickname]=${encodeURIComponent(item.venue_name)}${coordParams}&dropoff[formatted_address]=${encodeURIComponent(dropoffAddress)}`;
     window.open(url, "_blank", "noopener,noreferrer");
   }
+  const status = item.social_energy_state ? ON_FIRE_STATUS[item.social_energy_state] : undefined;
+  const distance = getDistanceLabel(
+    userCoords ? { lat: userCoords.latitude, lng: userCoords.longitude } : null,
+    item.venue_latitude,
+    item.venue_longitude
+  );
+
   return (
-    <div className="relative overflow-hidden rounded-[18px] bg-gradient-to-br from-red-950/70 to-black/50 px-4 py-4">
-      {item.image_url ? (
-        <>
+    <div className="overflow-hidden rounded-[18px] bg-gradient-to-br from-red-950/80 to-black/70 p-3">
+      <div className="relative h-44 w-full overflow-hidden rounded-[14px] bg-zinc-900">
+        {item.image_url ? (
           <Image
             src={item.image_url}
-            alt=""
-            aria-hidden="true"
+            alt={item.venue_name}
             fill
             sizes="(max-width: 448px) 100vw, 448px"
             className="object-cover"
             unoptimized
           />
-          {/* Venue photos are often bright signage that competes with the card
-              copy, so the scrim is deliberately heavy — the image reads as
-              texture, not as content. */}
-          <div className="absolute inset-0 bg-black/70" />
-          <div className="absolute inset-0 bg-gradient-to-br from-red-950/85 via-black/70 to-black/85" />
-        </>
-      ) : null}
-      <div className="relative">
-      <div className="flex items-center justify-between gap-2">
+        ) : null}
         {item.is_on_fire ? (
-          <span className="flex flex-none items-center gap-1.5 text-[0.65rem] font-bold uppercase tracking-wide text-yellow-400">
+          <span className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-black/55 px-2.5 py-1 text-[0.62rem] font-bold uppercase tracking-wide text-yellow-400 backdrop-blur-sm">
             <span className="h-1.5 w-1.5 rounded-full bg-yellow-400" />ON FIRE
           </span>
-        ) : <span />}
-        <div className="flex min-w-0 items-center gap-2">
-          {(item.neighborhood || item.category) ? (
-            // Neighborhood names run long ("Washington Avenue Coalition /
-            // Memorial Park"), so truncate rather than let them push the
-            // ON FIRE pill off the card on narrow screens.
-            <span className="min-w-0 truncate text-right text-[0.65rem] text-white/50">
-              {[item.neighborhood, item.category].filter(Boolean).join(" · ")}
-            </span>
-          ) : null}
-          <button
-            type="button"
-            aria-label={isSaved ? "Unsave" : "Save"}
-            onClick={handleToggleSave}
-            className="flex h-7 w-7 flex-none items-center justify-center rounded-full border border-white/25 bg-black/30"
+        ) : null}
+        <button
+          type="button"
+          aria-label={isSaved ? "Unsave" : "Save"}
+          onClick={handleToggleSave}
+          className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-white shadow-sm"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            className={`h-[18px] w-[18px] ${isSaved ? "text-red-500" : "text-gray-400"}`}
+            fill={isSaved ? "currentColor" : "none"}
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
           >
-            <svg
-              viewBox="0 0 24 24"
-              className={`h-3.5 w-3.5 ${isSaved ? "text-red-500" : "text-white/80"}`}
-              fill={isSaved ? "currentColor" : "none"}
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z" />
-            </svg>
-          </button>
-        </div>
+            <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z" />
+          </svg>
+        </button>
+        {/* Genie's take on this venue — same avatar treatment as the Genie
+            Review Intelligence block in SinglePageGenieApp. */}
+        <span className="absolute -bottom-3 right-4 flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-white ring-2 ring-white dark:ring-black">
+          <Image src="/icons/Social-Genie-Home-Screen.png" alt="Genie" width={32} height={32} className="h-8 w-8 object-cover" />
+        </span>
       </div>
-      <div className="mt-1.5 flex items-start justify-between gap-3">
-        <h3 className="min-w-0 flex-1 text-[1.1rem] font-bold leading-tight text-white">{item.venue_name}</h3>
-        {item.going_count ? (
-          <div className="flex-none text-right">
-            <p className="text-[1.1rem] font-bold leading-none text-white">{item.going_count}</p>
-            <p className="text-[0.6rem] text-white/50">Going</p>
-            {item.is_on_fire ? (
-              <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-[0.55rem] font-bold text-white">
-                🔥 ON FIRE
-              </span>
-            ) : null}
+
+      <div className="px-1 pb-1 pt-4">
+        <h3 className="truncate text-[1.15rem] font-bold leading-tight text-white">{item.venue_name}</h3>
+
+        {item.neighborhood || distance ? (
+          <div className="mt-1.5 flex items-center gap-1.5">
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 flex-none text-white/60" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 1 1 18 0z" /><circle cx="12" cy="10" r="3" />
+            </svg>
+            <span className="truncate text-[0.8rem] text-white/70">
+              {[item.neighborhood, distance].filter(Boolean).join(" - ")}
+            </span>
           </div>
         ) : null}
-      </div>
-      {item.description ? <p className="mt-2 text-[0.78rem] leading-5 text-white/65">{item.description}</p> : null}
-      <div className="mt-3 flex gap-2">
-        <button type="button" onClick={handleGetRide} className="flex flex-1 items-center justify-center gap-1.5 rounded-[12px] bg-red-600 py-2.5 text-[0.72rem] font-semibold text-white">
-          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="1" y="3" width="15" height="13" rx="2" /><path d="M16 8h4l3 5v3h-7V8z" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" />
-          </svg>
-          Get a Ride
-        </button>
-        <button type="button" onClick={onViewVenue} className="flex flex-1 items-center justify-center gap-1.5 rounded-[12px] border border-white/20 py-2.5 text-[0.72rem] font-semibold text-white/85">
-          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" />
-          </svg>
-          View Venue
-        </button>
-      </div>
+
+        {status ? (
+          <div className="mt-1 flex items-center gap-1.5">
+            <span className={`h-2 w-2 flex-none rounded-full ${status.dotClass}`} />
+            <span className={`text-[0.8rem] font-medium ${status.textClass}`}>{status.text}</span>
+          </div>
+        ) : null}
+
+        {item.description ? <p className="mt-2 text-[0.78rem] leading-5 text-white/65">{item.description}</p> : null}
+
+        {item.going_count ? (
+          <p className="mt-1.5 text-[0.72rem] text-white/50">{item.going_count} Going</p>
+        ) : null}
+
+        <div className="mt-3 flex gap-2">
+          <button type="button" onClick={handleGetRide} className="flex flex-1 items-center justify-center gap-1.5 rounded-[12px] bg-red-600 py-2.5 text-[0.72rem] font-semibold text-white">
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="1" y="3" width="15" height="13" rx="2" /><path d="M16 8h4l3 5v3h-7V8z" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" />
+            </svg>
+            Get a Ride
+          </button>
+          <button type="button" onClick={onViewVenue} className="flex flex-1 items-center justify-center gap-1.5 rounded-[12px] border border-white/20 py-2.5 text-[0.72rem] font-semibold text-white/85">
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
+            View Venue
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1101,6 +1122,7 @@ function FeedCard({
   onRequireAuth,
   savedVenueIds,
   onToggleSaveVenue,
+  userCoords,
 }: {
   item: HomeFeedItem;
   onEventOpen: (evt: UpcomingEvent) => void;
@@ -1110,6 +1132,7 @@ function FeedCard({
   onRequireAuth: () => void;
   savedVenueIds: string[];
   onToggleSaveVenue: (venue: GenieVenue) => void;
+  userCoords?: { latitude: number; longitude: number } | null;
 }) {
   switch (item.feed_type) {
     case "event":
@@ -1132,6 +1155,7 @@ function FeedCard({
           isLoggedIn={isLoggedIn}
           onRequireAuth={onRequireAuth}
           onToggleSaveVenue={onToggleSaveVenue}
+          userCoords={userCoords}
         />
       );
     case "suggested_producers":
@@ -1904,6 +1928,7 @@ export function HomescreenSection({
                 onRequireAuth={requireAuth}
                 savedVenueIds={savedVenueIds}
                 onToggleSaveVenue={onToggleSaveVenue}
+                userCoords={userCoords}
               />
             ))}
           </div>
