@@ -155,12 +155,16 @@ export function normalizeHandleMessageResponse(
     : [];
 
   // ── Venues ───────────────────────────────────────────────────────────────
-  const allRawVenues = (
+  // `more_nearby_venues` is a separate array the backend sends alongside
+  // `venues` (not a fallback for it) — merge it in, or every venue past the
+  // first 3 is silently dropped and "See More Nearby" has nothing to show.
+  const primaryVenues =
     response.venues ??
     response.decisive ??
     response.top_venues ??
-    []
-  ).map(mapVenue);
+    [];
+  const extraVenues = response.more_nearby_venues ?? [];
+  const allRawVenues = [...primaryVenues, ...extraVenues].map(mapVenue);
 
   const decisive = allRawVenues.slice(0, 3);
   const moreNearby = allRawVenues.slice(3, 15);

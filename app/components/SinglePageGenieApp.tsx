@@ -3874,22 +3874,24 @@ activeScreen === "vibbee-trial" ||
               )}
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                setHasOpenedMoreNearby(true);
-                trackEvent(analyticsEvents.seeMoreNearbyTapped);
-                trackEvent(analyticsEvents.moreNearbyOpened, {
-                  count: response?.more_nearby.length ?? 0,
-                  queryText: response?.normalized_intent ?? lastQuery,
-                });
-                navigateTo("more");
-              }}
-              className="mt-2 flex w-full items-center justify-center gap-2 py-3 text-[1rem] font-medium text-gray-800 dark:text-white"
-            >
-              <span>See More Nearby</span>
-              <span aria-hidden="true">→</span>
-            </button>
+            {moreNearbyItems.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setHasOpenedMoreNearby(true);
+                  trackEvent(analyticsEvents.seeMoreNearbyTapped);
+                  trackEvent(analyticsEvents.moreNearbyOpened, {
+                    count: response?.more_nearby.length ?? 0,
+                    queryText: response?.normalized_intent ?? lastQuery,
+                  });
+                  navigateTo("more");
+                }}
+                className="mt-2 flex w-full items-center justify-center gap-2 py-3 text-[1rem] font-medium text-gray-800 dark:text-white"
+              >
+                <span>See More Nearby</span>
+                <span aria-hidden="true">→</span>
+              </button>
+            ) : null}
           </section>
         ) : null}
 
@@ -4193,6 +4195,17 @@ activeScreen === "vibbee-trial" ||
                 </div>
               </>
             )}
+          </section>
+        ) : activeScreen === "more" && showResultSections ? (
+          <section className="space-y-4 pb-24">
+            <GenieBubble copy="That's everything nearby for this search." compact />
+            <button
+              type="button"
+              onClick={() => navigateTo("decision")}
+              className="w-full rounded-[18px] border border-red-500 bg-red-600 px-4 py-3 text-sm font-semibold text-white shadow-sm"
+            >
+              Back to results
+            </button>
           </section>
         ) : null}
 
