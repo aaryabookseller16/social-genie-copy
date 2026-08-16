@@ -48,7 +48,7 @@ const NOTIF_TOGGLES: { key: keyof NotifPrefs; label: string }[] = [
   { key: "notify_going_match", label: "Friend going to same event" },
   { key: "notify_venue_energy_alert", label: "Venue energy alerts" },
   { key: "notify_event_reminder", label: "Event reminders" },
-  { key: "notify_promoter_new_event", label: "New event from followed producer" },
+  { key: "notify_promoter_new_event", label: "New event from someone you follow" },
   { key: "notify_genie_alerts", label: "Genie platform alerts" },
 ];
 

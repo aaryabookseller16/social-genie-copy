@@ -19,9 +19,11 @@ import {
   fetchVenueCheckins,
   fetchVenueOffers,
   fetchVenueEvents,
+  fetchVenueIsFollowing,
   logEventInteraction,
 } from "@/app/lib/publicApiClient";
 import { useVenueSave } from "@/app/lib/useVenueSave";
+import { useFollow } from "@/app/lib/useFollow";
 import { EventDetailSection } from "@/app/components/event-detail/EventDetailSection";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -163,6 +165,21 @@ export function VenueDetailClient({ venue }: { venue: GenieVenue }) {
     Boolean(raw.is_saved),
     goToLogin
   );
+
+  // Second, identity-aware fetch — same reason useVenueSave's internal fetch
+  // exists: this page is server-rendered with no auth context.
+  const [followInit, setFollowInit] = useState(Boolean(raw.is_following));
+  useEffect(() => {
+    if (!readAuthToken()) return;
+    let cancelled = false;
+    void fetchVenueIsFollowing(venue.id).then((following) => {
+      if (!cancelled) setFollowInit(following);
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [venue.id]);
+  const follow = useFollow(Number(venue.id), "venue", "venue_detail", followInit, goToLogin);
 
   // ── Offers + Events (venue-scoped) ──────────────────────────────────────
   const [offers, setOffers] = useState<RawGenieOffer[]>([]);
@@ -342,6 +359,22 @@ export function VenueDetailClient({ venue }: { venue: GenieVenue }) {
 
         {/* ── ACTION PILLS ────────────────────────────────────────────── */}
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={follow.followBusy}
+            onClick={() => void follow.toggle()}
+            className={
+              follow.isFollowing
+                ? "flex items-center gap-1.5 rounded-full bg-red-600 px-3.5 py-2 text-[0.8rem] font-semibold text-white shadow-sm transition disabled:pointer-events-none disabled:opacity-60"
+                : `${pillClass} disabled:pointer-events-none disabled:opacity-60`
+            }
+          >
+            <svg viewBox="0 0 24 24" className="h-[15px] w-[15px] flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" x2="19" y1="8" y2="14" /><line x1="16" x2="22" y1="11" y2="11" />
+            </svg>
+            {follow.isFollowing ? "Following" : "Follow"}
+          </button>
+
           <button
             type="button"
             disabled={checkinBusy}

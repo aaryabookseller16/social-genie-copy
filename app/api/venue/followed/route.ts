@@ -2,27 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import { xanoFetch, extractBearerToken, XanoError } from "@/app/lib/server/xanoProxy";
 
 /**
- * Generic despite the path — forwards whatever `followed_type` the caller
- * sends (`"producer"` or `"venue"`) as-is to ep_follow_dev, which is itself
- * type-agnostic. Don't add a parallel /api/venue/follow route.
+ * GET /api/venue/followed
+ * Proxies to: genie/ep_get_followed_venues_dev
+ * Auth-required: venues followed are resolved from the caller's own id.
  */
-export async function POST(request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
     const authToken = extractBearerToken(request);
     if (!authToken) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    const body = await request.json();
-    const result = await xanoFetch("genie/ep_follow_dev", {
-      method: "POST",
-      authToken,
-      body,
-    });
+    const result = await xanoFetch("genie/ep_get_followed_venues_dev", { authToken });
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof XanoError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
-    return NextResponse.json({ error: "Follow failed." }, { status: 500 });
+    return NextResponse.json({ error: "Could not load followed venues." }, { status: 500 });
   }
 }

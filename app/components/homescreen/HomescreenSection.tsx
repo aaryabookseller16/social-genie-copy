@@ -14,7 +14,6 @@ import {
   fetchHomescreenPosts,
   fetchSuggestedProducers,
   fetchTrendingVenues,
-  followProducer,
   rsvpToEvent,
   type EventFeedItem,
   type FollowedProducerItem,
@@ -29,6 +28,7 @@ import {
   type TrendingVenue,
   type UpcomingEvent,
 } from "@/app/lib/publicApiClient";
+import { useFollow, FollowButton } from "@/app/lib/useFollow";
 import { mediaGalleryFor } from "@/app/lib/image";
 import { getEventBadge } from "@/app/lib/eventBadge";
 import ImageGallery from "@/app/components/ImageGallery";
@@ -209,61 +209,8 @@ function StoryBar({ producers }: { producers: FollowedProducerItem[] }) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Producer follow block (shared by event card + suggested producer)  */
+/*  Producer / venue avatar                                            */
 /* ------------------------------------------------------------------ */
-
-function useFollow(producerId: number, source: string, initialFollowing = false) {
-  const [isFollowing, setIsFollowing] = useState(initialFollowing);
-  const [followBusy, setFollowBusy] = useState(false);
-
-  // Sync when the embedded is_following value arrives / changes.
-  useEffect(() => {
-    setIsFollowing(initialFollowing);
-  }, [initialFollowing]);
-
-  const toggle = useCallback(async () => {
-    if (followBusy) return;
-    setFollowBusy(true);
-    const optimistic = !isFollowing;
-    setIsFollowing(optimistic);
-    try {
-      const res = await followProducer(producerId, source);
-      setIsFollowing(res.action === "followed");
-    } catch {
-      setIsFollowing(!optimistic);
-    } finally {
-      setFollowBusy(false);
-    }
-  }, [followBusy, isFollowing, producerId, source]);
-
-  return { isFollowing, followBusy, toggle };
-}
-
-function FollowButton({
-  isFollowing,
-  followBusy,
-  onClick,
-}: {
-  isFollowing: boolean;
-  followBusy: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-      disabled={followBusy}
-      className={`rounded-full border px-4 py-1.5 text-[0.72rem] font-semibold transition ${
-        isFollowing ? "border-red-500 bg-red-600 text-white" : "border-gray-300 text-gray-700 dark:border-white/30 dark:text-white"
-      } disabled:opacity-50`}
-    >
-      {isFollowing ? "Following" : "Follow"}
-    </button>
-  );
-}
 
 function ProducerAvatar({ name, size = 28 }: { name: string; size?: number }) {
   return (
@@ -298,16 +245,28 @@ function EventFeedCard({
   const [saved, setSaved] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
   const producer = item.producer;
+  const venueId = item.raw.venue_id;
   const follow = useFollow(
     producer?.producer_id ?? item.id,
+    "producer",
     "homescreen",
     producer?.is_following ?? false
+  );
+  const venueFollow = useFollow(
+    venueId ?? 0,
+    "venue",
+    "homescreen",
+    item.raw.is_followed_venue ?? false
   );
   const profileHref = producer?.producer_id ? `/p/${producer.producer_id}` : undefined;
 
   const handleFollow = () => {
     if (!isLoggedIn) return onRequireAuth();
     void follow.toggle();
+  };
+  const handleVenueFollow = () => {
+    if (!isLoggedIn) return onRequireAuth();
+    void venueFollow.toggle();
   };
   const handleSave = async () => {
     if (!isLoggedIn) return onRequireAuth();
@@ -458,6 +417,13 @@ function EventFeedCard({
               </div>
             </a>
             <FollowButton isFollowing={follow.isFollowing} followBusy={follow.followBusy} onClick={handleFollow} />
+          </div>
+        ) : venueId ? (
+          <div className="mt-3 flex items-center justify-between border-t border-gray-200 dark:border-white/10 pt-2.5">
+            <span className="min-w-0 truncate text-[0.78rem] font-semibold text-gray-900 dark:text-white">
+              {item.raw.venue_name || item.venue_address || "This venue"}
+            </span>
+            <FollowButton isFollowing={venueFollow.isFollowing} followBusy={venueFollow.followBusy} onClick={handleVenueFollow} />
           </div>
         ) : null}
 
@@ -715,7 +681,7 @@ function SuggestedProducerCard({
   isLoggedIn: boolean;
   onRequireAuth: () => void;
 }) {
-  const follow = useFollow(item.producer_id ?? item.id, "homescreen");
+  const follow = useFollow(item.producer_id ?? item.id, "producer", "homescreen");
   const profileHref = `/p/${item.producer_id ?? item.id}`;
 
   const handleFollow = () => {
