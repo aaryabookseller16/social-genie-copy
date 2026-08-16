@@ -19,9 +19,11 @@ import {
   fetchVenueCheckins,
   fetchVenueOffers,
   fetchVenueEvents,
+  fetchVenueIsFollowing,
   logEventInteraction,
 } from "@/app/lib/publicApiClient";
 import { useVenueSave } from "@/app/lib/useVenueSave";
+import { useFollow } from "@/app/lib/useFollow";
 import { EventDetailSection } from "@/app/components/event-detail/EventDetailSection";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -112,7 +114,9 @@ export function VenueDetailClient({ venue }: { venue: GenieVenue }) {
 
   const lat = venue.latitude;
   const lng = venue.longitude;
-  const hasCoords = lat !== null && lng !== null;
+  // Xano stores unset coordinates as 0, not null — vendor-created venues
+  // routinely have no coordinates, so treat (0, 0) as missing too.
+  const hasCoords = lat !== null && lng !== null && !(lat === 0 && lng === 0);
 
   const raw = venue as unknown as Record<string, unknown>;
   const phone = typeof raw.phone === "string" ? raw.phone.trim() : null;
@@ -132,9 +136,11 @@ export function VenueDetailClient({ venue }: { venue: GenieVenue }) {
     (raw.neighborhood_text as string | undefined) ||
     venue.city;
 
-  const uberUrl = hasCoords
-    ? `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[latitude]=${lat}&dropoff[longitude]=${lng}&dropoff[nickname]=${encodeURIComponent(venue.venue_name)}&dropoff[formatted_address]=${encodeURIComponent(venue.venue_name)}`
-    : null;
+  // Use precise coordinates when available; otherwise fall back to the
+  // address text and let Uber geocode it. Always builds a link — never
+  // hides the ride button for lack of coordinates.
+  const dropoffAddress = venue.address || venue.venue_name;
+  const uberUrl = `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[nickname]=${encodeURIComponent(venue.venue_name)}${hasCoords ? `&dropoff[latitude]=${lat}&dropoff[longitude]=${lng}` : ""}&dropoff[formatted_address]=${encodeURIComponent(dropoffAddress)}`;
 
   const mapsUrl = venue.google_maps_url
     ? venue.google_maps_url
@@ -159,6 +165,21 @@ export function VenueDetailClient({ venue }: { venue: GenieVenue }) {
     Boolean(raw.is_saved),
     goToLogin
   );
+
+  // Second, identity-aware fetch — same reason useVenueSave's internal fetch
+  // exists: this page is server-rendered with no auth context.
+  const [followInit, setFollowInit] = useState(Boolean(raw.is_following));
+  useEffect(() => {
+    if (!readAuthToken()) return;
+    let cancelled = false;
+    void fetchVenueIsFollowing(venue.id).then((following) => {
+      if (!cancelled) setFollowInit(following);
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [venue.id]);
+  const follow = useFollow(Number(venue.id), "venue", "venue_detail", followInit, goToLogin);
 
   // ── Offers + Events (venue-scoped) ──────────────────────────────────────
   const [offers, setOffers] = useState<RawGenieOffer[]>([]);
@@ -340,6 +361,22 @@ export function VenueDetailClient({ venue }: { venue: GenieVenue }) {
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
+            disabled={follow.followBusy}
+            onClick={() => void follow.toggle()}
+            className={
+              follow.isFollowing
+                ? "flex items-center gap-1.5 rounded-full bg-red-600 px-3.5 py-2 text-[0.8rem] font-semibold text-white shadow-sm transition disabled:pointer-events-none disabled:opacity-60"
+                : `${pillClass} disabled:pointer-events-none disabled:opacity-60`
+            }
+          >
+            <svg viewBox="0 0 24 24" className="h-[15px] w-[15px] flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" x2="19" y1="8" y2="14" /><line x1="16" x2="22" y1="11" y2="11" />
+            </svg>
+            {follow.isFollowing ? "Following" : "Follow"}
+          </button>
+
+          <button
+            type="button"
             disabled={checkinBusy}
             onClick={() => void handleToggleCheckin()}
             className={
@@ -368,8 +405,8 @@ export function VenueDetailClient({ venue }: { venue: GenieVenue }) {
 
           {uberUrl ? (
             <a href={uberUrl} className={pillClass}>
-              <svg viewBox="0 0 24 24" className="h-[15px] w-[15px] flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="1" y="3" width="15" height="13" rx="2" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" />
+              <svg viewBox="0 0 15 12" className="h-[15px] w-[15px] flex-none" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                <path d="M13.6875 4.65625C14.4375 4.9375 15 5.65625 15 6.5V8C15 8.53125 14.7812 8.96875 14.5 9.3125V11C14.5 11.5625 14.0312 12 13.5 12H12.5C11.9375 12 11.5 11.5625 11.5 11V10H3.5V11C3.5 11.5625 3.03125 12 2.5 12H1.5C0.9375 12 0.5 11.5625 0.5 11V9.3125C0.1875 8.96875 0 8.53125 0 8V6.5C0 5.65625 0.53125 4.9375 1.28125 4.65625L1.625 3.78125L2.25 2.21875C2.78125 0.875 4.0625 0 5.5 0H9.46875C10.9062 0 12.1875 0.875 12.7188 2.21875L13.3438 3.78125L13.6875 4.65625ZM4.09375 2.96875L3.5 4.5H11.5L10.875 2.96875C10.625 2.375 10.0938 2 9.46875 2H5.5C4.875 2 4.34375 2.375 4.09375 2.96875ZM2.5 8C3.09375 8 4 8.09375 4 7.5C4 6.90625 3.09375 6 2.5 6C1.875 6 1.5 6.40625 1.5 7C1.5 7.625 1.875 8 2.5 8ZM12.5 8C13.0938 8 13.5 7.625 13.5 7C13.5 6.40625 13.0938 6 12.5 6C11.875 6 11 6.90625 11 7.5C11 8.09375 11.875 8 12.5 8Z" />
               </svg>
               Get a Ride
             </a>

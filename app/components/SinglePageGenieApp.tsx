@@ -2925,9 +2925,16 @@ const [cancelError, setCancelError] = useState<string | null>(null);
   const mapPreviewUrl = selectedVenue ? buildStaticMapUrl(selectedVenue) : null;
   const nativeMapsUrl = selectedVenue ? buildNativeMapsUrl(selectedVenue) : null;
   // Uber deeplink — same construction as the standalone venue page (VenueDetailClient.tsx).
+  // Use precise coordinates when available (readVenueCoords treats Xano's
+  // (0, 0) "unset" sentinel as missing); otherwise fall back to the address
+  // text and let Uber geocode it. Always builds a link when we have a venue.
+  const selectedVenueCoords = selectedVenue ? readVenueCoords(selectedVenue) : null;
+  const selectedVenueDropoffAddress = selectedVenue
+    ? selectedVenue.address?.trim() || selectedVenue.venue_name
+    : null;
   const uberUrl =
-    selectedVenue && selectedVenue.latitude != null && selectedVenue.longitude != null
-      ? `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[latitude]=${selectedVenue.latitude}&dropoff[longitude]=${selectedVenue.longitude}&dropoff[nickname]=${encodeURIComponent(selectedVenue.venue_name)}&dropoff[formatted_address]=${encodeURIComponent(selectedVenue.venue_name)}`
+    selectedVenue && selectedVenueDropoffAddress
+      ? `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[nickname]=${encodeURIComponent(selectedVenue.venue_name)}${selectedVenueCoords ? `&dropoff[latitude]=${selectedVenueCoords.latitude}&dropoff[longitude]=${selectedVenueCoords.longitude}` : ""}&dropoff[formatted_address]=${encodeURIComponent(selectedVenueDropoffAddress)}`
       : null;
   const detailActions: Array<{
     id: string;

@@ -925,6 +925,24 @@ export async function fetchVenueIsSaved(venueId: string | number) {
   return Boolean(response.venue?.is_saved);
 }
 
+/**
+ * Same mount-time pattern as fetchVenueIsSaved, for follow state. Unlike
+ * save, follow has no guest/session concept (genie_follows has no session_id
+ * column) — resolves to false with no request when there's no logged-in account.
+ */
+export async function fetchVenueIsFollowing(venueId: string | number) {
+  const account = readConsumerAccount();
+  if (!account?.id) return false;
+
+  const params = new URLSearchParams({ id: String(venueId), user_id: String(account.id) });
+
+  const response = await apiJson<{ venue?: { is_following?: boolean } }>(
+    `/api/genie/venue?${params.toString()}`,
+    { auth: false }
+  );
+  return Boolean(response.venue?.is_following);
+}
+
 export async function fetchVenueOffers(venueId: string | number) {
   const response = await apiJson<{ offers: RawGenieOffer[] }>(
     `/api/genie/venue-offers?id=${encodeURIComponent(String(venueId))}`,
@@ -2353,6 +2371,25 @@ export async function followProducer(
   });
 }
 
+/**
+ * Same generic /api/producer/follow proxy as followProducer — the route
+ * forwards followed_type as-is to ep_follow_dev, which already supports
+ * "venue". No dedicated venue route needed.
+ */
+export async function followVenue(
+  venueId: number,
+  source: string = "venue_detail"
+) {
+  return apiJson<FollowProducerResult>("/api/producer/follow", {
+    method: "POST",
+    body: JSON.stringify({
+      followed_id: venueId,
+      followed_type: "venue",
+      follow_source: source,
+    }),
+  });
+}
+
 /* ------------------------------------------------------------------ */
 /*  Producer — Influencer Offer Review Queue                          */
 /* ------------------------------------------------------------------ */
@@ -2439,6 +2476,23 @@ export type FollowedProducersResult = {
 
 export async function fetchFollowedProducers() {
   return apiJson<FollowedProducersResult>("/api/producer/followed");
+}
+
+export type FollowedVenueItem = {
+  id: number;
+  venue_name?: string;
+  image_primary_url?: string;
+  [key: string]: unknown;
+};
+
+export type FollowedVenuesResult = {
+  success: boolean;
+  followed_venues: FollowedVenueItem[];
+  count: number;
+};
+
+export async function fetchFollowedVenues() {
+  return apiJson<FollowedVenuesResult>("/api/venue/followed");
 }
 
 export type SuggestedProducerResult = {
@@ -2946,6 +3000,10 @@ export type UpcomingEvent = {
     is_verified?: boolean;
     is_following?: boolean;
   } | null;
+  /** Whether the caller follows this event's venue. False when there's no venue, or for guests. */
+  is_followed_venue?: boolean;
+  /** Resolved venue name, only present for venue-authored events (no producer). */
+  venue_name?: string | null;
   [key: string]: unknown;
 };
 
@@ -2957,6 +3015,7 @@ export type UpcomingEvent = {
 export type TrendingVenue = {
   id: number;
   name: string;
+  address?: string;
   category?: string;
   neighborhood?: string;
   social_energy_state?: SocialEnergyState;
@@ -3097,6 +3156,7 @@ export type OnFireVenueItem = {
   feed_type: "on_fire_venue";
   id: number;
   venue_name: string;
+  venue_address?: string;
   venue_latitude?: number;
   venue_longitude?: number;
   neighborhood?: string;
@@ -3105,6 +3165,7 @@ export type OnFireVenueItem = {
   image_url?: string;
   going_count?: number;
   is_on_fire?: boolean;
+  social_energy_state?: SocialEnergyState;
   /** Prebuilt ride link. Often empty — fall back to a coordinate-built one. */
   uber_deeplink?: string;
 };

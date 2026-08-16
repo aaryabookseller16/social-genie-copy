@@ -5,11 +5,11 @@ import Image from "next/image";
 import {
   fetchEventDetail,
   fetchEventOffers,
-  followProducer,
   type EventDetailResponse,
   type InfluencerEventOffer,
   type VibbeeEventOffer,
 } from "@/app/lib/publicApiClient";
+import { useFollow } from "@/app/lib/useFollow";
 import { readAuthToken } from "@/app/lib/localState";
 import { useEventRsvp, type UserRsvpStatus } from "@/app/lib/useEventRsvp";
 import ImageGallery from "@/app/components/ImageGallery";
@@ -332,13 +332,10 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [authRequired, setAuthRequired] = useState(false);
-  const [isFollowing, setIsFollowing] = useState(false);
-  const [followBusy, setFollowBusy] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [vibbeeOffers, setVibbeeOffers] = useState<VibbeeEventOffer[]>([]);
   const [influencerOffers, setInfluencerOffers] = useState<InfluencerEventOffer[]>([]);
   const [showCalendarMenu, setShowCalendarMenu] = useState(false);
-  const [rideError, setRideError] = useState(false);
   const calendarMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -376,14 +373,33 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
     return () => { cancelled = true; };
   }, [eventId]);
 
-  // Seed follow state from the embedded producer once data / initialData is ready.
-  // Read `is_following` from whichever source actually provides it: the event-detail
-  // API may omit it, so fall back to the value embedded in the tapped event (initialData).
-  useEffect(() => {
-    const fromApi = (data?.producer as { is_following?: boolean } | undefined)?.is_following;
-    const fromInitial = (initialData.producer as { is_following?: boolean } | undefined)?.is_following;
-    setIsFollowing(fromApi ?? fromInitial ?? false);
-  }, [data, initialData]);
+  // Follow state, seeded from whichever source actually provides it: the
+  // event-detail API may omit is_following (producer) / venue follow data
+  // entirely, so fall back to whatever was embedded in the tapped event
+  // (initialData) — same accepted-stale pattern as before, now shared via
+  // useFollow. Computed from data/initialData directly (not the later `ev`/
+  // `producer`/`venueRecord` derivation) since hooks must run before this
+  // component's early loading/error returns.
+  const producerIdForFollow =
+    (data?.producer as { id?: number } | undefined)?.id ??
+    (initialData.producer as { id?: number } | undefined)?.id ??
+    (initialData.producer_id as number | undefined) ??
+    0;
+  const producerIsFollowingInitial =
+    (data?.producer as { is_following?: boolean } | undefined)?.is_following ??
+    (initialData.producer as { is_following?: boolean } | undefined)?.is_following ??
+    false;
+  const producerFollow = useFollow(producerIdForFollow, "producer", "event-detail", producerIsFollowingInitial, onAuthRequired);
+
+  const venueIdForFollow =
+    (data?.venue as { id?: number } | undefined)?.id ??
+    (initialData.venue as { id?: number } | undefined)?.id ??
+    (initialData.venue_id as number | undefined) ??
+    0;
+  // The venue object (unlike producer) never carries is_following — only the
+  // tapped event's own top-level is_followed_venue does (see initialData).
+  const venueIsFollowingInitial = Boolean(initialData.is_followed_venue);
+  const venueFollow = useFollow(venueIdForFollow, "venue", "event-detail", venueIsFollowingInitial, onAuthRequired);
 
   // Merge here (not just below the loading/error guards) because this feeds
   // useEventRsvp, which — like all hooks — must run on every render.
@@ -404,25 +420,6 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
     "event-detail",
     onAuthRequired
   );
-
-  async function handleFollow(producerId?: number) {
-    if (!producerId || followBusy) return;
-    if (!readAuthToken()) {
-      onAuthRequired?.();
-      return;
-    }
-    setFollowBusy(true);
-    const optimistic = !isFollowing;
-    setIsFollowing(optimistic);
-    try {
-      const res = await followProducer(producerId, "event-detail");
-      setIsFollowing(res.action === "followed");
-    } catch {
-      setIsFollowing(!optimistic);
-    } finally {
-      setFollowBusy(false);
-    }
-  }
 
   const load = () => {
     if (!eventId) { setLoading(false); return; }
@@ -472,8 +469,8 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
   const producer   = ev.producer as { id?: number; name?: string; image_url?: string; event_count?: number; is_verified?: boolean; is_following?: boolean } | undefined;
   const producerId = producer?.id ?? (ev.producer_id as number | undefined);
   // Venue-authored events (created_by_type === "venue") have no producer at all —
-  // the host card below sources from the venue instead, same slot, no follow button
-  // since venues aren't followable yet.
+  // the host card below sources from the venue instead, same slot, with its
+  // own follow button (venueFollow, seeded above from data/initialData).
   const isVenueAuthored = ev.created_by_type === "venue";
   const venueHostName = typeof venueRecord?.venue_name === "string" ? venueRecord.venue_name : "";
   const venueHostId = typeof venueRecord?.id === "number" ? venueRecord.id : undefined;
@@ -707,24 +704,16 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
           <button
             type="button"
             onClick={() => {
-              // Only a lat/lng dropoff reliably preselects in Uber — a
-              // formatted-address-only link routinely opens with nothing
-              // preselected. Without coordinates, fail loudly instead of
-              // shipping that broken experience.
-              if (venueLat == null || venueLng == null) {
-                console.log("[ride_click] no venue coordinates available", {
-                  event_id: ev.id,
-                  venue_name: venueName,
-                  venue_address: venueAddr,
-                });
-                setRideError(true);
-                window.setTimeout(() => setRideError(false), 4000);
-                return;
-              }
+              // Use precise coordinates when we have them; otherwise fall
+              // back to the address text and let Uber geocode it.
               const addr = venueAddr || venueName || "Houston, TX";
+              const coordParams =
+                venueLat != null && venueLng != null
+                  ? `&dropoff[latitude]=${venueLat}&dropoff[longitude]=${venueLng}`
+                  : "";
               onRideClick?.(addr);
               window.open(
-                `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[latitude]=${venueLat}&dropoff[longitude]=${venueLng}&dropoff[nickname]=${encodeURIComponent(venueName || addr)}&dropoff[formatted_address]=${encodeURIComponent(addr)}`,
+                `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[nickname]=${encodeURIComponent(venueName || addr)}${coordParams}&dropoff[formatted_address]=${encodeURIComponent(addr)}`,
                 "_blank",
                 "noopener,noreferrer"
               );
@@ -894,15 +883,15 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
                   )}
                   <button
                     type="button"
-                    onClick={() => void handleFollow(producerId)}
-                    disabled={followBusy || !producerId}
+                    onClick={() => void producerFollow.toggle()}
+                    disabled={producerFollow.followBusy || !producerId}
                     className={`rounded-full px-2.5 py-0.5 text-[0.68rem] font-semibold transition disabled:opacity-60 ${
-                      isFollowing
+                      producerFollow.isFollowing
                         ? "border border-red-500 bg-transparent text-red-400"
                         : "bg-red-600 text-white hover:bg-red-500"
                     }`}
                   >
-                    {isFollowing ? "Following" : "Follow"}
+                    {producerFollow.isFollowing ? "Following" : "Follow"}
                   </button>
                 </div>
                 <p className="flex items-center gap-1 text-[0.75rem] text-gray-500 dark:text-white/55">
@@ -940,15 +929,29 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
                 </div>
               )}
               <div className="flex flex-1 flex-col gap-0.5">
-                {venueHostId ? (
-                  <a href={`/venue/${venueHostId}`} className="text-[0.9rem] font-semibold text-gray-900 hover:text-red-600 dark:text-white dark:hover:text-red-300">
-                    {venueHostName}
-                  </a>
-                ) : (
-                  <span className="text-[0.9rem] font-semibold text-gray-900 dark:text-white">
-                    {venueHostName}
-                  </span>
-                )}
+                <div className="flex items-center gap-2">
+                  {venueHostId ? (
+                    <a href={`/venue/${venueHostId}`} className="text-[0.9rem] font-semibold text-gray-900 hover:text-red-600 dark:text-white dark:hover:text-red-300">
+                      {venueHostName}
+                    </a>
+                  ) : (
+                    <span className="text-[0.9rem] font-semibold text-gray-900 dark:text-white">
+                      {venueHostName}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void venueFollow.toggle()}
+                    disabled={venueFollow.followBusy || !venueHostId}
+                    className={`rounded-full px-2.5 py-0.5 text-[0.68rem] font-semibold transition disabled:opacity-60 ${
+                      venueFollow.isFollowing
+                        ? "border border-red-500 bg-transparent text-red-400"
+                        : "bg-red-600 text-white hover:bg-red-500"
+                    }`}
+                  >
+                    {venueFollow.isFollowing ? "Following" : "Follow"}
+                  </button>
+                </div>
                 <p className="flex items-center gap-1 text-[0.75rem] text-gray-500 dark:text-white/55">
                   <svg viewBox="0 0 24 24" className="h-3 w-3 flex-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                     <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
@@ -994,12 +997,6 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
 
       </div>
       </div>
-
-      {rideError ? (
-        <div className="fixed inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+4.5rem)] z-50 mx-auto max-w-sm rounded-xl bg-gray-900 px-4 py-3 text-center text-[0.82rem] font-medium text-white shadow-lg dark:bg-black">
-          Ride directions aren&apos;t available for this location yet.
-        </div>
-      ) : null}
     </section>
   );
 }

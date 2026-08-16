@@ -70,6 +70,8 @@ export type RawGenieVenue = {
   } | null;
   /** Whether the requesting user/session has saved this venue. False for guests with no session. */
   is_saved?: boolean | null;
+  /** Whether the requesting user follows this venue. Auth-only — always false for guests (follow has no session concept). */
+  is_following?: boolean | null;
 };
 
 export type GenieVenue = Omit<RawGenieVenue, "latitude" | "longitude"> & {
