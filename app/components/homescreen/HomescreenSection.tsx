@@ -8,6 +8,7 @@ import { type ConsumerAccount } from "@/app/lib/localState";
 import { type GenieVenue } from "@/app/lib/genieTypes";
 import {
   fetchFollowedProducers,
+  fetchFollowedVenues,
   fetchHomescreen,
   fetchHomescreenEvents,
   fetchHomescreenInfluencerOffers,
@@ -17,6 +18,7 @@ import {
   rsvpToEvent,
   type EventFeedItem,
   type FollowedProducerItem,
+  type FollowedVenueItem,
   type HomescreenInfluencerOffer,
   type HomescreenLocation,
   type HomescreenNeighborhood,
@@ -175,12 +177,18 @@ type HomeFeedItem =
 /*  Story bar                                                           */
 /* ------------------------------------------------------------------ */
 
-function StoryBar({ producers }: { producers: FollowedProducerItem[] }) {
-  if (!producers.length) return null;
+function StoryBar({
+  producers,
+  venues,
+}: {
+  producers: FollowedProducerItem[];
+  venues: FollowedVenueItem[];
+}) {
+  if (!producers.length && !venues.length) return null;
   return (
     <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {producers.map((p) => (
-        <a key={p.id} href={`/p/${p.id}`} className="flex w-16 flex-none flex-col items-center gap-1">
+        <a key={`producer-${p.id}`} href={`/p/${p.id}`} className="flex w-16 flex-none flex-col items-center gap-1">
           <span className="rounded-full bg-gradient-to-tr from-red-600 via-red-500 to-orange-400 p-[2px]">
             <span className="block rounded-full bg-white dark:bg-black p-[2px]">
               <span className="relative block h-14 w-14 overflow-hidden rounded-full">
@@ -201,6 +209,31 @@ function StoryBar({ producers }: { producers: FollowedProducerItem[] }) {
           </span>
           <span className="w-full truncate text-center text-[0.62rem] text-gray-600 dark:text-white/70">
             {p.display_name ?? "Producer"}
+          </span>
+        </a>
+      ))}
+      {venues.map((v) => (
+        <a key={`venue-${v.id}`} href={`/venue/${v.id}`} className="flex w-16 flex-none flex-col items-center gap-1">
+          <span className="rounded-full bg-gradient-to-tr from-red-600 via-red-500 to-orange-400 p-[2px]">
+            <span className="block rounded-full bg-white dark:bg-black p-[2px]">
+              <span className="relative block h-14 w-14 overflow-hidden rounded-full">
+                {v.image_primary_url ? (
+                  <Image
+                    src={v.image_primary_url}
+                    alt={v.venue_name ?? "Venue"}
+                    fill
+                    sizes="56px"
+                    className="object-cover"
+                    unoptimized
+                  />
+                ) : (
+                  <ProducerAvatar name={v.venue_name ?? "?"} size={56} />
+                )}
+              </span>
+            </span>
+          </span>
+          <span className="w-full truncate text-center text-[0.62rem] text-gray-600 dark:text-white/70">
+            {v.venue_name ?? "Venue"}
           </span>
         </a>
       ))}
@@ -1263,6 +1296,24 @@ export function HomescreenSection({
     return () => { cancelled = true; };
   }, [account?.id]);
 
+  const [followedVenues, setFollowedVenues] = useState<FollowedVenueItem[]>([]);
+
+  useEffect(() => {
+    if (!account?.id) {
+      setFollowedVenues([]);
+      return;
+    }
+    let cancelled = false;
+    fetchFollowedVenues()
+      .then((result) => {
+        if (!cancelled) setFollowedVenues(result.followed_venues ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setFollowedVenues([]);
+      });
+    return () => { cancelled = true; };
+  }, [account?.id]);
+
   const [suggestedProducers, setSuggestedProducers] = useState<SuggestedProducerItem[]>([]);
 
   useEffect(() => {
@@ -1787,9 +1838,9 @@ export function HomescreenSection({
       </div>
 
       {/* ── Story bar ──────────────────────────────────────────────── */}
-      {isLoggedIn && followedProducers.length > 0 && (
+      {isLoggedIn && (followedProducers.length > 0 || followedVenues.length > 0) && (
         <div className="px-1 pb-2">
-          <StoryBar producers={followedProducers} />
+          <StoryBar producers={followedProducers} venues={followedVenues} />
         </div>
       )}
 
