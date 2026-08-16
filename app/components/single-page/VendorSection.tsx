@@ -3759,7 +3759,7 @@ export function VendorSection({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <VendorInput label="Date *" type="date" value={evDate} placeholder="" error={evFieldErrors.date} onChange={setEvDate} />
             <VendorInput label="Start time *" type="time" value={evStartTime} placeholder="" error={evFieldErrors.startTime} onChange={setEvStartTime} />
           </div>
