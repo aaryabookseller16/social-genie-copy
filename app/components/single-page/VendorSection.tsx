@@ -88,6 +88,7 @@ const VENDOR_OFFER_TYPES: VendorOfferType[] = [
 
 const OFFER_TITLE_MAX = 100;
 const OFFER_DESCRIPTION_MAX = 500;
+const POST_TEXT_MAX = 2000;
 
 type VendorStep =
   | "loading"
@@ -1923,6 +1924,8 @@ export function VendorSection({
   async function handleVendorPostSubmit(e: FormEvent) {
     e.preventDefault();
     if (!postText.trim()) { setPostError("Post text is required."); return; }
+    if (postText.trim().length > POST_TEXT_MAX) { setPostError(`Post text must be ${POST_TEXT_MAX} characters or fewer.`); return; }
+    if (postImageUrls.length + postVideos.length > 5) { setPostError("A post can have at most 5 photos and videos combined."); return; }
     if (postUploading || postVideoUploading) { setPostError("Please wait for your photos and videos to finish uploading."); return; }
     setPostBusy(true);
     setPostError(null);
@@ -3827,9 +3830,11 @@ export function VendorSection({
             onChange={(e) => setPostText(e.target.value)}
             placeholder="What's happening at your venue?"
             rows={6}
+            maxLength={POST_TEXT_MAX}
             className="w-full resize-none rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4 text-[15px] text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
             autoFocus
           />
+          {postError ? <p className="text-sm text-red-500">{postError}</p> : null}
 
           {postShowImageInput || postImageUrls.length > 0 ? (
             <ImageUploader
@@ -3859,8 +3864,6 @@ export function VendorSection({
           >
             {postShowImageInput ? "Hide photo/video" : "+ Add photo or video"}
           </button>
-
-          {postError ? <p className="text-sm text-red-500">{postError}</p> : null}
 
           <ActionButton
             type="submit"
