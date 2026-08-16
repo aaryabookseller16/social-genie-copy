@@ -86,6 +86,9 @@ const VENDOR_OFFER_TYPES: VendorOfferType[] = [
   "other",
 ];
 
+const OFFER_TITLE_MAX = 100;
+const OFFER_DESCRIPTION_MAX = 500;
+
 type VendorStep =
   | "loading"
   | "claim"
@@ -258,6 +261,29 @@ function formatEventDateLabel(dateStr?: string): string {
   return dt.toLocaleDateString("en-US", {
     weekday: "short", day: "numeric", month: "short", year: "numeric",
   });
+}
+
+function isUrlValid(value: string) {
+  try {
+    const u = new URL(value);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function isPhoneValid(value: string) {
+  return /^[\d\s()+-]{7,20}$/.test(value);
+}
+
+const CONTACT_NAME_MAX = 60;
+
+/** Local (not UTC) today as YYYY-MM-DD, comparable against a `<input type="date">` value. */
+function todayDateStr(): string {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
 }
 
 // Xano tag fields come back as arrays, objects keyed by tag, or strings.
@@ -503,12 +529,16 @@ function VendorInput({
   type = "text",
   onChange,
   label,
+  maxLength,
+  error,
 }: {
   value: string;
   placeholder: string;
   type?: string;
   onChange: (v: string) => void;
   label?: string;
+  maxLength?: number;
+  error?: string;
 }) {
   return (
     <div>
@@ -522,8 +552,10 @@ function VendorInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        maxLength={maxLength}
         className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3.5 text-[15px] text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
       />
+      {error ? <p className="mt-1.5 text-[0.78rem] text-red-500">{error}</p> : null}
     </div>
   );
 }
@@ -645,6 +677,7 @@ export function VendorSection({
   const [contact, setContact] = useState<VendorContactState>(() =>
     createContactState(account)
   );
+  const [contactFieldErrors, setContactFieldErrors] = useState<Record<string, string>>({});
   const [entryMode, setEntryMode] = useState<"match" | "manual">(
     initialDraft.isManualEntry ? "manual" : "match"
   );
@@ -710,6 +743,7 @@ export function VendorSection({
     phone: account?.phone ?? "",
     roleTitle: "",
   });
+  const [manualContactFieldErrors, setManualContactFieldErrors] = useState<Record<string, string>>({});
 
   const [dashboardData, setDashboardData] =
     useState<FullDashboardData | null>(null);
@@ -731,8 +765,6 @@ export function VendorSection({
   const [evDate, setEvDate] = useState("");
   const [evStartTime, setEvStartTime] = useState("");
   const [evEndTime, setEvEndTime] = useState("");
-  const [evFree, setEvFree] = useState(false);
-  const [evTicketPrice, setEvTicketPrice] = useState("");
   const [evTicketUrl, setEvTicketUrl] = useState("");
   /** Ordered event gallery; index 0 is the cover. Capped at 5 by Xano. */
   const [evImageUrls, setEvImageUrls] = useState<string[]>([]);
@@ -740,10 +772,9 @@ export function VendorSection({
   /** Separate video list; combined count with evImageUrls is capped at 5 by Xano. */
   const [evVideos, setEvVideos] = useState<VideoSlotValue[]>([]);
   const [evVideoUploading, setEvVideoUploading] = useState(false);
-  const [evRsvpLimit, setEvRsvpLimit] = useState("");
-  const [evAgeReq, setEvAgeReq] = useState("");
   const [evBusy, setEvBusy] = useState(false);
   const [evError, setEvError] = useState<string | null>(null);
+  const [evFieldErrors, setEvFieldErrors] = useState<Record<string, string>>({});
   const editingEventId = useRef<number | null>(null);
 
   /* create/edit-post form state */
@@ -801,6 +832,7 @@ export function VendorSection({
     redemption_limit: "",
     vibee_only: false,
   });
+  const [offerFieldErrors, setOfferFieldErrors] = useState<Record<string, string>>({});
   const [isSavingOffer, setIsSavingOffer] = useState(false);
 
   // Influencer offer review queue (venue owner)
@@ -1704,13 +1736,15 @@ export function VendorSection({
       setOfferMessage("Could not find your vendor account. Try reloading.");
       return;
     }
-    if (!offerForm.title.trim()) {
-      setOfferMessage("An offer title is required.");
-      return;
+
+    const errors: Record<string, string> = {};
+    if (!offerForm.title.trim()) errors.title = "An offer title is required.";
+    else if (offerForm.title.trim().length > OFFER_TITLE_MAX) {
+      errors.title = `Title must be ${OFFER_TITLE_MAX} characters or fewer.`;
     }
-    if (!offerForm.description.trim()) {
-      setOfferMessage("An offer description is required.");
-      return;
+    if (!offerForm.description.trim()) errors.description = "An offer description is required.";
+    else if (offerForm.description.trim().length > OFFER_DESCRIPTION_MAX) {
+      errors.description = `Description must be ${OFFER_DESCRIPTION_MAX} characters or fewer.`;
     }
 
     const limit = Number(offerForm.redemption_limit);
@@ -1718,10 +1752,20 @@ export function VendorSection({
       offerForm.redemption_limit.trim() &&
       (!Number.isFinite(limit) || limit <= 0)
     ) {
-      setOfferMessage("Redemption limit must be a positive number.");
+      errors.redemption_limit = "Redemption limit must be a positive number.";
+    }
+
+    if (offerForm.link_url.trim() && !isUrlValid(offerForm.link_url.trim())) {
+      errors.link_url = "Enter a valid link starting with http:// or https://.";
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setOfferFieldErrors(errors);
+      setOfferMessage(null);
       return;
     }
 
+    setOfferFieldErrors({});
     setIsSavingOffer(true);
     setOfferMessage(null);
 
@@ -1782,10 +1826,10 @@ export function VendorSection({
     editingEventId.current = null;
     setEvTitle(""); setEvCategory(""); setEvDescription(""); setEvDate("");
     setEvStartTime(""); setEvEndTime("");
-    setEvFree(false); setEvTicketPrice(""); setEvTicketUrl("");
+    setEvTicketUrl("");
     setEvImageUrls([]); setEvUploading(false);
     setEvVideos([]); setEvVideoUploading(false);
-    setEvRsvpLimit(""); setEvAgeReq(""); setEvError(null);
+    setEvError(null); setEvFieldErrors({});
     setStep("create-event");
   }
 
@@ -1797,18 +1841,13 @@ export function VendorSection({
     setEvDate(ev.event_date ?? "");
     setEvStartTime(ev.start_time ?? "");
     setEvEndTime(ev.end_time ?? "");
-    setEvFree(ev.is_free ?? false);
-    setEvTicketPrice(ev.ticket_price_min !== undefined ? String(ev.ticket_price_min) : "");
     setEvTicketUrl(ev.ticket_url ?? "");
     setEvImageUrls(galleryFor(ev.cover_image_url, ev.image_urls));
     setEvUploading(false);
     setEvVideos([]);
     setEvVideoUploading(false);
-    setEvRsvpLimit(ev.rsvp_limit !== undefined ? String(ev.rsvp_limit) : "");
-    // age_requirement is an int column (e.g. 18), not a string — must stringify
-    // or the later evAgeReq.trim() in handleVendorEventSubmit throws.
-    setEvAgeReq(ev.age_requirement !== undefined ? String(ev.age_requirement) : "");
     setEvError(null);
+    setEvFieldErrors({});
     setStep("create-event");
   }
 
@@ -1835,8 +1874,22 @@ export function VendorSection({
 
   async function handleVendorEventSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!evTitle.trim()) { setEvError("Event title is required."); return; }
-    if (!evCategory) { setEvError("Please select a category."); return; }
+
+    const errors: Record<string, string> = {};
+    if (!evTitle.trim()) errors.title = "Event title is required.";
+    if (!evCategory) errors.category = "Please select a category.";
+    if (!evDate) errors.date = "Event date is required.";
+    else if (evDate < todayDateStr()) errors.date = "Event date can't be in the past.";
+    if (!evStartTime) errors.startTime = "Start time is required.";
+    if (evStartTime && evEndTime && evEndTime <= evStartTime) {
+      errors.endTime = "End time must be after start time.";
+    }
+    if (Object.keys(errors).length > 0) {
+      setEvFieldErrors(errors);
+      setEvError(null);
+      return;
+    }
+    setEvFieldErrors({});
     if (evUploading || evVideoUploading) { setEvError("Please wait for your photos and videos to finish uploading."); return; }
     setEvBusy(true);
     setEvError(null);
@@ -1846,17 +1899,13 @@ export function VendorSection({
         title: evTitle.trim(),
         category: evCategory,
         description: evDescription.trim() || undefined,
-        event_date: evDate || undefined,
-        start_time: evStartTime || undefined,
+        event_date: evDate,
+        start_time: evStartTime,
         end_time: evEndTime || undefined,
-        is_free: evFree,
-        ticket_price_min: evTicketPrice ? Number(evTicketPrice) : undefined,
         ticket_url: evTicketUrl.trim() || undefined,
         cover_image_url: evImageUrls[0] || undefined,
         image_urls: evImageUrls,
         video_urls: videoUrls.length > 0 ? videoUrls : undefined,
-        rsvp_limit: evRsvpLimit ? Number(evRsvpLimit) : undefined,
-        age_requirement: evAgeReq.trim() || undefined,
         event_id: editingEventId.current ?? undefined,
         acting_as: "venue",
       });
@@ -2241,22 +2290,33 @@ export function VendorSection({
           className="mt-6 space-y-3"
           onSubmit={(e: FormEvent<HTMLFormElement>) => {
             e.preventDefault();
-            if (
-              !contact.firstName.trim() ||
-              !contact.lastName.trim() ||
-              !isEmailValid(contact.email)
-            ) {
-              setStatusMessage("Enter a valid name and email before continuing.");
+            const errors: Record<string, string> = {};
+            if (!contact.firstName.trim()) errors.firstName = "First name is required.";
+            else if (contact.firstName.trim().length > CONTACT_NAME_MAX) {
+              errors.firstName = `First name must be ${CONTACT_NAME_MAX} characters or fewer.`;
+            }
+            if (!contact.lastName.trim()) errors.lastName = "Last name is required.";
+            else if (contact.lastName.trim().length > CONTACT_NAME_MAX) {
+              errors.lastName = `Last name must be ${CONTACT_NAME_MAX} characters or fewer.`;
+            }
+            if (!isEmailValid(contact.email)) errors.email = "Enter a valid email address.";
+            if (contact.phone.trim() && !isPhoneValid(contact.phone.trim())) {
+              errors.phone = "Enter a valid phone number.";
+            }
+            if (Object.keys(errors).length > 0) {
+              setContactFieldErrors(errors);
+              setStatusMessage(null);
               return;
             }
+            setContactFieldErrors({});
             setStatusMessage(null);
             void handleContactSubmit();
           }}
         >
-          <VendorInput value={contact.firstName} placeholder="First Name" onChange={(v) => setContact((c) => ({ ...c, firstName: v }))} />
-          <VendorInput value={contact.lastName} placeholder="Last Name" onChange={(v) => setContact((c) => ({ ...c, lastName: v }))} />
-          <VendorInput type="email" value={contact.email} placeholder="Email" onChange={(v) => setContact((c) => ({ ...c, email: v }))} />
-          <VendorInput value={contact.phone} placeholder="Phone (optional)" onChange={(v) => setContact((c) => ({ ...c, phone: v }))} />
+          <VendorInput value={contact.firstName} placeholder="First Name" maxLength={CONTACT_NAME_MAX} error={contactFieldErrors.firstName} onChange={(v) => setContact((c) => ({ ...c, firstName: v }))} />
+          <VendorInput value={contact.lastName} placeholder="Last Name" maxLength={CONTACT_NAME_MAX} error={contactFieldErrors.lastName} onChange={(v) => setContact((c) => ({ ...c, lastName: v }))} />
+          <VendorInput type="email" value={contact.email} placeholder="Email" error={contactFieldErrors.email} onChange={(v) => setContact((c) => ({ ...c, email: v }))} />
+          <VendorInput value={contact.phone} placeholder="Phone (optional)" maxLength={20} error={contactFieldErrors.phone} onChange={(v) => setContact((c) => ({ ...c, phone: v }))} />
           <p className="text-[13px] text-gray-400 dark:text-white/42">
             We&apos;ll only use this to contact you about your account.
           </p>
@@ -2324,6 +2384,18 @@ export function VendorSection({
               setStatusMessage("Street address is required.");
               return;
             }
+            if (!manualLocation.city.trim()) {
+              setStatusMessage("City is required.");
+              return;
+            }
+            if (!manualLocation.state.trim()) {
+              setStatusMessage("State is required.");
+              return;
+            }
+            if (!/^\d{5}(-\d{4})?$/.test(manualLocation.zip.trim())) {
+              setStatusMessage("Enter a valid 5-digit zip code.");
+              return;
+            }
             setStatusMessage(null);
             setStep("manual-profile");
           }}
@@ -2331,7 +2403,7 @@ export function VendorSection({
           <VendorInput label="Street Address" value={manualLocation.address} placeholder="Street Address" onChange={(v) => setManualLocation((c) => ({ ...c, address: v }))} />
           <VendorInput label="City" value={manualLocation.city} placeholder="City" onChange={(v) => setManualLocation((c) => ({ ...c, city: v }))} />
           <VendorInput label="State" value={manualLocation.state} placeholder="State" onChange={(v) => setManualLocation((c) => ({ ...c, state: v }))} />
-          <VendorInput label="Zip" value={manualLocation.zip} placeholder="Zip" onChange={(v) => setManualLocation((c) => ({ ...c, zip: v }))} />
+          <VendorInput label="Zip" value={manualLocation.zip} placeholder="Zip" maxLength={10} onChange={(v) => setManualLocation((c) => ({ ...c, zip: v }))} />
           <VendorInput label="Neighborhood" value={manualLocation.neighborhood} placeholder="Neighborhood" onChange={(v) => setManualLocation((c) => ({ ...c, neighborhood: v }))} />
           <ActionButton type="submit" className="w-full">Next</ActionButton>
         </form>
@@ -2365,24 +2437,35 @@ export function VendorSection({
           className="mt-6 space-y-3"
           onSubmit={(e: FormEvent<HTMLFormElement>) => {
             e.preventDefault();
-            if (
-              !manualContact.firstName.trim() ||
-              !manualContact.lastName.trim() ||
-              !isEmailValid(manualContact.email)
-            ) {
-              setStatusMessage("Name and valid email are required.");
+            const errors: Record<string, string> = {};
+            if (!manualContact.firstName.trim()) errors.firstName = "First name is required.";
+            else if (manualContact.firstName.trim().length > CONTACT_NAME_MAX) {
+              errors.firstName = `First name must be ${CONTACT_NAME_MAX} characters or fewer.`;
+            }
+            if (!manualContact.lastName.trim()) errors.lastName = "Last name is required.";
+            else if (manualContact.lastName.trim().length > CONTACT_NAME_MAX) {
+              errors.lastName = `Last name must be ${CONTACT_NAME_MAX} characters or fewer.`;
+            }
+            if (!isEmailValid(manualContact.email)) errors.email = "Enter a valid email address.";
+            if (manualContact.phone.trim() && !isPhoneValid(manualContact.phone.trim())) {
+              errors.phone = "Enter a valid phone number.";
+            }
+            if (Object.keys(errors).length > 0) {
+              setManualContactFieldErrors(errors);
+              setStatusMessage(null);
               return;
             }
+            setManualContactFieldErrors({});
             setStatusMessage(null);
             setEntryMode("manual");
             setStep("plan");
           }}
         >
-          <VendorInput label="First Name" value={manualContact.firstName} placeholder="First Name" onChange={(v) => setManualContact((c) => ({ ...c, firstName: v }))} />
-          <VendorInput label="Last Name" value={manualContact.lastName} placeholder="Last Name" onChange={(v) => setManualContact((c) => ({ ...c, lastName: v }))} />
-          <VendorInput label="Email" type="email" value={manualContact.email} placeholder="Email" onChange={(v) => setManualContact((c) => ({ ...c, email: v }))} />
-          <VendorInput label="Phone" value={manualContact.phone} placeholder="Phone" onChange={(v) => setManualContact((c) => ({ ...c, phone: v }))} />
-          <VendorInput label="Role / Title" value={manualContact.roleTitle} placeholder="Role / Title" onChange={(v) => setManualContact((c) => ({ ...c, roleTitle: v }))} />
+          <VendorInput label="First Name" value={manualContact.firstName} placeholder="First Name" maxLength={CONTACT_NAME_MAX} error={manualContactFieldErrors.firstName} onChange={(v) => setManualContact((c) => ({ ...c, firstName: v }))} />
+          <VendorInput label="Last Name" value={manualContact.lastName} placeholder="Last Name" maxLength={CONTACT_NAME_MAX} error={manualContactFieldErrors.lastName} onChange={(v) => setManualContact((c) => ({ ...c, lastName: v }))} />
+          <VendorInput label="Email" type="email" value={manualContact.email} placeholder="Email" error={manualContactFieldErrors.email} onChange={(v) => setManualContact((c) => ({ ...c, email: v }))} />
+          <VendorInput label="Phone" value={manualContact.phone} placeholder="Phone" maxLength={20} error={manualContactFieldErrors.phone} onChange={(v) => setManualContact((c) => ({ ...c, phone: v }))} />
+          <VendorInput label="Role / Title" value={manualContact.roleTitle} placeholder="Role / Title" maxLength={CONTACT_NAME_MAX} onChange={(v) => setManualContact((c) => ({ ...c, roleTitle: v }))} />
           <ActionButton type="submit" className="w-full">Next</ActionButton>
         </form>
       )}
@@ -3040,7 +3123,7 @@ export function VendorSection({
             {isPro ? (
               <div className="space-y-2">
                 <ActionButton
-                  onClick={() => setStep("create-offer")}
+                  onClick={() => { setOfferFieldErrors({}); setStep("create-offer"); }}
                   className="w-full"
                   disabled={!isLive}
                 >
@@ -3385,6 +3468,8 @@ export function VendorSection({
             label="Offer Title"
             value={offerForm.title}
             placeholder="Half-price cocktails, 4-7pm"
+            maxLength={OFFER_TITLE_MAX}
+            error={offerFieldErrors.title}
             onChange={(v) => setOfferForm((c) => ({ ...c, title: v }))}
           />
 
@@ -3399,8 +3484,12 @@ export function VendorSection({
               }
               placeholder="Tell Vibees what they get and when it's available..."
               rows={3}
+              maxLength={OFFER_DESCRIPTION_MAX}
               className="w-full resize-none rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-[15px] text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
             />
+            {offerFieldErrors.description ? (
+              <p className="mt-1.5 text-[0.78rem] text-red-500">{offerFieldErrors.description}</p>
+            ) : null}
           </div>
 
           <div>
@@ -3445,6 +3534,8 @@ export function VendorSection({
             label="Link (optional)"
             value={offerForm.link_url}
             placeholder="https://..."
+            type="url"
+            error={offerFieldErrors.link_url}
             onChange={(v) => setOfferForm((c) => ({ ...c, link_url: v }))}
           />
 
@@ -3453,6 +3544,7 @@ export function VendorSection({
             value={offerForm.redemption_limit}
             placeholder="Leave blank for unlimited"
             type="number"
+            error={offerFieldErrors.redemption_limit}
             onChange={(v) =>
               setOfferForm((c) => ({ ...c, redemption_limit: v }))
             }
@@ -3626,6 +3718,8 @@ export function VendorSection({
             label="Event title *"
             value={evTitle}
             placeholder="e.g. Live Music Friday"
+            maxLength={100}
+            error={evFieldErrors.title}
             onChange={setEvTitle}
           />
 
@@ -3643,6 +3737,9 @@ export function VendorSection({
                 <option key={cat} value={cat}>{cat}</option>
               ))}
             </select>
+            {evFieldErrors.category ? (
+              <p className="mt-1.5 text-[0.78rem] text-red-500">{evFieldErrors.category}</p>
+            ) : null}
           </div>
 
           <div>
@@ -3654,39 +3751,17 @@ export function VendorSection({
               onChange={(e) => setEvDescription(e.target.value)}
               placeholder="Describe your event…"
               rows={3}
+              maxLength={1000}
               className="w-full resize-none rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-[15px] text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <VendorInput label="Date" type="date" value={evDate} placeholder="" onChange={setEvDate} />
-            <VendorInput label="Start time" type="time" value={evStartTime} placeholder="" onChange={setEvStartTime} />
+            <VendorInput label="Date *" type="date" value={evDate} placeholder="" error={evFieldErrors.date} onChange={setEvDate} />
+            <VendorInput label="Start time *" type="time" value={evStartTime} placeholder="" error={evFieldErrors.startTime} onChange={setEvStartTime} />
           </div>
 
-          <VendorInput label="End time" type="time" value={evEndTime} placeholder="" onChange={setEvEndTime} />
-
-          <div className="flex items-center gap-3 rounded-2xl border border-gray-200 px-4 py-3 dark:border-white/15">
-            <input
-              id="vev-free"
-              type="checkbox"
-              checked={evFree}
-              onChange={(e) => setEvFree(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300 accent-red-600"
-            />
-            <label htmlFor="vev-free" className="text-sm text-gray-700 dark:text-white/80">
-              This is a free event
-            </label>
-          </div>
-
-          {!evFree ? (
-            <VendorInput
-              label="Minimum ticket price ($)"
-              type="number"
-              value={evTicketPrice}
-              placeholder="e.g. 25"
-              onChange={setEvTicketPrice}
-            />
-          ) : null}
+          <VendorInput label="End time" type="time" value={evEndTime} placeholder="" error={evFieldErrors.endTime} onChange={setEvEndTime} />
 
           <VendorInput
             label="Ticket / RSVP link"
@@ -3723,22 +3798,6 @@ export function VendorSection({
               folder="events"
               max={Math.max(0, 5 - evImageUrls.length)}
               onUploadingChange={setEvVideoUploading}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <VendorInput
-              label="RSVP limit"
-              type="number"
-              value={evRsvpLimit}
-              placeholder="Optional"
-              onChange={setEvRsvpLimit}
-            />
-            <VendorInput
-              label="Age requirement"
-              value={evAgeReq}
-              placeholder="e.g. 21+"
-              onChange={setEvAgeReq}
             />
           </div>
 

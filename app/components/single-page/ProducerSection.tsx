@@ -223,6 +223,16 @@ function formatEventDate(dateStr?: string): string {
   });
 }
 
+const POST_TEXT_MAX = 2000;
+
+/** Local (not UTC) today as YYYY-MM-DD, comparable against a `<input type="date">` value. */
+function todayDateStr(): string {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Small shared pieces                                                */
 /* ------------------------------------------------------------------ */
@@ -273,14 +283,17 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 function FormField({
   label,
   children,
+  error,
 }: {
   label: string;
   children: React.ReactNode;
+  error?: string;
 }) {
   return (
     <div>
       <FieldLabel>{label}</FieldLabel>
       {children}
+      {error ? <p className="mt-1 text-[0.78rem] text-red-500">{error}</p> : null}
     </div>
   );
 }
@@ -409,8 +422,6 @@ export function ProducerSection({
   const [evVenueSearching, setEvVenueSearching] = useState(false);
   const [evVenueManual, setEvVenueManual] = useState(false);
   const [evCity, setEvCity] = useState("");
-  const [evFree, setEvFree] = useState(false);
-  const [evTicketPrice, setEvTicketPrice] = useState("");
   const [evTicketUrl, setEvTicketUrl] = useState("");
   /** Ordered event gallery; index 0 is the cover. Capped at 5 by Xano. */
   const [evImageUrls, setEvImageUrls] = useState<string[]>([]);
@@ -418,10 +429,9 @@ export function ProducerSection({
   /** Separate video list; combined count with evImageUrls is capped at 5 by Xano. */
   const [evVideos, setEvVideos] = useState<VideoSlotValue[]>([]);
   const [evVideoUploading, setEvVideoUploading] = useState(false);
-  const [evRsvpLimit, setEvRsvpLimit] = useState("");
-  const [evAgeReq, setEvAgeReq] = useState("");
   const [evBusy, setEvBusy] = useState(false);
   const [evError, setEvError] = useState<string | null>(null);
+  const [evFieldErrors, setEvFieldErrors] = useState<Record<string, string>>({});
   const editingEventId = useRef<number | null>(null);
   const [eventActionBusy, setEventActionBusy] = useState(false);
   const [eventActionError, setEventActionError] = useState<string | null>(null);
@@ -605,17 +615,11 @@ export function ProducerSection({
     setEvVenueResults([]);
     setEvVenueManual(!!(ev.venue_name));
     setEvCity(ev.city ?? "");
-    setEvFree(ev.is_free ?? false);
-    setEvTicketPrice(ev.ticket_price_min !== undefined ? String(ev.ticket_price_min) : "");
     setEvTicketUrl(ev.ticket_url ?? "");
     setEvImageUrls(galleryFor(ev.cover_image_url, ev.image_urls));
     setEvUploading(false);
-    setEvRsvpLimit(ev.rsvp_limit !== undefined ? String(ev.rsvp_limit) : "");
-    // age_requirement is an int column (e.g. 18), not a string — despite the
-    // ProducerEvent type claiming string. Must stringify or the later
-    // evAgeReq.trim() in handleEventSubmit throws (evAgeReq.trim is not a function).
-    setEvAgeReq(ev.age_requirement !== undefined ? String(ev.age_requirement) : "");
     setEvError(null);
+    setEvFieldErrors({});
     setStep("edit-event");
   }
 
@@ -731,10 +735,10 @@ export function ProducerSection({
     editingEventId.current = null;
     setEvTitle(""); setEvCategory(""); setEvDescription(""); setEvDate("");
     setEvStartTime(""); setEvEndTime(""); setEvVenue(""); setEvCity("");
-    setEvFree(false); setEvTicketPrice(""); setEvTicketUrl("");
+    setEvTicketUrl("");
     setEvImageUrls([]); setEvUploading(false);
     setEvVideos([]); setEvVideoUploading(false);
-    setEvRsvpLimit(""); setEvAgeReq(""); setEvError(null);
+    setEvError(null); setEvFieldErrors({});
     setStep("create-event");
   }
 
@@ -814,8 +818,22 @@ export function ProducerSection({
 
   async function handleEventSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!evTitle.trim()) { setEvError("Event title is required."); return; }
-    if (!evCategory) { setEvError("Please select a category."); return; }
+
+    const errors: Record<string, string> = {};
+    if (!evTitle.trim()) errors.title = "Event title is required.";
+    if (!evCategory) errors.category = "Please select a category.";
+    if (!evDate) errors.date = "Event date is required.";
+    else if (evDate < todayDateStr()) errors.date = "Event date can't be in the past.";
+    if (!evStartTime) errors.startTime = "Start time is required.";
+    if (evStartTime && evEndTime && evEndTime <= evStartTime) {
+      errors.endTime = "End time must be after start time.";
+    }
+    if (Object.keys(errors).length > 0) {
+      setEvFieldErrors(errors);
+      setEvError(null);
+      return;
+    }
+    setEvFieldErrors({});
     if (evUploading || evVideoUploading) { setEvError("Please wait for your photos and videos to finish uploading."); return; }
     setEvBusy(true);
     setEvError(null);
@@ -826,20 +844,16 @@ export function ProducerSection({
         category: evCategory,
         producer_id: readCachedProducerId() ?? undefined,
         description: evDescription.trim() || undefined,
-        event_date: evDate || undefined,
-        start_time: evStartTime || undefined,
+        event_date: evDate,
+        start_time: evStartTime,
         end_time: evEndTime || undefined,
         venue_id: evVenueId ?? undefined,
         venue_name: evVenue.trim() || undefined,
         city: evCity.trim() || undefined,
-        is_free: evFree,
-        ticket_price_min: evTicketPrice ? Number(evTicketPrice) : undefined,
         ticket_url: evTicketUrl.trim() || undefined,
         cover_image_url: evImageUrls[0] || undefined,
         image_urls: evImageUrls,
         video_urls: videoUrls.length > 0 ? videoUrls : undefined,
-        rsvp_limit: evRsvpLimit ? Number(evRsvpLimit) : undefined,
-        age_requirement: evAgeReq.trim() || undefined,
         event_id: editingEventId.current ?? undefined,
       });
       const createdRaw = created as unknown as Record<string, unknown>;
@@ -862,6 +876,8 @@ export function ProducerSection({
   async function handlePostSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!postText.trim()) { setPostError("Post text is required."); return; }
+    if (postText.trim().length > POST_TEXT_MAX) { setPostError(`Post text must be ${POST_TEXT_MAX} characters or fewer.`); return; }
+    if (postImageUrls.length + postVideos.length > 5) { setPostError("A post can have at most 5 photos and videos combined."); return; }
     if (postUploading || postVideoUploading) { setPostError("Please wait for your photos and videos to finish uploading."); return; }
     setPostBusy(true);
     setPostError(null);
@@ -1768,19 +1784,20 @@ export function ProducerSection({
         />
 
         <form onSubmit={handleEventSubmit} className="space-y-4">
-          <FormField label="Event title *">
+          <FormField label="Event title *" error={evFieldErrors.title}>
             <input
               type="text"
               value={evTitle}
               onChange={(e) => setEvTitle(e.target.value)}
               placeholder="e.g. Summer Night Live"
+              maxLength={100}
               className={inputClass}
               style={{ fontSize: "16px" }}
               autoFocus={!isEdit}
             />
           </FormField>
 
-          <FormField label="Category *">
+          <FormField label="Category *" error={evFieldErrors.category}>
             <select
               value={evCategory}
               onChange={(e) => setEvCategory(e.target.value)}
@@ -1800,22 +1817,24 @@ export function ProducerSection({
               onChange={(e) => setEvDescription(e.target.value)}
               placeholder="Describe your event…"
               rows={3}
+              maxLength={1000}
               className={inputClass + " resize-none"}
               style={{ fontSize: "16px" }}
             />
           </FormField>
 
           <div className="grid grid-cols-2 gap-3">
-            <FormField label="Date">
+            <FormField label="Date *" error={evFieldErrors.date}>
               <input
                 type="date"
                 value={evDate}
                 onChange={(e) => setEvDate(e.target.value)}
+                min={todayDateStr()}
                 className={inputClass}
                 style={{ fontSize: "16px" }}
               />
             </FormField>
-            <FormField label="Start time">
+            <FormField label="Start time *" error={evFieldErrors.startTime}>
               <input
                 type="time"
                 value={evStartTime}
@@ -1826,7 +1845,7 @@ export function ProducerSection({
             </FormField>
           </div>
 
-          <FormField label="End time">
+          <FormField label="End time" error={evFieldErrors.endTime}>
             <input
               type="time"
               value={evEndTime}
@@ -1930,34 +1949,6 @@ export function ProducerSection({
             />
           </FormField>
 
-          <div className="flex items-center gap-3 rounded-2xl border border-gray-200 px-4 py-3 dark:border-white/15">
-            <input
-              id="ev-free"
-              type="checkbox"
-              checked={evFree}
-              onChange={(e) => setEvFree(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300 accent-red-600"
-            />
-            <label htmlFor="ev-free" className="text-sm text-gray-700 dark:text-white/80">
-              This is a free event
-            </label>
-          </div>
-
-          {!evFree ? (
-            <FormField label="Minimum ticket price ($)">
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={evTicketPrice}
-                onChange={(e) => setEvTicketPrice(e.target.value)}
-                placeholder="e.g. 25"
-                className={inputClass}
-                style={{ fontSize: "16px" }}
-              />
-            </FormField>
-          ) : null}
-
           <FormField label="Ticket / RSVP link">
             <input
               type="url"
@@ -1992,30 +1983,6 @@ export function ProducerSection({
               onUploadingChange={setEvVideoUploading}
             />
           </FormField>
-
-          <div className="grid grid-cols-2 gap-3">
-            <FormField label="RSVP limit">
-              <input
-                type="number"
-                min="1"
-                value={evRsvpLimit}
-                onChange={(e) => setEvRsvpLimit(e.target.value)}
-                placeholder="Optional"
-                className={inputClass}
-                style={{ fontSize: "16px" }}
-              />
-            </FormField>
-            <FormField label="Age requirement">
-              <input
-                type="text"
-                value={evAgeReq}
-                onChange={(e) => setEvAgeReq(e.target.value)}
-                placeholder="e.g. 21+"
-                className={inputClass}
-                style={{ fontSize: "16px" }}
-              />
-            </FormField>
-          </div>
 
           {evError ? (
             <p className="text-sm text-red-500">{evError}</p>
@@ -2408,10 +2375,14 @@ export function ProducerSection({
               onChange={(e) => setPostText(e.target.value)}
               placeholder="What's on your mind?"
               rows={6}
+              maxLength={POST_TEXT_MAX}
               className="w-full flex-1 resize-none rounded-2xl border border-gray-200 bg-transparent px-4 py-4 text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none dark:border-white/15 dark:text-white dark:placeholder:text-white/30 dark:focus:border-red-500/60"
               style={{ fontSize: "16px" }}
               autoFocus
             />
+            {postError ? (
+              <p className="text-sm text-red-500">{postError}</p>
+            ) : null}
 
             {/* Photo picker (shown when the image icon is tapped, or once photos exist) */}
             {postShowImageInput || postImageUrls.length > 0 ? (
@@ -2459,10 +2430,6 @@ export function ProducerSection({
                 </button>
               </div>
             </div>
-
-            {postError ? (
-              <p className="text-sm text-red-500">{postError}</p>
-            ) : null}
 
             {/* Post It button */}
             <button

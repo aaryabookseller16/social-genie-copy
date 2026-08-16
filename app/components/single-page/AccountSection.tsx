@@ -45,6 +45,8 @@ function isEmailValid(value: string) {
   return /\S+@\S+\.\S+/.test(value);
 }
 
+const NAME_MAX = 60;
+
 const PROFILE_INPUT_CLASS =
   "w-full rounded-2xl border border-gray-300 bg-transparent px-4 py-3.5 text-gray-900 placeholder:text-gray-500 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]";
 
@@ -104,6 +106,7 @@ export function AccountSection({
   const [modeHistory, setModeHistory] = useState<AccountScreenMode[]>([]);
   const [form, setForm] = useState<ConsumerFormState>(createEmptyConsumerForm());
   const [message, setMessage] = useState<string | null>(null);
+  const [signupFieldErrors, setSignupFieldErrors] = useState<Record<string, string>>({});
   // Held locally so the banner survives the parent clearing the `notice` prop.
   const [gateNotice, setGateNotice] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -137,6 +140,10 @@ export function AccountSection({
     if (!account) return;
     if (!profFirstName.trim()) {
       setProfError("First name is required.");
+      return;
+    }
+    if (profPhone.trim() && !/^\d{7,14}$/.test(profPhone.trim())) {
+      setProfError("Phone must be 7-14 digits.");
       return;
     }
     if (profUploading) {
@@ -177,6 +184,7 @@ export function AccountSection({
       setMode("login");
       setModeHistory([]);
       setMessage(null);
+      setSignupFieldErrors({});
       setGateNotice(null);
       setForm(createEmptyConsumerForm());
       return;
@@ -185,6 +193,7 @@ export function AccountSection({
       setMode(initialMode);
       setForm(createEmptyConsumerForm());
       setMessage(null);
+      setSignupFieldErrors({});
     }
   }, [visible, initialMode]);
 
@@ -228,6 +237,7 @@ export function AccountSection({
     setMode(next);
     setForm(createEmptyConsumerForm());
     setMessage(null);
+    setSignupFieldErrors({});
   };
 
   const openFreeSignup = () => openMode("free");
@@ -242,6 +252,7 @@ export function AccountSection({
       setModeHistory((prev) => prev.slice(0, -1));
       setMode(modeHistory[modeHistory.length - 1]);
       setMessage(null);
+      setSignupFieldErrors({});
       return;
     }
     onDismiss();
@@ -285,17 +296,21 @@ export function AccountSection({
     trackEvent(analyticsEvents.signupStarted);
     trackEvent(analyticsEvents.freeSignupStarted);
 
-    if (
-      !form.firstName.trim() ||
-      !form.lastName.trim() ||
-      !isEmailValid(form.email) ||
-      !form.consent
-    ) {
-      setMessage("Complete the required fields and accept the terms.");
+    const errors: Record<string, string> = {};
+    if (!form.firstName.trim()) errors.firstName = "First name is required.";
+    else if (form.firstName.trim().length > NAME_MAX) errors.firstName = `First name must be ${NAME_MAX} characters or fewer.`;
+    if (!form.lastName.trim()) errors.lastName = "Last name is required.";
+    else if (form.lastName.trim().length > NAME_MAX) errors.lastName = `Last name must be ${NAME_MAX} characters or fewer.`;
+    if (!isEmailValid(form.email)) errors.email = "Enter a valid email address.";
+    if (!form.consent) errors.consent = "You must accept the Terms and Privacy Policy.";
+
+    if (Object.keys(errors).length > 0) {
+      setSignupFieldErrors(errors);
       trackEvent(analyticsEvents.freeSignupValidationError);
       return;
     }
 
+    setSignupFieldErrors({});
     setIsSubmitting(true);
     setMessage(null);
 
@@ -461,36 +476,56 @@ export function AccountSection({
             onSubmit={(event) => void submitSignup(event)}
             className="mt-6 space-y-3"
           >
-          <input
-            type="text"
-            value={form.firstName}
-            onChange={(e) =>
-              setForm((c) => ({ ...c, firstName: e.target.value }))
-            }
-            placeholder="First Name"
-            style={{ fontSize: "16px" }}
-            className="w-full rounded-2xl border border-gray-300 bg-transparent px-4 py-3.5 text-gray-900 placeholder:text-gray-500 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
-          />
-          <input
-            type="text"
-            value={form.lastName}
-            onChange={(e) =>
-              setForm((c) => ({ ...c, lastName: e.target.value }))
-            }
-            placeholder="Last Name"
-            style={{ fontSize: "16px" }}
-            className="w-full rounded-2xl border border-gray-300 bg-transparent px-4 py-3.5 text-gray-900 placeholder:text-gray-500 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
-          />
-          <input
-            type="email"
-            value={form.email}
-            onChange={(e) =>
-              setForm((c) => ({ ...c, email: e.target.value }))
-            }
-            placeholder="Email"
-            style={{ fontSize: "16px" }}
-            className="w-full rounded-2xl border border-gray-300 bg-transparent px-4 py-3.5 text-gray-900 placeholder:text-gray-500 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
-          />
+          <div>
+            <input
+              type="text"
+              value={form.firstName}
+              onChange={(e) =>
+                setForm((c) => ({ ...c, firstName: e.target.value }))
+              }
+              placeholder="First Name"
+              required
+              maxLength={NAME_MAX}
+              style={{ fontSize: "16px" }}
+              className="w-full rounded-2xl border border-gray-300 bg-transparent px-4 py-3.5 text-gray-900 placeholder:text-gray-500 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
+            />
+            {signupFieldErrors.firstName ? (
+              <p className="mt-1.5 text-[13px] text-red-500">{signupFieldErrors.firstName}</p>
+            ) : null}
+          </div>
+          <div>
+            <input
+              type="text"
+              value={form.lastName}
+              onChange={(e) =>
+                setForm((c) => ({ ...c, lastName: e.target.value }))
+              }
+              placeholder="Last Name"
+              required
+              maxLength={NAME_MAX}
+              style={{ fontSize: "16px" }}
+              className="w-full rounded-2xl border border-gray-300 bg-transparent px-4 py-3.5 text-gray-900 placeholder:text-gray-500 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
+            />
+            {signupFieldErrors.lastName ? (
+              <p className="mt-1.5 text-[13px] text-red-500">{signupFieldErrors.lastName}</p>
+            ) : null}
+          </div>
+          <div>
+            <input
+              type="email"
+              value={form.email}
+              onChange={(e) =>
+                setForm((c) => ({ ...c, email: e.target.value }))
+              }
+              placeholder="Email"
+              required
+              style={{ fontSize: "16px" }}
+              className="w-full rounded-2xl border border-gray-300 bg-transparent px-4 py-3.5 text-gray-900 placeholder:text-gray-500 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/20 dark:border-[#b74c4c]/55 dark:bg-black/20 dark:text-white dark:placeholder:text-white/30 dark:focus:border-[#ff6a6a]"
+            />
+            {signupFieldErrors.email ? (
+              <p className="mt-1.5 text-[13px] text-red-500">{signupFieldErrors.email}</p>
+            ) : null}
+          </div>
           <label className="flex cursor-pointer items-center gap-2 pt-1 text-[14px] leading-relaxed text-gray-800 dark:text-white/60">
             <span className="relative flex h-5 w-5 flex-none items-center justify-center">
               <input
@@ -542,6 +577,9 @@ export function AccountSection({
               </a>
             </span>
           </label>
+          {signupFieldErrors.consent ? (
+            <p className="-mt-2 text-[13px] text-red-500">{signupFieldErrors.consent}</p>
+          ) : null}
 
           <ActionButton type="submit" className="w-full" disabled={isSubmitting}>
             {isSubmitting ? "Please wait..." : "Create Account"}
@@ -628,9 +666,11 @@ export function AccountSection({
             />
             <input
               type="tel"
+              inputMode="numeric"
               value={profPhone}
-              onChange={(e) => setProfPhone(e.target.value)}
+              onChange={(e) => setProfPhone(e.target.value.replace(/\D/g, ""))}
               placeholder="Phone"
+              maxLength={14}
               style={{ fontSize: "16px" }}
               className={PROFILE_INPUT_CLASS}
             />

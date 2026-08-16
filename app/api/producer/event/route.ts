@@ -3,9 +3,14 @@ import { xanoFetch, extractBearerToken, XanoError } from "@/app/lib/server/xanoP
 
 /**
  * POST /api/producer/event
- * Body: { title, category, description?, event_date?, start_time?, end_time?,
+ * Body: { title, category, description?, event_date, start_time, end_time?,
  *         venue_name?, venue_address?, city?, cover_image_url?, ticket_url?,
- *         ticket_price_min?, is_free?, age_requirement?, rsvp_limit? }
+ *         status?, acting_as? }
+ * event_date/start_time are required on create — ep_create_event_dev declares
+ * them as required inputs. ticket_price_min/is_free/rsvp_limit/age_requirement
+ * were dropped: Xano's create/update event endpoints never accepted them, so
+ * they were silently discarded server-side. acting_as: "venue" lets the venue-owner
+ * dashboard create/edit its own venue's event (Xano still verifies real ownership).
  * Proxies to genie/ep_create_event_dev, or genie/ep_update_event_dev when an
  * event_id is present. Writes to genie_social_events only. Requires Bearer JWT.
  *
@@ -76,10 +81,6 @@ export async function POST(request: NextRequest) {
       else if (isEdit) payload.clear_video = true;
     }
     if (body.ticket_url) payload.ticket_url = String(body.ticket_url).trim();
-    if (body.ticket_price_min !== undefined) payload.ticket_price_min = Number(body.ticket_price_min) || 0;
-    if (body.is_free !== undefined) payload.is_free = Boolean(body.is_free);
-    if (body.age_requirement) payload.age_requirement = String(body.age_requirement).trim();
-    if (body.rsvp_limit !== undefined) payload.rsvp_limit = Number(body.rsvp_limit) || undefined;
     // Owner-only housekeeping (e.g. "cancelled") — not a general-purpose status editor.
     if (body.status) payload.status = String(body.status).trim();
     // "venue" when the venue-owner dashboard is creating/editing its own event;

@@ -2113,8 +2113,8 @@ export async function createProducerEvent(payload: {
   category: string;
   producer_id?: number;
   description?: string;
-  event_date?: string;
-  start_time?: string;
+  event_date: string;
+  start_time: string;
   end_time?: string;
   venue_id?: number;
   venue_name?: string;
@@ -2124,10 +2124,6 @@ export async function createProducerEvent(payload: {
   image_urls?: string[];
   video_urls?: VideoItem[];
   ticket_url?: string;
-  ticket_price_min?: number;
-  is_free?: boolean;
-  age_requirement?: string;
-  rsvp_limit?: number;
   event_id?: number;
   // "venue" when creating/editing from the venue-owner dashboard, for its own
   // venue. Omit for the producer dashboard (defaults to producer server-side).
