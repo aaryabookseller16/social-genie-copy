@@ -952,7 +952,7 @@ function InfluencerOfferCard({ offer }: { offer: HomescreenInfluencerOffer }) {
 
   const cardBody = (
     <>
-      <span className="relative block h-56 w-full bg-zinc-900">
+      <span className="relative block h-38 w-full bg-zinc-900">
         {imageUrl ? (
           <Image
             src={imageUrl}
