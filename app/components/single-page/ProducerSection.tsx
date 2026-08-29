@@ -421,6 +421,10 @@ export function ProducerSection({
   const [evVenueResults, setEvVenueResults] = useState<GenieVenue[]>([]);
   const [evVenueSearching, setEvVenueSearching] = useState(false);
   const [evVenueManual, setEvVenueManual] = useState(false);
+  const [evVenueAddress, setEvVenueAddress] = useState("");
+  const [evVenueAddress2, setEvVenueAddress2] = useState("");
+  const [evVenueState, setEvVenueState] = useState("");
+  const [evVenueZip, setEvVenueZip] = useState("");
   const [evCity, setEvCity] = useState("");
   const [evTicketUrl, setEvTicketUrl] = useState("");
   /** Ordered event gallery; index 0 is the cover. Capped at 5 by Xano. */
@@ -614,6 +618,12 @@ export function ProducerSection({
     setEvVenueQuery("");
     setEvVenueResults([]);
     setEvVenueManual(!!(ev.venue_name));
+    // Stored venue_address is one flat string — prefill it into Address as-is
+    // rather than trying to split it back into Address 2/State/Zip.
+    setEvVenueAddress(ev.venue_address ?? "");
+    setEvVenueAddress2("");
+    setEvVenueState("");
+    setEvVenueZip("");
     setEvCity(ev.city ?? "");
     setEvTicketUrl(ev.ticket_url ?? "");
     setEvImageUrls(galleryFor(ev.cover_image_url, ev.image_urls));
@@ -735,6 +745,8 @@ export function ProducerSection({
     editingEventId.current = null;
     setEvTitle(""); setEvCategory(""); setEvDescription(""); setEvDate("");
     setEvStartTime(""); setEvEndTime(""); setEvVenue(""); setEvCity("");
+    setEvVenueManual(false); setEvVenueId(null);
+    setEvVenueAddress(""); setEvVenueAddress2(""); setEvVenueState(""); setEvVenueZip("");
     setEvTicketUrl("");
     setEvImageUrls([]); setEvUploading(false);
     setEvVideos([]); setEvVideoUploading(false);
@@ -828,6 +840,14 @@ export function ProducerSection({
     if (evStartTime && evEndTime && evEndTime <= evStartTime) {
       errors.endTime = "End time must be after start time.";
     }
+    if (evVenueManual) {
+      if (!evVenueAddress.trim()) errors.venueAddress = "Address is required.";
+      if (!evCity.trim()) errors.venueCity = "City is required.";
+      if (!evVenueState.trim()) errors.venueState = "State is required.";
+      if (evVenueZip.trim() && !/^\d{5}(-\d{4})?$/.test(evVenueZip.trim())) {
+        errors.venueZip = "Enter a valid ZIP code.";
+      }
+    }
     if (Object.keys(errors).length > 0) {
       setEvFieldErrors(errors);
       setEvError(null);
@@ -839,6 +859,19 @@ export function ProducerSection({
     setEvError(null);
     try {
       const videoUrls: VideoItem[] = evVideos.map((v) => ({ url: v.url, thumbnail_url: v.thumbnailUrl }));
+      // Compose one geocodable address string from the manual-venue fields — the
+      // event-detail page falls back to geocoding this when the venue has no
+      // linked lat/lng (true for every manually-added venue).
+      const composedVenueAddress = evVenueManual
+        ? [
+            evVenueAddress.trim(),
+            evVenueAddress2.trim(),
+            evCity.trim(),
+            [evVenueState.trim(), evVenueZip.trim()].filter(Boolean).join(" "),
+          ]
+            .filter(Boolean)
+            .join(", ") || undefined
+        : undefined;
       const created = await createProducerEvent({
         title: evTitle.trim(),
         category: evCategory,
@@ -849,6 +882,7 @@ export function ProducerSection({
         end_time: evEndTime || undefined,
         venue_id: evVenueId ?? undefined,
         venue_name: evVenue.trim() || undefined,
+        venue_address: composedVenueAddress,
         city: evCity.trim() || undefined,
         ticket_url: evTicketUrl.trim() || undefined,
         cover_image_url: evImageUrls[0] || undefined,
@@ -1862,7 +1896,16 @@ export function ProducerSection({
                 <span className="text-[0.9rem] font-medium text-gray-900 dark:text-white">{evVenue}</span>
                 <button
                   type="button"
-                  onClick={() => { setEvVenue(""); setEvVenueId(null); setEvVenueQuery(""); setEvVenueResults([]); }}
+                  onClick={() => {
+                    setEvVenue("");
+                    setEvVenueId(null);
+                    setEvVenueQuery("");
+                    setEvVenueResults([]);
+                    setEvVenueAddress("");
+                    setEvVenueAddress2("");
+                    setEvVenueState("");
+                    setEvVenueZip("");
+                  }}
                   className="ml-2 text-gray-400 hover:text-red-500 dark:text-white/40"
                 >
                   ✕
@@ -1879,9 +1922,70 @@ export function ProducerSection({
                   className={inputClass}
                   style={{ fontSize: "16px" }}
                 />
+                <div>
+                  <input
+                    type="text"
+                    value={evVenueAddress}
+                    onChange={(e) => setEvVenueAddress(e.target.value)}
+                    placeholder="Address *"
+                    className={inputClass}
+                    style={{ fontSize: "16px" }}
+                  />
+                  {evFieldErrors.venueAddress ? (
+                    <p className="mt-1 text-[0.78rem] text-red-500">{evFieldErrors.venueAddress}</p>
+                  ) : null}
+                </div>
+                <input
+                  type="text"
+                  value={evVenueAddress2}
+                  onChange={(e) => setEvVenueAddress2(e.target.value)}
+                  placeholder="Address 2 (optional)"
+                  className={inputClass}
+                  style={{ fontSize: "16px" }}
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <input
+                      type="text"
+                      value={evVenueState}
+                      onChange={(e) => setEvVenueState(e.target.value)}
+                      placeholder="State *"
+                      className={inputClass}
+                      style={{ fontSize: "16px" }}
+                    />
+                    {evFieldErrors.venueState ? (
+                      <p className="mt-1 text-[0.78rem] text-red-500">{evFieldErrors.venueState}</p>
+                    ) : null}
+                  </div>
+                  <div>
+                    <input
+                      type="text"
+                      value={evVenueZip}
+                      onChange={(e) => setEvVenueZip(e.target.value)}
+                      placeholder="Zip"
+                      maxLength={10}
+                      className={inputClass}
+                      style={{ fontSize: "16px" }}
+                    />
+                    {evFieldErrors.venueZip ? (
+                      <p className="mt-1 text-[0.78rem] text-red-500">{evFieldErrors.venueZip}</p>
+                    ) : null}
+                  </div>
+                </div>
+                <p className="text-[11px] text-gray-400 dark:text-white/40">
+                  Uses the City field below for this venue&apos;s city.
+                </p>
                 <button
                   type="button"
-                  onClick={() => { setEvVenueManual(false); setEvVenue(""); setEvVenueId(null); }}
+                  onClick={() => {
+                    setEvVenueManual(false);
+                    setEvVenue("");
+                    setEvVenueId(null);
+                    setEvVenueAddress("");
+                    setEvVenueAddress2("");
+                    setEvVenueState("");
+                    setEvVenueZip("");
+                  }}
                   className="text-[0.78rem] text-red-500 hover:underline"
                 >
                   ← Search venues instead
@@ -1938,7 +2042,7 @@ export function ProducerSection({
             )}
           </FormField>
 
-          <FormField label="City">
+          <FormField label="City" error={evVenueManual ? evFieldErrors.venueCity : undefined}>
             <input
               type="text"
               value={evCity}
