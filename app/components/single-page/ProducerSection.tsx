@@ -1943,6 +1943,19 @@ export function ProducerSection({
                   className={inputClass}
                   style={{ fontSize: "16px" }}
                 />
+                <div>
+                  <input
+                    type="text"
+                    value={evCity}
+                    onChange={(e) => setEvCity(e.target.value)}
+                    placeholder="City *"
+                    className={inputClass}
+                    style={{ fontSize: "16px" }}
+                  />
+                  {evFieldErrors.venueCity ? (
+                    <p className="mt-1 text-[0.78rem] text-red-500">{evFieldErrors.venueCity}</p>
+                  ) : null}
+                </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <input
@@ -1972,9 +1985,6 @@ export function ProducerSection({
                     ) : null}
                   </div>
                 </div>
-                <p className="text-[11px] text-gray-400 dark:text-white/40">
-                  Uses the City field below for this venue&apos;s city.
-                </p>
                 <button
                   type="button"
                   onClick={() => {
@@ -2042,16 +2052,18 @@ export function ProducerSection({
             )}
           </FormField>
 
-          <FormField label="City" error={evVenueManual ? evFieldErrors.venueCity : undefined}>
-            <input
-              type="text"
-              value={evCity}
-              onChange={(e) => setEvCity(e.target.value)}
-              placeholder="e.g. Houston"
-              className={inputClass}
-              style={{ fontSize: "16px" }}
-            />
-          </FormField>
+          {!evVenueManual ? (
+            <FormField label="City">
+              <input
+                type="text"
+                value={evCity}
+                onChange={(e) => setEvCity(e.target.value)}
+                placeholder="e.g. Houston"
+                className={inputClass}
+                style={{ fontSize: "16px" }}
+              />
+            </FormField>
+          ) : null}
 
           <FormField label="Ticket / RSVP link">
             <input
