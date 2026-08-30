@@ -125,4 +125,4 @@ Handoff docs are gitignored — they are working notes, not repo content. Never 
 
 ## Reference docs in this repo
 
-- `genie_api_reference.md`, `latest_api_docs_today.md` — Genie/Xano API notes. Check these before asking the user, but treat the code as authoritative if they disagree.
+- `genie_api_reference.md`, `latest_api_docs_today.md` — Genie/Xano API notes. Check these before asking the user, but treat the code as authoritative if they disagree
