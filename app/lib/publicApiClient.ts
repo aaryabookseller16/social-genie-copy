@@ -2009,6 +2009,8 @@ export type ProducerEvent = {
   venue_name?: string;
   venue_address?: string;
   city?: string;
+  latitude?: number;
+  longitude?: number;
   cover_image_url?: string;
   /** Ordered gallery; index 0 is the cover. Legacy rows may return `{}` from Xano. */
   image_urls?: string[];
@@ -2120,6 +2122,8 @@ export async function createProducerEvent(payload: {
   venue_name?: string;
   venue_address?: string;
   city?: string;
+  latitude?: number;
+  longitude?: number;
   cover_image_url?: string;
   image_urls?: string[];
   video_urls?: VideoItem[];

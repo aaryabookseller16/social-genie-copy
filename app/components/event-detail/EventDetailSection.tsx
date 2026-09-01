@@ -464,6 +464,12 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
   const venueRecord = ev.venue as Record<string, unknown> | undefined;
   const venueLat = typeof venueRecord?.latitude === "number" ? venueRecord.latitude : null;
   const venueLng = typeof venueRecord?.longitude === "number" ? venueRecord.longitude : null;
+  // Manually-entered event coordinates (producer path only) take priority over
+  // the linked venue's — they're the most specific/most recently entered.
+  const eventLat = typeof ev.latitude === "number" ? ev.latitude : null;
+  const eventLng = typeof ev.longitude === "number" ? ev.longitude : null;
+  const rideLat = eventLat ?? venueLat;
+  const rideLng = eventLng ?? venueLng;
   const description = (ev.description as string) || "";
   const category   = (ev.category as string) || (ev.event_category as string) || "";
   const producer   = ev.producer as { id?: number; name?: string; image_url?: string; event_count?: number; is_verified?: boolean; is_following?: boolean } | undefined;
@@ -708,8 +714,8 @@ export function EventDetailSection({ eventId, initialData, onBack, onAuthRequire
               // back to the address text and let Uber geocode it.
               const addr = venueAddr || venueName || "Houston, TX";
               const coordParams =
-                venueLat != null && venueLng != null
-                  ? `&dropoff[latitude]=${venueLat}&dropoff[longitude]=${venueLng}`
+                rideLat != null && rideLng != null
+                  ? `&dropoff[latitude]=${rideLat}&dropoff[longitude]=${rideLng}`
                   : "";
               onRideClick?.(addr);
               window.open(

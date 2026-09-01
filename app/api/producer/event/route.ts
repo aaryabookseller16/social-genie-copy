@@ -4,8 +4,8 @@ import { xanoFetch, extractBearerToken, XanoError } from "@/app/lib/server/xanoP
 /**
  * POST /api/producer/event
  * Body: { title, category, description?, event_date, start_time, end_time?,
- *         venue_name?, venue_address?, city?, cover_image_url?, ticket_url?,
- *         status?, acting_as? }
+ *         venue_name?, venue_address?, city?, latitude?, longitude?,
+ *         cover_image_url?, ticket_url?, status?, acting_as? }
  * event_date/start_time are required on create — ep_create_event_dev declares
  * them as required inputs. ticket_price_min/is_free/rsvp_limit/age_requirement
  * were dropped: Xano's create/update event endpoints never accepted them, so
@@ -56,6 +56,14 @@ export async function POST(request: NextRequest) {
     if (body.venue_name) payload.venue_name = String(body.venue_name).trim();
     if (body.venue_address) payload.venue_address = String(body.venue_address).trim();
     if (body.city) payload.city = String(body.city).trim();
+    if (body.latitude !== undefined && body.latitude !== null && body.latitude !== "") {
+      const lat = Number(body.latitude);
+      if (!Number.isNaN(lat)) payload.latitude = lat;
+    }
+    if (body.longitude !== undefined && body.longitude !== null && body.longitude !== "") {
+      const lng = Number(body.longitude);
+      if (!Number.isNaN(lng)) payload.longitude = lng;
+    }
     if (body.cover_image_url) payload.cover_image_url = String(body.cover_image_url).trim();
     // Xano can't tell an empty array from an absent one, so removing every image
     // needs the explicit flag rather than `image_urls: []`. Only the update
