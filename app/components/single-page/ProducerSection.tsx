@@ -91,6 +91,7 @@ const inputClass =
 const EVENT_CATEGORIES = [
   "Concert",
   "Club Night",
+  "Day Party",
   "Comedy",
   "Art & Culture",
   "Sports",

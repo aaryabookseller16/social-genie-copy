@@ -729,6 +729,11 @@ const [cancelError, setCancelError] = useState<string | null>(null);
   const [offerVenue, setOfferVenue] = useState<GenieVenue | null>(null);
   const router = useRouter();
   const [account, setAccount] = useState<ConsumerAccount | null>(null);
+  // Flips true once the initial localStorage account check has run. Lets
+  // HomescreenSection hold its first fetch until the real account id (or lack
+  // thereof) is known, instead of firing once anonymously and again right
+  // after — see the effect below that sets this alongside setAccount.
+  const [accountReady, setAccountReady] = useState(false);
   // Lets a gated screen send the user to a specific auth form — the offers gate
   // needs "Create a free account" to open signup, not the default login form.
   // AccountSection clears it once applied, so it never leaks into a later visit.
@@ -1976,6 +1981,7 @@ const [cancelError, setCancelError] = useState<string | null>(null);
   useEffect(() => {
     trackHomeScreenViewed();
     setAccount(readConsumerAccount());
+    setAccountReady(true);
     void (async () => {
       const url = new URL(window.location.href);
       // Handle both ?token= and ?/token= (Xano sometimes prepends a slash)
@@ -6739,6 +6745,7 @@ activeScreen === "vibbee-trial" ||
 {activeScreen === "homescreen" ? (
   <HomescreenSection
     account={account}
+    accountReady={accountReady}
     navigateTo={navigateTo}
     userCoords={userCoords}
     // The homescreen's city is resolved from these coordinates server-side, so

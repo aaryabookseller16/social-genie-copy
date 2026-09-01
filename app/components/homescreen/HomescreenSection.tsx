@@ -1203,6 +1203,12 @@ const ROLE_BAR_LABEL = "Consumer";
 
 type HomescreenSectionProps = {
   account: ConsumerAccount | null;
+  // True once the caller has finished its initial (synchronous, near-instant)
+  // localStorage account check. Defaults to true so callers that don't pass
+  // it keep today's behavior. Used to hold the first homescreen fetch until
+  // the real account id is known, instead of firing once anonymously and
+  // again right after — see loadFirstPage below.
+  accountReady?: boolean;
   navigateTo: (screen: FlowAnchor) => void;
   onVenueOpen: (id: string | number) => void;
   onEventOpen: (evt: UpcomingEvent) => void;
@@ -1231,6 +1237,7 @@ const HEADER_HIDE_AFTER = 64;
 
 export function HomescreenSection({
   account,
+  accountReady = true,
   navigateTo,
   onVenueOpen,
   onEventOpen,
@@ -1447,6 +1454,11 @@ export function HomescreenSection({
   // coordinates the backend serves Houston, so the screen paints while the
   // browser prompt is still up, then refetches if/when coordinates arrive.
   const loadFirstPage = useCallback(() => {
+    // Wait for the caller's synchronous (near-instant) account check so this
+    // fires once with the real user id already known, instead of once
+    // anonymously and again right after — see accountReady doc comment above.
+    if (!accountReady) return () => {};
+
     let cancelled = false;
     setLoading(true);
     setFetchError(null);
@@ -1491,7 +1503,7 @@ export function HomescreenSection({
       });
 
     return () => { cancelled = true; };
-  }, [account?.id, userCoords?.latitude, userCoords?.longitude, shuffleSeed]);
+  }, [accountReady, account?.id, userCoords?.latitude, userCoords?.longitude, shuffleSeed]);
 
   useEffect(() => loadFirstPage(), [loadFirstPage]);
 
