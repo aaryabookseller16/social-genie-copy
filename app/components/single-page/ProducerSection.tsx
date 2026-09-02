@@ -427,10 +427,6 @@ export function ProducerSection({
   const [evVenueState, setEvVenueState] = useState("");
   const [evVenueZip, setEvVenueZip] = useState("");
   const [evCity, setEvCity] = useState("");
-  const [evLat, setEvLat] = useState("");
-  const [evLng, setEvLng] = useState("");
-  const [evUseCurrentLocation, setEvUseCurrentLocation] = useState(false);
-  const [evGeoStatus, setEvGeoStatus] = useState<"idle" | "loading" | "denied" | "error">("idle");
   const [evTicketUrl, setEvTicketUrl] = useState("");
   /** Ordered event gallery; index 0 is the cover. Capped at 5 by Xano. */
   const [evImageUrls, setEvImageUrls] = useState<string[]>([]);
@@ -630,10 +626,6 @@ export function ProducerSection({
     setEvVenueState("");
     setEvVenueZip("");
     setEvCity(ev.city ?? "");
-    setEvLat(ev.latitude != null ? String(ev.latitude) : "");
-    setEvLng(ev.longitude != null ? String(ev.longitude) : "");
-    setEvUseCurrentLocation(false);
-    setEvGeoStatus("idle");
     setEvTicketUrl(ev.ticket_url ?? "");
     setEvImageUrls(galleryFor(ev.cover_image_url, ev.image_urls));
     setEvUploading(false);
@@ -756,7 +748,6 @@ export function ProducerSection({
     setEvStartTime(""); setEvEndTime(""); setEvVenue(""); setEvCity("");
     setEvVenueManual(false); setEvVenueId(null);
     setEvVenueAddress(""); setEvVenueAddress2(""); setEvVenueState(""); setEvVenueZip("");
-    setEvLat(""); setEvLng(""); setEvUseCurrentLocation(false); setEvGeoStatus("idle");
     setEvTicketUrl("");
     setEvImageUrls([]); setEvUploading(false);
     setEvVideos([]); setEvVideoUploading(false);
@@ -838,32 +829,6 @@ export function ProducerSection({
     }
   }
 
-  function handleUseCurrentLocationToggle(checked: boolean) {
-    setEvUseCurrentLocation(checked);
-    if (!checked) {
-      setEvGeoStatus("idle");
-      return;
-    }
-    if (!navigator.geolocation) {
-      setEvGeoStatus("error");
-      setEvUseCurrentLocation(false);
-      return;
-    }
-    setEvGeoStatus("loading");
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setEvLat(String(pos.coords.latitude));
-        setEvLng(String(pos.coords.longitude));
-        setEvGeoStatus("idle");
-      },
-      (err) => {
-        setEvGeoStatus(err.code === err.PERMISSION_DENIED ? "denied" : "error");
-        setEvUseCurrentLocation(false);
-      },
-      { enableHighAccuracy: true, timeout: 8000 }
-    );
-  }
-
   async function handleEventSubmit(e: React.FormEvent) {
     e.preventDefault();
 
@@ -882,14 +847,6 @@ export function ProducerSection({
       if (!evVenueState.trim()) errors.venueState = "State is required.";
       if (evVenueZip.trim() && !/^\d{5}(-\d{4})?$/.test(evVenueZip.trim())) {
         errors.venueZip = "Enter a valid ZIP code.";
-      }
-      if (evLat.trim()) {
-        const n = Number(evLat.trim());
-        if (Number.isNaN(n) || n < -90 || n > 90) errors.venueLat = "Latitude must be between -90 and 90.";
-      }
-      if (evLng.trim()) {
-        const n = Number(evLng.trim());
-        if (Number.isNaN(n) || n < -180 || n > 180) errors.venueLng = "Longitude must be between -180 and 180.";
       }
     }
     if (Object.keys(errors).length > 0) {
@@ -928,8 +885,6 @@ export function ProducerSection({
         venue_name: evVenue.trim() || undefined,
         venue_address: composedVenueAddress,
         city: evCity.trim() || undefined,
-        latitude: evVenueManual && evLat.trim() ? Number(evLat.trim()) : undefined,
-        longitude: evVenueManual && evLng.trim() ? Number(evLng.trim()) : undefined,
         ticket_url: evTicketUrl.trim() || undefined,
         cover_image_url: evImageUrls[0] || undefined,
         image_urls: evImageUrls,
@@ -2031,58 +1986,6 @@ export function ProducerSection({
                     ) : null}
                   </div>
                 </div>
-                <label className="flex items-center gap-3 px-1">
-                  <input
-                    type="checkbox"
-                    checked={evUseCurrentLocation}
-                    onChange={(e) => handleUseCurrentLocationToggle(e.target.checked)}
-                    className="h-4 w-4 flex-none accent-red-600"
-                  />
-                  <span className="text-[0.82rem] text-gray-700 dark:text-white/70">Use current location</span>
-                </label>
-                {evGeoStatus === "loading" ? (
-                  <p className="text-[0.78rem] text-gray-400">Getting your location…</p>
-                ) : null}
-                {evGeoStatus === "denied" ? (
-                  <p className="text-[0.78rem] text-red-500">
-                    Location permission denied — enter coordinates manually below, or enable location access in your browser settings.
-                  </p>
-                ) : null}
-                {evGeoStatus === "error" ? (
-                  <p className="text-[0.78rem] text-red-500">Couldn&apos;t get your location. Enter coordinates manually.</p>
-                ) : null}
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <input
-                      type="number"
-                      step="any"
-                      inputMode="decimal"
-                      value={evLat}
-                      onChange={(e) => { setEvLat(e.target.value); setEvUseCurrentLocation(false); }}
-                      placeholder="Latitude (optional)"
-                      className={inputClass}
-                      style={{ fontSize: "16px" }}
-                    />
-                    {evFieldErrors.venueLat ? (
-                      <p className="mt-1 text-[0.78rem] text-red-500">{evFieldErrors.venueLat}</p>
-                    ) : null}
-                  </div>
-                  <div>
-                    <input
-                      type="number"
-                      step="any"
-                      inputMode="decimal"
-                      value={evLng}
-                      onChange={(e) => { setEvLng(e.target.value); setEvUseCurrentLocation(false); }}
-                      placeholder="Longitude (optional)"
-                      className={inputClass}
-                      style={{ fontSize: "16px" }}
-                    />
-                    {evFieldErrors.venueLng ? (
-                      <p className="mt-1 text-[0.78rem] text-red-500">{evFieldErrors.venueLng}</p>
-                    ) : null}
-                  </div>
-                </div>
                 <button
                   type="button"
                   onClick={() => {
@@ -2093,10 +1996,6 @@ export function ProducerSection({
                     setEvVenueAddress2("");
                     setEvVenueState("");
                     setEvVenueZip("");
-                    setEvLat("");
-                    setEvLng("");
-                    setEvUseCurrentLocation(false);
-                    setEvGeoStatus("idle");
                   }}
                   className="text-[0.78rem] text-red-500 hover:underline"
                 >
