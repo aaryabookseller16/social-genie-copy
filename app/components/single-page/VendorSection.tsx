@@ -790,6 +790,7 @@ export function VendorSection({
   const [postError, setPostError] = useState<string | null>(null);
   const editingPostId = useRef<number | null>(null);
   const [profileForm, setProfileForm] = useState({
+    venue_name: "",
     description: "",
     phone: "",
     website_url: "",
@@ -993,6 +994,7 @@ export function VendorSection({
         const venue = venueResp?.venue ?? null;
         const vendor = venueResp?.vendor ?? null;
         setProfileForm({
+          venue_name: str(venue?.venue_name ?? d?.business_name),
           description: str(venue?.vibe_notes ?? d?.description ?? d?.vibe_notes),
           phone: str(venue?.phone ?? d?.phone),
           website_url: str(
@@ -1706,6 +1708,8 @@ export function VendorSection({
 
     try {
       const payload: Parameters<typeof updateVendorVenue>[0] = {};
+      if (profileForm.venue_name.trim())
+        payload.venue_name = profileForm.venue_name.trim();
       if (profileForm.description.trim())
         payload.description = profileForm.description.trim();
       if (profileForm.phone.trim()) payload.phone = profileForm.phone.trim();
@@ -2979,6 +2983,11 @@ export function VendorSection({
             void handleSaveProfile();
           }}
         >
+          <VendorInput
+            value={profileForm.venue_name}
+            placeholder="Venue name"
+            onChange={(v) => setProfileForm((c) => ({ ...c, venue_name: v }))}
+          />
           <div>
             <label className="mb-1.5 block text-[13px] font-medium text-gray-500 dark:text-white/55">
               Business Description
