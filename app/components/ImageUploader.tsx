@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ImageUploadError, uploadImage, type UploadFolder } from "@/app/lib/imageUpload";
+import { COVER_ASPECT_RATIO, ImageUploadError, uploadImage, type UploadFolder } from "@/app/lib/imageUpload";
+import ImageCropModal from "@/app/components/ImageCropModal";
+
+/** Folders whose main photo is shown as a fixed-box feed/hero image elsewhere — these get a crop step. */
+const CROP_FOLDERS = new Set<UploadFolder>(["venues", "events", "offers"]);
 
 /**
  * Files upload as soon as they're picked, not on form submit. An upload is a
@@ -79,6 +83,10 @@ export default function ImageUploader({
   );
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const cropAspectRatio = folder && CROP_FOLDERS.has(folder) ? COVER_ASPECT_RATIO : undefined;
+  const [cropQueue, setCropQueue] = useState<File[]>([]);
+  const [cropTotal, setCropTotal] = useState(0);
+
   // Re-seed only when the parent swaps in a genuinely different set (e.g. the user
   // opens a different event to edit). `hydratedFrom` also tracks every URL list we
   // hand back via `commit`, so our own emissions never bounce back as a re-seed.
@@ -132,12 +140,8 @@ export default function ImageUploader({
     [folder, onChange]
   );
 
-  const addFiles = useCallback(
-    async (files: File[]) => {
-      if (!files.length) return;
-
-      const room = isSingle ? 1 : Math.max(0, limit - slots.length);
-      const accepted = files.slice(0, room);
+  const startUploads = useCallback(
+    async (accepted: File[]) => {
       if (!accepted.length) return;
 
       const pending: Slot[] = accepted.map((file) => ({
@@ -153,8 +157,41 @@ export default function ImageUploader({
         runUpload(slot.id, slot.file!)
       );
     },
-    [isSingle, limit, slots.length, runUpload]
+    [isSingle, runUpload]
   );
+
+  const addFiles = useCallback(
+    async (files: File[]) => {
+      if (!files.length) return;
+
+      const room = isSingle ? 1 : Math.max(0, limit - slots.length);
+      const accepted = files.slice(0, room);
+      if (!accepted.length) return;
+
+      if (cropAspectRatio) {
+        setCropTotal(accepted.length);
+        setCropQueue(accepted);
+        return;
+      }
+
+      await startUploads(accepted);
+    },
+    [isSingle, limit, slots.length, cropAspectRatio, startUploads]
+  );
+
+  const cropping = cropQueue[0];
+
+  const handleCropConfirm = useCallback(
+    (cropped: File) => {
+      setCropQueue((prev) => prev.slice(1));
+      void startUploads([cropped]);
+    },
+    [startUploads]
+  );
+
+  const handleCropCancel = useCallback(() => {
+    setCropQueue((prev) => prev.slice(1));
+  }, []);
 
   // Revoke object URLs when their slot goes away, so previews don't leak.
   useEffect(() => {
@@ -259,6 +296,16 @@ export default function ImageUploader({
         <p className="mt-2 text-[11px] text-gray-400 dark:text-white/40">
           The first photo is the main one. Use the arrows to reorder.
         </p>
+      )}
+
+      {cropping && cropAspectRatio && (
+        <ImageCropModal
+          file={cropping}
+          aspectRatio={cropAspectRatio}
+          step={{ index: cropTotal - cropQueue.length + 1, total: cropTotal }}
+          onConfirm={handleCropConfirm}
+          onCancel={handleCropCancel}
+        />
       )}
     </div>
   );

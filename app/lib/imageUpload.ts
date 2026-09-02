@@ -25,6 +25,15 @@ export const MAX_INPUT_BYTES = 25 * 1024 * 1024;
  */
 export const MAX_EDGE = 1600;
 
+/**
+ * Target width/height ratio for "cover photo" uploads (event/venue/offer main
+ * photo) — see ImageCropModal. None of the feed/detail cards that display these
+ * have one true fixed ratio (fixed height, fluid width), so this is a chosen
+ * approximation close enough that object-cover's residual crop is a small,
+ * predictable trim instead of an arbitrary top/bottom chop.
+ */
+export const COVER_ASPECT_RATIO = 16 / 9;
+
 export type UploadFolder = "avatars" | "events" | "posts" | "venues" | "offers";
 
 export class ImageUploadError extends Error {}
