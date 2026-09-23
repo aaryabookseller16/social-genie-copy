@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 
-// Shape matches genie_api_reference.md §5.3
+// Shape matches docs/api/genie-api-reference.md §5.3
 type VerificationPayload = {
   valid?: boolean;
   offer_title?: string;

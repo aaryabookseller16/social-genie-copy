@@ -157,7 +157,7 @@ No admin UI or API proxy routes exist in this repo. Assumed to be at `admin.soci
 
 Two separate problems in the message pipeline, both confirmed in source:
 
-**a) `city_missing` collapses to `supported_no_results`** ([genieMappers.ts:50-51](app/lib/genieMappers.ts#L50))
+**a) `city_missing` collapses to `supported_no_results`** ([genieMappers.ts:50-51](../../app/lib/genieMappers.ts#L50))
 
 ```typescript
 case "city_missing":
@@ -168,7 +168,7 @@ The docs define `city_missing` as a distinct mode requiring a dedicated "ask for
 
 This collapse is doubly entrenched: `GenieResponseMode` in `genieTypes.ts:1-5` only defines four modes (`structured_results`, `supported_no_results`, `city_unsupported`, `ai_fallback`) — `city_missing` is not a valid type at all. Both the mapper and the type system would need to be updated to handle it distinctly.
 
-**b) Intake fields are stripped by the message proxy** ([message/route.ts:131-162](app/api/genie/message/route.ts#L131))
+**b) Intake fields are stripped by the message proxy** ([message/route.ts:131-162](../../app/api/genie/message/route.ts#L131))
 
 The API docs (§2.2) require checking three fields on every response:
 - `show_intake_prompt` — whether to show the intake banner
