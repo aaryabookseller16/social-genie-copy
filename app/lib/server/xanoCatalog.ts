@@ -1,11 +1,8 @@
 import { type RawGenieVenue } from "../genieTypes";
-
-const GENIE_VENUES_URL =
-  process.env.XANO_GENIE_VENUES_URL ||
-  "https://xwpg-kuah-brlj.n7d.xano.io/api:mY7zYhwk/genie_v1";
+import { XANO_GENIE_VENUES_URL } from "./config";
 
 export async function fetchCatalogVenues(limit = 200): Promise<RawGenieVenue[]> {
-  const url = new URL(GENIE_VENUES_URL);
+  const url = new URL(XANO_GENIE_VENUES_URL);
   url.searchParams.set("limit", String(limit));
   url.searchParams.set("energy_level_filter", "");
   url.searchParams.set("music_filter", "");

@@ -7,17 +7,7 @@
  *   Stripe: /api:jQf3GatY  — native Stripe products/sessions
  */
 
-const XANO_ORIGIN =
-  process.env.XANO_BASE_URL || "https://xwpg-kuah-brlj.n7d.xano.io";
-
-const GENIE_DEV_BASE =
-  process.env.XANO_GENIE_DEV_BASE || `${XANO_ORIGIN}/api:pgMKWi2e`;
-
-const AUTH_BASE =
-  process.env.XANO_AUTH_BASE || `${XANO_ORIGIN}/api:dRDS80y8`;
-
-const STRIPE_BASE =
-  process.env.XANO_STRIPE_BASE || `${XANO_ORIGIN}/api:jQf3GatY`;
+import { XANO_AUTH_BASE, XANO_GENIE_BASE, XANO_STRIPE_BASE } from "./config";
 
 type XanoRequestInit = {
   method?: string;
@@ -94,7 +84,7 @@ export async function xanoFetch<T = unknown>(
   path: string,
   init: XanoRequestInit = {}
 ): Promise<T> {
-  return baseFetch<T>(GENIE_DEV_BASE, path, init);
+  return baseFetch<T>(XANO_GENIE_BASE, path, init);
 }
 
 /** Auth (Magic Link) endpoints — /api:dRDS80y8 */
@@ -102,7 +92,7 @@ export async function xanoAuthFetch<T = unknown>(
   path: string,
   init: XanoRequestInit = {}
 ): Promise<T> {
-  return baseFetch<T>(AUTH_BASE, path, init);
+  return baseFetch<T>(XANO_AUTH_BASE, path, init);
 }
 
 /** Stripe endpoints — /api:jQf3GatY */
@@ -110,7 +100,7 @@ export async function xanoStripeFetch<T = unknown>(
   path: string,
   init: XanoRequestInit = {}
 ): Promise<T> {
-  return baseFetch<T>(STRIPE_BASE, path, init);
+  return baseFetch<T>(XANO_STRIPE_BASE, path, init);
 }
 
 /** Helper to extract Bearer token from request headers */

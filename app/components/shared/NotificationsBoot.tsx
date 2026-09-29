@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import OneSignal from "react-onesignal";
+import { ONE_SIGNAL_APP_ID } from "@/app/lib/config";
 
 let oneSignalInitPromise: Promise<void> | null = null;
 
@@ -13,7 +14,7 @@ export function NotificationsBoot() {
 
     if (!oneSignalInitPromise) {
       oneSignalInitPromise = OneSignal.init({
-        appId: "2b0988a9-9a1e-4039-9131-e4859ea641e2",
+        appId: ONE_SIGNAL_APP_ID,
         allowLocalhostAsSecureOrigin: true,
         serviceWorkerPath: "/OneSignalSDKWorker.js",
       }).catch((error) => {
