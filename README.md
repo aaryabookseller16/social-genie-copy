@@ -1,194 +1,74 @@
-
-# 🎩 Social Genie — AI-Powered Social Concierge (Phase 1)
+# 🎩 Social Genie — AI-Powered Social Concierge
 *By Social Bevy*
 
-Social Genie is an AI-powered social concierge that helps people get social instantly. Users simply tell Genie what vibe they want — “cute patio,” “R&B brunch,” “grown and sexy lounge,” etc. Genie responds with curated venues, personalized suggestions, conversational guidance, and saved spots.
+Social Genie helps people get social instantly. Tell Genie the vibe you want ("cute patio",
+"R&B brunch", "grown and sexy lounge") and it replies with curated venues and events, conversational
+guidance, and spots you can save. V.I.Bee members unlock offers, and venue owners can claim and manage
+their listing.
 
-This repo contains the **Genie-first frontend**, built with Next.js + React 19, integrated with **Xano** as the backend for Genie’s venues, and includes the Phase 1 UI used for live user testing.
-
--
-
-## 🚀 What Genie Does [Phase 1]
-
-### ✔ Conversational-style input  
-Users type into Genie’s “How can I get you social?” prompt. Genie parses the vibe keywords and returns matching venues.
-
-### ✔ Venue search powered by Xano  
-- All venue data comes from Xano’s *Genie Brain* table.  
-- Genie returns matches based on name, neighborhood, vibe notes, energy, music, and general descriptive text.
-
-
-### ✔ Saved Spots  
-Users can save/unsave venues. All saved venue IDs are stored in:
-
-```
-localStorage["genie_saved_venues_v1"]
-```
-
-Saved spots appear on Genie’s Home Screen under “Your Saved Spots.”
-
-### ✔ Venue detail pages  
-Each venue has a full-screen detail page with:
-- Hero image  
-- Name, neighborhood, city  
-- Vibe line  
-- Description  
-- Hours  
-- Save button  
-- Share button  
-- 
-### ✔ Mobile-first UI  
-Genie is optimized for iPhone and mobile experience.
+Live: **https://genie.socialbevy.com**
 
 ---
 
-## 🧠 Current Genie Architecture
+## ✨ Features
+- **Conversational search**: chat or voice with Genie; the LLM and ranking run in Xano
+- **Venues and events**: shareable server-rendered pages at `/venue/[id]` and `/events/[slug]`, plus influencer pages at `/i/[handle]`
+- **Saved spots**: for guests (localStorage) and members (synced to Xano)
+- **Accounts**: passwordless magic-link login; guest sessions carry over after signup
+- **V.I.Bee membership and offers**: Stripe checkout, offer redemption with QR verification
+- **Vendor portal**: claim a venue, edit its profile, create offers, view analytics
+- **PWA and push**: installable, with web push through OneSignal
+- **Mobile-first UI** with light and dark themes
 
-### **Frontend (this repo)**
-- Next.js 14  
-- React 19  
-- Tailwind CSS  
-- Client-side rendering  
-- LocalStorage for saved venues  
-- Next/Image for optimized images  
-- Deployed on Vercel  
+## 🧱 Stack
+| Layer | Tech |
+|---|---|
+| Frontend | Next.js 16 (App Router, Turbopack), React 19, TypeScript, Tailwind CSS 4, next-themes |
+| API layer | Next.js route handlers in `app/api/**` that proxy to Xano |
+| Backend | Xano (database, business logic, Genie chat) |
+| Payments | Stripe, integrated through Xano |
+| Push | OneSignal |
+| Hosting | Vercel |
 
-### **Backend**
-**Xano** holds all venue data:
-- `id`
-- `venue_name`
-- `area_neighborhood`
-- `city`
-- `vibe_notes`
-- `crowd`
-- `music`
-- `energy_level`
-- `image_primary_url`
-- `image_fallback_url`
-- `image_url`
-- `best_time_to_go`
-- `hours`
+Architecture details are in [docs/architecture/HLD.md](docs/architecture/HLD.md) and [LLD.md](docs/architecture/LLD.md).
 
-### **Analytics**
-Basic event tracking:
-- Query text  
-- Venue clicks  
-- Shares  
-- Weekly picks  
-
----
-
-## 📁 Project Structure
-
-```
-social-genie/
-│
-├── app/
-│   ├── page.tsx               → Genie Home Screen
-│   ├── venue/
-│   │   └── [id]/page.tsx      → Venue Detail Screen
-│
-├── lib/
-│   ├── genieClient.ts         → Xano API calls
-│   ├── analytics.ts           → Tracking events
-│
-├── public/                    → Genie images, icons, placeholders
-│
-├── next.config.ts             → Image domain config
-├── tailwind.config.js
-├── package.json
-└── README.md
-```
-
----
-
-## 🔧 Local Development Setup
-
-### 1. Clone the repo
-```bash
-git clone https://github.com/socialbevy/social-genie.git
-cd social-genie
-```
-
-### 2. Install dependencies
+## 🚀 Quickstart
 ```bash
 npm install
+cp .env.example .env.local   # set JWT_SECRET at minimum
+npm run dev                  # http://localhost:3000
+```
+More detail: [docs/guides/local-development.md](docs/guides/local-development.md) ·
+[environment variables](docs/guides/environment-variables.md) ·
+[deployment](docs/guides/deployment.md) ·
+[Claude Code ↔ Xano MCP](docs/guides/xano-mcp.md)
+
+## 📁 Repository layout
+```
+app/                 Genie Next.js app (pages, api/ proxy routes, components/, lib/)
+apps/website/        Social Bevy marketing site (separate Next.js app, early stage)
+docs/                HLD, LLD, ADRs, API reference, guides, audit reports
+public/              Static assets, service workers, PWA manifest
 ```
 
-### 3. Add environment variables  
-Create `.env.local`:
+## 📚 Documentation
+Start at **[docs/README.md](docs/README.md)**. Highlights:
+- [Architecture Decision Records](docs/adr/)
+- [Xano API reference](docs/api/genie-api-reference.md)
+- [Production-readiness audit (Apr 2026)](docs/reports/production-readiness-2026-04-11.md)
+- [Contributing guide](CONTRIBUTING.md)
 
-```
-NEXT_PUBLIC_XANO_API_BASE_URL=https://xano.com/.../api
-```
+## 🖼️ Venue image priority
+`image_primary_url` → `image_fallback_url` → `image` → `image_url` → placeholder.
+Many venues still need valid direct image URLs in Xano.
 
-### 4. Start dev server
-```bash
-npm run dev
-```
-
-Visit at:  
-```
-http://localhost:3000
-```
-
----
-
-## 🖼️ Image Handling (Important)
-
-Genie uses this priority order:
-
-```
-image_primary_url
-> image_fallback_url
-> image
-> image_url
-> /sample-venue-1.jpeg
-```
-
-⚠ *Most venues still need valid direct image URLs in Xano.*  
-A cleanup task is underway to update the table via Max.
-
----
-
-## 🧪 Phase 1 Completion Checklist
-
-### ✔ Genie UI  
-### ✔ Venue search  
-### ✔ Saved spots  
-### ✔ Save toggle  
-### ✔ Share button  
-### ✔ Xano integration  
-### ✔ Mobile-first layout  
-### ✔ Vercel deployment  
-### ✔ Github repo connected  
-
-### ❗ Pending  
-- Xano image cleanup  
-- Conversational Genie  
-- Voice input  
-- Outside-city fallback  
-- Multi-city rollout  
-
----
-
-## 🤝 Developer Notes
-
-This Phase 1 repo is built for **fast iteration**, not final production architecture.
-
-Upcoming major changes:
-- Conversational Genie interface  
-- Server-side search  
-- Multi-city support  
-- Account system  
-- Image CDN  
-
----
+## 🛠️ Known follow-ups
+- Split `app/components/SinglePageGenieApp.tsx` (about 5.4k lines) and `VendorSection.tsx` (about 2k lines) into per-screen modules ([ADR-0003](docs/adr/0003-single-page-app-shell.md))
+- Remove the legacy local-JWT check in `/api/genie/message` ([LLD §7](docs/architecture/LLD.md#7-known-issues--tech-debt))
+- Add authentication to `/api/admin/city-intelligence`
+- Add automated tests (none exist yet)
+- Rename assets in `public/` whose names contain spaces or `(1)`
+- Move remaining `*_dev` Xano endpoints to production names
 
 ## 📬 Contact
-
-**Alphonso Roundtree**  
-Founder & CEO - Social Bevy  
-Social Genie Team Lead  
-
- 
+**Alphonso Roundtree**, Founder & CEO, Social Bevy; Social Genie Team Lead

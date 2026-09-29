@@ -12,11 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
-    // Ignore nested demo app build artifacts.
-    "social-bevy-website/.next/**",
-    "social-bevy-website/out/**",
-    "social-bevy-website/build/**",
-    "social-bevy-website/node_modules/**",
+    // Sibling apps have their own lint config.
+    "apps/**",
   ]),
 ]);
 
