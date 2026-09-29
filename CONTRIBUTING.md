@@ -2,9 +2,15 @@
 
 ## Workflow
 1. Branch from `main`: `feat/…`, `fix/…`, `chore/…`, `docs/…`.
-2. Keep PRs focused. Run `npm run build && npm run lint` before pushing.
+2. Keep PRs focused. Run the checks below before pushing.
 3. Open a PR. Vercel posts a preview URL, so smoke-test it on a phone.
 4. Merge into `main`, which deploys to production.
+
+## Testing and CI
+Run `npm ci` once, then `npm run lint`, `npm run typecheck`, `npm test`, and
+`npm run build` before opening a PR. Use `npm run test:watch` while writing tests.
+GitHub Actions runs the same four checks on every pull request and on pushes to
+`main`.
 
 ## Where things go
 | You're adding… | Put it in |

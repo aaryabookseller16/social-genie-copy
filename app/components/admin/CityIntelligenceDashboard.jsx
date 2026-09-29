@@ -2,8 +2,6 @@
 
 import { useState, useEffect } from "react";
  
-const XANO_BASE = "https://xwpg-kuah-brlj.n7d.xano.io/api:pgMKWi2e";
- 
 function StatCard({ label, value, sub, accent }) {
   return (
     <div style={{

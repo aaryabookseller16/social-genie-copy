@@ -1,0 +1,3 @@
+export const ONE_SIGNAL_APP_ID =
+  process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID ||
+  "2b0988a9-9a1e-4039-9131-e4859ea641e2";

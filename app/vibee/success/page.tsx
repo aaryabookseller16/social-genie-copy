@@ -13,14 +13,14 @@ function SuccessContent() {
     "pending"
   );
   const [message, setMessage] = useState<string | null>(null);
+  const displayStatus = sessionId ? status : "unknown";
+  const displayMessage = sessionId
+    ? message
+    : "We couldn't detect a Stripe session. If your payment went through, your membership will activate shortly.";
 
   useEffect(() => {
     let cancelled = false;
     if (!sessionId) {
-      setStatus("unknown");
-      setMessage(
-        "We couldn't detect a Stripe session. If your payment went through, your membership will activate shortly."
-      );
       return;
     }
 
@@ -54,7 +54,7 @@ function SuccessContent() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#1a0505,#2a0a0a,#000)] px-6 py-10">
       <div className="w-full max-w-md rounded-[28px] border border-white/10 bg-black/40 p-8 text-center shadow-[0_20px_60px_rgba(0,0,0,0.45)] backdrop-blur-sm">
-        {status === "pending" ? (
+        {displayStatus === "pending" ? (
           <>
             <div className="mx-auto mb-6 h-14 w-14 animate-spin rounded-full border-4 border-white/15 border-t-[#e83434]" />
             <h1 className="font-[family:var(--font-display)] text-2xl font-semibold text-white">
@@ -64,7 +64,7 @@ function SuccessContent() {
               Confirming your payment with Stripe.
             </p>
           </>
-        ) : status === "active" ? (
+        ) : displayStatus === "active" ? (
           <>
             <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-green-500/20 text-green-400">
               <svg
@@ -119,7 +119,7 @@ function SuccessContent() {
               Payment received
             </h1>
             <p className="mt-3 text-sm text-white/70">
-              {message ?? "Your membership is being activated."}
+              {displayMessage ?? "Your membership is being activated."}
             </p>
             <Link
               href="/"
