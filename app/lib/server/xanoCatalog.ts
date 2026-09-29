@@ -24,7 +24,7 @@ export async function fetchCatalogVenues(limit = 200): Promise<RawGenieVenue[]> 
   return data.results ?? [];
 }
 
-function scoreVenueMatch(venue: RawGenieVenue, query: string) {
+export function scoreVenueMatch(venue: RawGenieVenue, query: string) {
   const normalizedQuery = query.trim().toLowerCase();
   const venueName = venue.venue_name.toLowerCase();
   const address = venue.address?.toLowerCase() ?? "";
