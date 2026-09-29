@@ -10,6 +10,7 @@
 | [guides/local-development.md](guides/local-development.md) | Setup, scripts, running both apps |
 | [guides/environment-variables.md](guides/environment-variables.md) | Every env var and its default |
 | [guides/deployment.md](guides/deployment.md) | Vercel setup and release checklist |
+| [guides/xano-mcp.md](guides/xano-mcp.md) | Connect Claude Code to Xano via MCP (token + setup) |
 | [reports/](reports/) | Point-in-time audits (not kept up to date) |
 
 ## ADR index

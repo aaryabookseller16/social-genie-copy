@@ -40,7 +40,8 @@ npm run dev                  # http://localhost:3000
 ```
 More detail: [docs/guides/local-development.md](docs/guides/local-development.md) ·
 [environment variables](docs/guides/environment-variables.md) ·
-[deployment](docs/guides/deployment.md)
+[deployment](docs/guides/deployment.md) ·
+[Claude Code ↔ Xano MCP](docs/guides/xano-mcp.md)
 
 ## 📁 Repository layout
 ```
