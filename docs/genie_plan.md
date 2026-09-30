@@ -177,7 +177,7 @@ Direction key: **IN** = consumed by the system, **OUT** = produced, **BOTH** = r
 
 **Ambiguity rule (proposal):** if a message could be a follow-up or a new request, choose the more likely one and make the assumption visible ("Sticking with rooftop bars in Midtown. Say the word if you want something different."), or ask at most one short clarifying question.
 
-*ASSUMPTION: Genie's Xano orchestration already carries mode fields (`query_mode`, `response_mode`). Verify in the sandbox what intent handling exists, then extend it with `active_topic`, `last_shown`, and `origin`.*
+**GEN-008 sandbox finding:** Xano returns `query_mode` and `reply_mode`; the Next.js route derives its own `response_mode`. The endpoint request has no explicit `active_topic`, `last_shown`, or `origin` fields. See the [chat orchestration audit](architecture/genie_chat_orchestration.md#mode-fields).
 
 ### 5.4 System prompt design
 
@@ -296,7 +296,7 @@ The only UI that Track 1 logic depends on is the minimum needed to collect and c
 
 ### 5.8 Booking and maps handoff (CONNECT)
 
-Each pick carries action links. From the code analysis, the app already builds map links, and venue records carry website and reservation URLs. **I did not find ride-hailing or ticket-purchase deep links in the code overview.** *Verify what exists in Xano and the app before designing more.* Where links exist, wire them to the pick cards. Where they do not, add plain outbound links (partner terms checked) rather than building integrations. Every outbound tap is logged (`booking_click`).
+**GEN-008 sandbox finding:** Existing outbound handoffs include venue reservations, event ticket URLs, Uber links, and Google Maps directions. The web app consumes Xano URLs and also constructs some Maps/Uber URLs from venue data; no native booking or partner API integration was identified. See the [chat orchestration audit](architecture/genie_chat_orchestration.md#booking-ticket-ride-and-directions-links). Reconcile the `reservation_url` and `opentable_url` fields before extending reservation behavior.
 
 ### 5.9 Logging and feedback
 
@@ -579,8 +579,9 @@ Phase 6 (data pipeline) can start in parallel with Track 1 phases 4-5 if the tea
 
 **To verify (assumptions)**
 - Whether application logic maintains the `genie_venues.neighborhood_id` mapping; the Xano sandbox schema has the integer field but does not declare a table reference. See [GEN-007 findings](architecture/xano_tables.md#observations).
-- Genie's Xano orchestration already separates modes, and where the system prompt is edited.
-- What booking handoffs already exist.
+- Whether to add explicit `active_topic`, `last_shown`, and `origin` state to Xano sessions.
+- Whether the v2 AI payload wrapper should be called by the active v2 handler.
+- Which reservation field, `reservation_url` or `opentable_url`, should be canonical.
 - Whether `notification_opened` can carry an `alert_id`.
 
 ---
