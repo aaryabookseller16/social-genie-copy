@@ -191,20 +191,24 @@ These look like an older version of the platform based on naming (capitalized na
 
 ## Observations
 
-**Facts from the export:**
-- City Graph is an automated pipeline with run tracking, raw candidate storage, and backfills. Discovery sources are named as Google and IG/FB/web.
-- A `neighborhoods` table exists, with geographic, demographic, and activity data.
-- Weather (`venue_weather_context`) and external events (`genie_external_events`, `genie_event_calendar`) are already stored.
+**GEN-007 metadata inspection** (workspace `Social Bees`, branch `flutter-v2-sandbox`, 2026-09-29):
+- `neighborhoods.city_id` references `city_graph_cities`. `genie_venues.neighborhood_id` is an integer but has no Xano table-reference metadata; text fields `neighborhood_text` and `area_neighborhood` also exist. The schema does not enforce the venue-to-neighborhood relationship, and application-level mapping remains unverified.
+- `genie_events.venue_id` references `genie_venues`; `genie_events_upsert_dev` writes this table and is called by `process_batch_data`. `genie_social_events` has many sandbox API code paths for event feed/detail, RSVP, producer events, and event creation/update. Its `producer_id` references `genie_producer_profiles`; its `venue_id` is an integer without a declared table reference and its neighborhood is text. These endpoints establish implemented paths, not runtime traffic.
+- `genie_external_events` stores Ticketmaster, SeatGeek, and Viator items with source-native IDs. `genie_external_event_tags` links these events to `genie_tags`.
+- `genie_event_calendar` is a separate significant-event calendar; a seed function inserts World Cup entries, but no reader appeared in the searched Genie API/function/task metadata. `events_legacy` remains present, with no direct references found in that same search. Treat those as no consumers found, not proof that no consumer exists outside the inspected metadata.
+- `events_discovery_houston` is active every 7,200 seconds on this sandbox branch. Its endpoint calls Ticketmaster and SeatGeek discovery, then external ingestion with Viator enabled in sandbox mode. Discovery writes to `genie_social_events`; external ingestion writes to `genie_external_events` and records ingestion logs. The task description omits the external-ingestion step.
+- `City Graph - Run B Images`, `City Graph - Run B Vibes`, and `City Graph - Process Raw Candidates` are inactive here. Their configured schedules end in February 2026. No active City Graph Master Runner task appeared in this branch's task inventory.
+- PredictHQ has no standalone table in the inspected schema. `genie_social_events` has `phq_event_id`, `phq_rank`, `phq_predicted_attendance`, `phq_category`, `phq_labels`, `phq_demand_type`, and `phq_impact_radius_km`. A sandbox enrichment function queries PredictHQ, and the event feed sorts by `phq_rank`. No dedicated scheduled PredictHQ task was found. **User-reported UI check of `flutter-v2-sandbox` (2026-09-29):** `phq_event_id` is empty across the checked records and all `phq_rank` values are 0. Counts were not provided, and population of the other `phq_*` fields was not specified. The MCP record-query tool was not used because it has no branch selector and defaults to live data.
+- Findings apply only to `flutter-v2-sandbox`; live `v1` was not inspected or compared.
 
 **Inconsistencies to raise with Al:**
 - **Two city "sources of truth":** `genie_cities` and `city_graph_cities` both claim the role.
-- **Five event tables:** `genie_events`, `genie_external_events`, `genie_social_events`, `genie_event_calendar`, and `events_legacy`. A demand model needs one unified event view. Which ones are active?
+- **Multiple event stores:** `genie_events`, `genie_external_events`, `genie_social_events`, `genie_event_calendar`, and `events_legacy` have different purposes and code paths. `genie_social_events` has the broadest API usage; `genie_events` has a batch-upsert path; `genie_external_events` has scheduled ingestion. Confirm the intended unified forecasting source and whether calendar/legacy stores have consumers outside the inspected metadata.
 - **Three messaging systems:** `genie_message` (Genie chat), `genie_message_threads` / `genie_messages`, and `genie_user_threads`.
 - **Several vendor and offer tables:** `Vendor`, `Vendor_0`, `genie_vendor`; `Offers`, `genie_offers`, `vibbee_offers`, `influencer_offers`.
 
 **Open questions for WS-9:**
-1. Does `genie_venues` hold a foreign key to `neighborhoods`, or only a text field (`area_neighborhood`, as the frontend types show)?
+1. Does application logic populate and validate `genie_venues.neighborhood_id`, given Xano does not declare it as a table reference?
 2. How many rows do the behavioral tables (★ in section 5) hold today, and since what date?
-3. How often do the ingestion and City Graph tasks run (the spec says every 2 hours, Al said 4), and which Xano Tasks write to which tables?
-4. Is PredictHQ data stored anywhere? No table name mentions it.
-5. Are these tables identical on `v1` and `flutter-v2-sandbox`?
+3. Do any readers for `genie_event_calendar` or `events_legacy` exist outside the inspected sandbox Genie API/function/task metadata?
+4. Are these tables identical on `v1` and `flutter-v2-sandbox`?

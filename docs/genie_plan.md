@@ -111,7 +111,7 @@ Direction key: **IN** = consumed by the system, **OUT** = produced, **BOTH** = r
 | **Consent and notification settings** | BOTH | 2 (consent model shared) | Consent moment, Settings | NEW | PII-linked | Gates |
 | **Push token** | IN | 2 | OneSignal via `register-push-token` | EXISTING | PII | Delivery |
 | **Behavioral events** (queries, taps, saves, check-ins, opens) | IN | 1+2 | Existing signal routes | EXISTING (new event types NEW) | Behavioral | Preference learning, aggregation |
-| **Venue and event catalog / City Graph** | IN | 1+2 | Xano catalog and City Graph (WS-5) | EXISTING / CONNECT | Public | Candidate picks, neighborhood mapping. *ASSUMPTION: City Graph provides neighborhood IDs and venue-to-neighborhood mapping.* |
+| **Venue and event catalog / City Graph** | IN | 1+2 | Xano catalog and City Graph (WS-5) | EXISTING / CONNECT | Public | Candidate picks, neighborhood mapping. **GEN-007 sandbox finding:** `genie_venues.neighborhood_id` is an integer without a declared Xano table reference; text neighborhood fields also exist. Application-level mapping is not verified. See [Xano table reference](architecture/xano_tables.md#observations). |
 | **System prompts** (response structure, good and bad examples, thinking steps) | IN | 1 (+2 additions) | Xano AI orchestration | EXISTING prompt, NEW rewrite | n/a | Reply quality (5.4) |
 | **Tool and skill descriptions** (API access, what the City Graph is and how to use it) | IN | 1 (+2 forecast tool) | System prompt | EXISTING, NEW additions | n/a | Tool use (5.5) |
 | **Weather forecast** | IN | 2 | OpenWeatherMap (INT-010, live) | EXISTING source, NEW ingestion | Public | Forecast feature |
@@ -578,7 +578,7 @@ Phase 6 (data pipeline) can start in parallel with Track 1 phases 4-5 if the tea
 7. Whether to send from a degraded-input forecast.
 
 **To verify (assumptions)**
-- City Graph provides neighborhood IDs and venue mapping.
+- Whether application logic maintains the `genie_venues.neighborhood_id` mapping; the Xano sandbox schema has the integer field but does not declare a table reference. See [GEN-007 findings](architecture/xano_tables.md#observations).
 - Genie's Xano orchestration already separates modes, and where the system prompt is edited.
 - What booking handoffs already exist.
 - Whether `notification_opened` can carry an `alert_id`.
