@@ -14,27 +14,17 @@ function "genie/fn_detect_query_language_dev" {
     api.request {
       url = "https://api.openai.com/v1/chat/completions"
       method = "POST"
-      params = ```
-        {
-          model      : "gpt-4o-mini"
-          max_tokens : 5
-          temperature: 0
-          messages   : [
-              {
-                role   : "system",
-                content: "You are a language detector. Return ONLY the ISO 639-1 two-letter language code of the input text. Nothing else. Examples: en, es, pt, fr, ar, zh, de, it, ja, ko"
-              },
-              {
-                role   : "user",
-                content: ($input.message ?? "")
-              }
-            ]
-        }
-        ```
-      headers = [
-        ("Authorization: Bearer " ~ $env.OPENAI_API_KEY)
-        "Content-Type: application/json"
-      ]
+      params = {
+        model      : "gpt-4o-mini"
+        max_tokens : 5
+        temperature: 0
+        messages   : [{role: "system", content: "You are a language detector. Return ONLY the ISO 639-1 two-letter language code of the input text. Nothing else. Examples: en, es, pt, fr, ar, zh, de, it, ja, ko"}, {role: "user", content: $input.message}]
+      }
+
+      headers = []
+        |push:"Content-Type: application/json"
+        |push:"Authorization: Bearer " ~ $env.OPENAI_API_KEY
+      timeout = 8
     } as $openai_result
   
     var $detected_language {
