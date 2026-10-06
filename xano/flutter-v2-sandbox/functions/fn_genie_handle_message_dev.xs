@@ -1084,23 +1084,8 @@ function "genie/fn_genie_handle_message_dev" {
               }
             }
           
-            // FIX 2: Fallback lookup by user_id if external_user_id returned nothing
-            conditional {
-              if ($social_profile_id_check == 0 && $user_id != null && ($user_id|to_int) > 0) {
-                db.query genie_user_social_profile {
-                  where = $db.genie_user_social_profile.user_id == $user_id
-                  return = {type: "single"}
-                } as $sp_fb
-              
-                conditional {
-                  if (($sp_fb|get:"id":0) != 0) {
-                    var.update $social_profile {
-                      value = $sp_fb
-                    }
-                  }
-                }
-              }
-            }
+            // FIX 2 (removed): the user_id fallback queried genie_user_social_profile.user_id,
+            // which does not exist on that table, and failed every guest / new-user request.
           
             // FIX 4: Load genie_user_tag_preferences for taxonomy tag context
             var $user_tag_pref_ids {
