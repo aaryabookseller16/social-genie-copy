@@ -444,6 +444,65 @@ function "genie/fn_genie_handle_message_v2_dev" {
       }
     }
   
+    // 4b. LLM commentary for has_results turns.
+    // Kill switch: set to false to go back to reply-bank text.
+    var $llm_commentary_enabled {
+      value = true
+    }
+  
+    var $pick_reasons {
+      value = []
+    }
+  
+    var $llm_debug {
+      value = {enabled: $llm_commentary_enabled, used: false}
+    }
+  
+    conditional {
+      if ($llm_commentary_enabled && $final_reply_mode == "has_results" && ($venue_results|count) > 0) {
+        try_catch {
+          try {
+            function.run "genie/fn_genie_llm_commentary_dev" {
+              input = {
+                message          : $input.message
+                venues           : $venue_results
+                detected_language: $v_detected_language
+                city             : $input.city_context
+              }
+            } as $commentary
+          
+            conditional {
+              if ($commentary|get:"used":false) {
+                var.update $final_reply {
+                  value = $commentary.reply
+                }
+              
+                var.update $pick_reasons {
+                  value = $commentary.pick_reasons
+                }
+              }
+            }
+          
+            var.update $llm_debug {
+              value = {
+                enabled    : true
+                used       : $commentary|get:"used":false
+                fail_reason: $commentary|get:"fail_reason":null
+                model      : $commentary|get:"model":null
+                latency_ms : $commentary|get:"latency_ms":0
+              }
+            }
+          }
+        
+          catch {
+            var.update $llm_debug {
+              value = {enabled: true, used: false, fail_reason: "exception"}
+            }
+          }
+        }
+      }
+    }
+  
     debug.log {
       value = {
         checkpoint             : "V2_HANDLER_AFTER_ROUTING"
@@ -550,5 +609,7 @@ function "genie/fn_genie_handle_message_v2_dev" {
     neighborhood_context  : $neighborhood_context
     is_outdoor_sensitive  : $mode_result|get:"is_outdoor_sensitive":false
     detected_neighborhood : $mode_result|get:"detected_neighborhood":""
+    pick_reasons          : $pick_reasons
+    llm                   : $llm_debug
   }
 }
