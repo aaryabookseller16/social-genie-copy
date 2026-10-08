@@ -1,10 +1,10 @@
 # Xano change log
 
-Every change this repo makes to Xano, newest first. Xano has no commit history, so this file and the `.xs` snapshots in `flutter-v2-sandbox/` are the record.
+Every change this repo makes to Xano, newest first. Xano has no commit history, so this file and the `.xs` snapshots in `flutter-v2-sandbox-tamu-capstone/` and `flutter-v2-sandbox/` are the record.
 
 **Rules**
-- Workspace 1 ("Social Bees"). Write only to branch `flutter-v2-sandbox`. Never to live `v1`.
-- Function IDs belong to one branch. The sandbox IDs below are not the `v1` IDs (for example, `fn_genie_call_ai_dev` is 1247 in the sandbox and 26 in `v1`).
+- Workspace 1 ("Social Bees"). Capstone work goes to branch `flutter-v2-sandbox-tamu-capstone`. Never write to live `v1`.
+- Function IDs belong to one branch. The same function has a different ID on each branch (for example, `fn_genie_call_ai_dev` is 1834 on capstone, 1247 on the sandbox and 26 on `v1`).
 - Tables and data are shared by all branches. Sandbox test requests write real rows (`genie_message`, `genie_query_log`, `genie_session`, `genie_temp_sessions`) into the same database as `v1`.
 - For each change: update the `.xs` snapshot, add a row here, and commit both together.
 - To roll back: paste the `.xs` file from the commit before the change back into the object in Xano, or use `updateFunction` / `updateAPI` through the Xano MCP.
@@ -14,7 +14,17 @@ Every change this repo makes to Xano, newest first. Xano has no commit history, 
 - `local only`: edited in the repo, not pushed to Xano.
 - `committed`: the snapshot is in git (with commit hash).
 
-## 2026-10-06: Genie LLM commentary (branch `feat/genie-llm-commentary`)
+## 2026-10-08: Move the Genie LLM work to `flutter-v2-sandbox-tamu-capstone` (branch `chore/xano-move-llm-to-capstone`)
+
+The capstone branch was cloned from `flutter-v2-sandbox` on 2026-10-08 00:24 UTC, so it already had changes #2–#6 below. The sandbox was then rolled back.
+
+| # | Branch | Xano object (ID) | Change | Status | Tested |
+|---|---|---|---|---|---|
+| 9 | capstone | `fn_genie_call_ai_dev` (1834), `fn_genie_llm_commentary_dev` (2057), `fn_genie_handle_message_v2_dev` (1936), `fn_genie_handle_message_dev` (1960) | No change. They already match #2–#5. | snapshots in `flutter-v2-sandbox-tamu-capstone/`, committed `c581194` | Commentary run: `used=true`, 3 reasons, 2.9s. v2 handler, 2nd query, Montrose: `llm.used=true`, 3 `pick_reasons`, 2.6s. |
+| 8 | capstone | `fn_detect_query_language_dev` (1974) | #6 (the failing WIP fix) dropped. Restored to the original from `9667cdc`. | **deployed**, committed `c581194` | Fetched back; matches `9667cdc`. The 1st query of a session still fails, as before this work. |
+| 7 | sandbox | 1349, 1247, 1387; 1550 deleted | v2 handler and `call_ai` restored to `3882f2a`; language detector restored to `9667cdc`; `fn_genie_llm_commentary_dev` deleted. `fn_genie_handle_message_dev` (1373) **keeps** the #5 fix on purpose, because the original crashes every guest request. | **deployed**, committed `335d9de` | Search for `commentary` on the sandbox returns nothing. v2 handler, 2nd query, Montrose: reply-bank text, no `llm` field, 1.05s. |
+
+## 2026-10-06: Genie LLM commentary (branch `feat/genie-llm-commentary`; sandbox IDs, moved to capstone on 2026-10-08)
 
 Goal: Genie now calls the model for supported cities (Houston). It writes a short intro plus one reason for each of the 3 picks. Before this, the model only ran for unsupported cities.
 
