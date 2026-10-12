@@ -27,6 +27,7 @@ import {
   getOpenUntil,
 } from "@/app/components/single-page/ui";
 import { HomeScreen } from "@/app/components/discovery/HomeScreen";
+import { QuickPickOnboarding } from "@/app/components/single-page/QuickPickOnboarding";
 import { GenieOrb } from "@/app/components/shared/GenieOrb";
 import { requestPushPermission } from "@/app/components/shared/NotificationsBoot";
 import {
@@ -57,6 +58,7 @@ import {
   clearStoredSession,
   convertGuestSession,
   fetchSocialProfile,
+  fetchUserContext,
   fetchUserRedemptions,
   fetchVibeeOffers,
   fetchCurrentUser,
@@ -495,6 +497,7 @@ export function SinglePageGenieApp({
     "all" | "verified" | "pending" | "expired"
   >("all");
   const [socialProfile, setSocialProfile] = useState<SocialProfile | null>(null);
+  const [showQuickPicks, setShowQuickPicks] = useState(false);
   const [socialLoading, setSocialLoading] = useState(false);
   const [socialSaving, setSocialSaving] = useState(false);
   const [activeTagCategory, setActiveTagCategory] =
@@ -867,6 +870,23 @@ const [trialSuccess, setTrialSuccess] = useState(false);
       setRedemptionsLoading(false);
     }
   }, [account]);
+
+  // First-run quick-pick onboarding (GEN-012): show until it is completed or skipped.
+  useEffect(() => {
+    let cancelled = false;
+    fetchUserContext()
+      .then((result) => {
+        if (!cancelled && !result.context?.onboarding?.status) {
+          setShowQuickPicks(true);
+        }
+      })
+      .catch(() => {
+        // Onboarding is optional; never block the home screen on it.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const loadSocialPreferences = useCallback(async () => {
     if (profileLoadedRef.current) {
@@ -2563,6 +2583,11 @@ activeScreen === "vibbee-trial" ||
               setPendingTranscript(false);
               setInputValue("");
             }}
+            greeting={
+              showQuickPicks ? (
+                <QuickPickOnboarding onDone={() => setShowQuickPicks(false)} />
+              ) : undefined
+            }
           />
           </section>
         ) : null}

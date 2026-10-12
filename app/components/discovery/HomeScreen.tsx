@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { type ReactNode } from "react";
 
 import { GenieOrb } from "@/app/components/shared/GenieOrb";
 import { QuickChips } from "@/app/components/shared/QuickChips";
@@ -20,6 +21,8 @@ type HomeScreenProps = {
   onSubmit: () => void;
   onConfirmTranscript?: () => void;
   onCancelTranscript?: () => void;
+  // Shown in place of the hero image, e.g. first-run quick-pick onboarding.
+  greeting?: ReactNode;
 };
 
 export function HomeScreen({
@@ -36,6 +39,7 @@ export function HomeScreen({
   onSubmit,
   onConfirmTranscript,
   onCancelTranscript,
+  greeting,
 }: HomeScreenProps) {
   return (
     <section
@@ -90,27 +94,33 @@ export function HomeScreen({
           Ask me anything, food, drinks or something to do.
         </p>
 
-        <div className="relative mt-1 min-h-0 w-full flex-1 max-h-[55vh]">
-          <Image
-            src="/orb.png"
-            alt=""
-            aria-hidden="true"
-            width={520}
-            height={520}
-            priority
-            className="pointer-events-none absolute left-[49.5%] top-1/2 z-0 h-auto w-full max-w-none -translate-x-1/2 -translate-y-1/2 object-contain opacity-95"
-          />
-          <Image
-            src="/icons/Social-Genie-Home-Screen.png"
-            alt="Genie"
-            width={520}
-            height={820}
-            priority
-            className="relative z-10 mx-auto h-full w-auto max-w-[60%] object-contain drop-shadow-[0_20px_40px_rgba(0,0,0,0.25)] translate-x-[3%]"
-          />
-        </div>
+        {greeting ? (
+          <div className="relative z-20 mt-3 min-h-0 w-full flex-1 overflow-y-auto pb-2">
+            {greeting}
+          </div>
+        ) : (
+          <div className="relative mt-1 min-h-0 w-full flex-1 max-h-[55vh]">
+            <Image
+              src="/orb.png"
+              alt=""
+              aria-hidden="true"
+              width={520}
+              height={520}
+              priority
+              className="pointer-events-none absolute left-[49.5%] top-1/2 z-0 h-auto w-full max-w-none -translate-x-1/2 -translate-y-1/2 object-contain opacity-95"
+            />
+            <Image
+              src="/icons/Social-Genie-Home-Screen.png"
+              alt="Genie"
+              width={520}
+              height={820}
+              priority
+              className="relative z-10 mx-auto h-full w-auto max-w-[60%] object-contain drop-shadow-[0_20px_40px_rgba(0,0,0,0.25)] translate-x-[3%]"
+            />
+          </div>
+        )}
 
-        <div className="relative z-20 -mt-16 w-full shrink-0">
+        <div className={`relative z-20 w-full shrink-0 ${greeting ? "mt-2" : "-mt-16"}`}>
           <QuickChips
             chips={config.quickChips}
             onSelect={(chip) => onChipSelect(chip.prompt)}
