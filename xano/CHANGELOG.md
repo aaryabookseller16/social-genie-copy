@@ -14,6 +14,14 @@ Every change this repo makes to Xano, newest first. Xano has no commit history, 
 - `local only`: edited in the repo, not pushed to Xano.
 - `committed`: the snapshot is in git (with commit hash).
 
+## 2026-10-12: User context model, GEN-010/011/012 (branch `feat/gen-010-012-user-context`)
+
+Goal: one `genie_user_context` row per user (or per device before signup) holding a JSON preference document, with stated-beats-inferred, tombstone removals and version checks. Table `genie_user_context` (242) already existed and is shared with `v1`; only capstone functions read it.
+
+| # | Branch | Xano object (ID) | Change | Status | Tested |
+|---|---|---|---|---|---|
+| 10 | capstone | `fn_genie_get_user_context_dev` (2062), `fn_genie_create_user_context_dev` (2059) | Filled the empty stubs. Get looks up the active row by user_id, else by device_id with genie_user_id = 0. Create is idempotent and starts `{schema:1, preferences:[], profile:{}, onboarding:{}}` at version 1. | **deployed** | Get on unknown device: null. Create with no inputs: input error. Create on `gen010-test-device` twice: same row id 1. Get: returns it. Test row deleted after the GEN-010 tests. |
+
 ## 2026-10-08: Move the Genie LLM work to `flutter-v2-sandbox-tamu-capstone` (branch `chore/xano-move-llm-to-capstone`)
 
 The capstone branch was cloned from `flutter-v2-sandbox` on 2026-10-08 00:24 UTC, so it already had changes #2–#6 below. The sandbox was then rolled back.
