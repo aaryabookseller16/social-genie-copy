@@ -567,6 +567,49 @@ export async function updateSocialProfile(payload: Partial<SocialProfile>) {
   );
 }
 
+export type UserContextOnboarding = {
+  status?: "completed" | "skipped";
+  at?: number;
+  cards?: string[];
+};
+
+export type UserContextResponse = {
+  found: boolean;
+  version: number;
+  context: { onboarding?: UserContextOnboarding } | null;
+  rendered: string;
+};
+
+export async function fetchUserContext() {
+  const params = new URLSearchParams({ device_id: getOrCreateDeviceId() });
+  const externalUserId = readExternalUserId();
+  if (externalUserId) {
+    params.set("external_user_id", externalUserId);
+  }
+
+  return apiJson<UserContextResponse>(`/api/genie/user-context?${params.toString()}`, {
+    auth: false,
+  });
+}
+
+export async function saveQuickPicks(payload: {
+  status: "completed" | "skipped";
+  cardIds: string[];
+  picks: Array<{ category: string; value: string }>;
+}) {
+  return apiJson<{ success: boolean; version: number }>("/api/genie/user-context", {
+    method: "POST",
+    auth: false,
+    body: JSON.stringify({
+      device_id: getOrCreateDeviceId(),
+      external_user_id: readExternalUserId() || undefined,
+      status: payload.status,
+      card_ids: payload.cardIds,
+      picks: payload.picks,
+    }),
+  });
+}
+
 export async function fetchVibeeOffers() {
   const externalUserId = readExternalUserId();
   if (!externalUserId) {
