@@ -486,8 +486,16 @@ function "genie/fn_genie_handle_message_dev" {
       }
     }
   
+    // FIX 1: use the language the router already detected. Only call the detector if none was passed.
+    // Normalize so "English"/"EN"/"en-US" all count as English (prevents per-venue translation).
     conditional {
-      if ($msg_clean != null && (($msg_clean|trim)|is_empty) == false) {
+      if ($input.detected_language != null && ($input.detected_language|trim) != "") {
+        var.update $detected_language {
+          value = ($input.detected_language|trim)|to_lower
+        }
+      }
+    
+      elseif ($msg_clean != null && (($msg_clean|trim)|is_empty) == false) {
         function.run "genie/fn_genie_detect_language_dev" {
           input = {message: $msg_clean}
         } as $lang_result
@@ -495,9 +503,17 @@ function "genie/fn_genie_handle_message_dev" {
         conditional {
           if ($lang_result != null && ($lang_result|has:"detected_language") && $lang_result.detected_language != null) {
             var.update $detected_language {
-              value = $lang_result.detected_language
+              value = ($lang_result.detected_language|trim)|to_lower
             }
           }
+        }
+      }
+    }
+  
+    conditional {
+      if ($detected_language == "english" || $detected_language == "" || $detected_language == "en-us" || $detected_language == "en-gb") {
+        var.update $detected_language {
+          value = "en"
         }
       }
     }
@@ -1314,14 +1330,7 @@ function "genie/fn_genie_handle_message_dev" {
           value = $session_id
         }
       
-        // WC-A: Wire language detection
-        conditional {
-          if ($session_id != null && $session_id != "" && $msg_clean != null && (($msg_clean|trim)|is_empty) == false) {
-            function.run "genie/fn_genie_detect_language_dev" {
-              input = {message: $msg_clean}
-            } as $wc_lang_result
-          }
-        }
+        // FIX 2: WC-A duplicate language detection removed (result was never used).
       
         conditional {
           if ($should_stop == false) {
@@ -2034,12 +2043,13 @@ function "genie/fn_genie_handle_message_dev" {
           }
         }
       
-        // 6.1a bbox geo query
+        // 6.1a bbox geo query (FIX 4: was 700 unsorted rows at ~0.8s/row; now top 30 by rating) (temp fix, might limit personalized recomendation in the future) (to fix need to fully redo backend deterministic ranking logic)
         conditional {
           if ($should_stop == false && $use_bbox) {
             db.query genie_venues {
               where = ($db.genie_venues.city_id == $city_id && $db.genie_venues.venue_name != null && $db.genie_venues.venue_name != "" && ($db.genie_venues.status == null || $db.genie_venues.status == "active") && $db.genie_venues.is_temporarily_closed != true && $db.genie_venues.is_permanently_closed != true && ($db.genie_venues.google_business_status == "OPERATIONAL" || $db.genie_venues.google_business_status == null || $db.genie_venues.google_business_status == "") && $db.genie_venues.latitude >= $lat_min && $db.genie_venues.latitude <= $lat_max && $db.genie_venues.longitude >= $lng_min && $db.genie_venues.longitude <= $lng_max)
-              return = {type: "list", paging: {page: 1, per_page: 700}}
+              sort = {google_rating: "desc"}
+              return = {type: "list", paging: {page: 1, per_page: 30}}
             } as $venue_candidates
           }
         }
@@ -2311,25 +2321,7 @@ function "genie/fn_genie_handle_message_dev" {
                   }
                 }
               
-                conditional {
-                  if ($detected_language != "en" && $detected_language != "english" && $v.vibe_notes != null && (($v.vibe_notes|trim)|is_empty) == false) {
-                    function.run "genie/fn_genie_translate_dev" {
-                      input = {
-                        text_to_translate: $v.vibe_notes
-                        target_language  : $detected_language
-                      }
-                    } as $vibe_translation
-                  
-                    conditional {
-                      if ($vibe_translation != null && ($vibe_translation|has:"translated_text") && $vibe_translation.translated_text != null) {
-                        var.update $v {
-                          value = $v
-                            |merge:{vibe_notes: $vibe_translation.translated_text}
-                        }
-                      }
-                    }
-                  }
-                }
+                // FIX 3: per-venue vibe_notes translation removed (was one OpenAI call per venue, up to 700 in bbox mode).
               
                 var $row_entry {
                   value = {

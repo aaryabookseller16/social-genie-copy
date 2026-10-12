@@ -444,9 +444,9 @@ function "genie/fn_genie_handle_message_v2_dev" {
       }
     }
   
-    // 4b. LLM commentary for has_results turns.
+    // 4b. Model-driven picks for has_results turns (replaces LLM commentary).
     // Kill switch: set to false to go back to reply-bank text.
-    var $llm_commentary_enabled {
+    var $model_call_enabled {
       value = true
     }
   
@@ -455,41 +455,47 @@ function "genie/fn_genie_handle_message_v2_dev" {
     }
   
     var $llm_debug {
-      value = {enabled: $llm_commentary_enabled, used: false}
+      value = {enabled: $model_call_enabled, used: false}
     }
   
     conditional {
-      if ($llm_commentary_enabled && $final_reply_mode == "has_results" && ($venue_results|count) > 0) {
+      if ($model_call_enabled && $query_mode == "venue" && $final_reply_mode == "has_results" && ($venue_results|count) > 0) {
         try_catch {
           try {
-            function.run "genie/fn_genie_llm_commentary_dev" {
+            function.run "genie/fn_genie_run_turn_dev" {
               input = {
                 message          : $input.message
                 venues           : $venue_results
                 detected_language: $v_detected_language
                 city             : $input.city_context
               }
-            } as $commentary
+            } as $model_result
           
             conditional {
-              if ($commentary|get:"used":false) {
+              if ($model_result|get:"used":false) {
                 var.update $final_reply {
-                  value = $commentary.reply
+                  value = $model_result.reply
                 }
               
                 var.update $pick_reasons {
-                  value = $commentary.pick_reasons
+                  value = $model_result.pick_reasons
+                }
+              
+                var.update $venue_results {
+                  value = $model_result.venues
                 }
               }
             }
           
             var.update $llm_debug {
               value = {
-                enabled    : true
-                used       : $commentary|get:"used":false
-                fail_reason: $commentary|get:"fail_reason":null
-                model      : $commentary|get:"model":null
-                latency_ms : $commentary|get:"latency_ms":0
+                enabled        : true
+                used           : $model_result|get:"used":false
+                fail_reason    : $model_result|get:"fail_reason":null
+                model          : $model_result|get:"model":null
+                latency_ms     : $model_result|get:"latency_ms":0
+                candidate_count: $model_result|get:"candidate_count":0
+                picked_ids     : $model_result|get:"picked_ids":[]
               }
             }
           }
