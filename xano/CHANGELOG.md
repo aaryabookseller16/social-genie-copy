@@ -30,6 +30,24 @@ Goal: one `genie_user_context` row per user (or per device before signup) holdin
 | 11 | capstone | `fn_genie_update_user_context_dev` (2061) | Filled the stub. Takes `expected_version`, `ops[]` (add/remove) and optional `onboarding`. Stale version → input error. Stated beats inferred. Remove is a `user_removed` tombstone that only a stated add can undo. community/music are `sensitive`. Bumps `version`. Note: ternaries inside object literals and `get` defaults on missing keys returned null in testing, so the function uses separate vars. | **deployed** | On `gen010-test-device-2`: v1 adds → 3 entries with all fields, `bogus` op skipped. Stale v1 write rejected. v2: Rooftop tombstoned, inferred Karaoke reinforced (evidence 2, confidence kept 0.6), inferred R&B skipped `stated_wins`. v3: inferred Rooftop (0.95) skipped `tombstoned`, onboarding saved. |
 | 10 | capstone | `fn_genie_get_user_context_dev` (2062), `fn_genie_create_user_context_dev` (2059) | Filled the empty stubs. Get looks up the active row by user_id, else by device_id with genie_user_id = 0. Create is idempotent and starts `{schema:1, preferences:[], profile:{}, onboarding:{}}` at version 1. | **deployed** | Get on unknown device: null. Create with no inputs: input error. Create on `gen010-test-device` twice: same row id 1. Get: returns it. Test rows 1 and 2 deleted after the tests (see #14). |
 
+### 2026-10-11: Model-driven venue selection (branch `flutter-v2-sandbox-tamu-capstone`)
+
+**Goal:** Move venue selection from a purely deterministic ranking/reply flow to a model-assisted step that chooses and explains picks from a verified candidate shortlist.
+
+| # | Xano object (sandbox ID) | Type | Change | Why | Status | Tested |
+|---|---|---|---|---|---|---|
+| 15 | `genie/fn_genie_run_turn_dev` (verify current branch ID) | **new** | Orchestrates one model-driven selection turn: loads candidates, builds the prompt, calls the model, validates picks, composes the reply, and orders the selected venues. Returns result and diagnostic metadata, with failure handling. | Provides one entry point for the model-assisted selection workflow. | Added in the supplied `genie_model_call.xs` snapshot; branch deployment should be verified independently. | **Tested and working in Xano**, per the current project handoff. |
+| 14 | `genie/fn_genie_order_venues_dev` (verify current branch ID) | **new** | Moves selected venue rows to the front of the list while preserving the row shape and remaining order. | Makes the displayed venue order match the model’s validated selections. | Added in the supplied snapshot; branch deployment should be verified independently. | **Tested and working in Xano**, per the current project handoff. |
+| 13 | `genie/fn_genie_compose_reply_dev` (verify current branch ID) | **new** | Composes the user-facing reply from the model-generated introduction and validated pick reasons. | Keeps reply composition separate from model invocation and selection validation. | Added in the supplied snapshot; branch deployment should be verified independently. | **Tested and working in Xano**, per the current project handoff. |
+| 12 | `genie/fn_genie_validate_picks_dev` (verify current branch ID) | **new** | Parses the model response and validates its selected venue IDs and reasons against the candidate list. | Prevents the model from selecting venue IDs that were not supplied to it and checks the expected response structure. | Added in the supplied snapshot; branch deployment should be verified independently. | **Tested and working in Xano**, per the current project handoff. |
+| 11 | `genie/fn_genie_build_prompt_dev` (verify current branch ID) | **new** | Builds system and user prompt text using the message, candidates, detected language, city, and prompt type. The current `pick` prompt type supports the selection flow. | Centralizes prompt construction for the model-driven turn. | Added in the supplied snapshot; branch deployment should be verified independently. | **Tested and working in Xano**, per the current project handoff. |
+| 10 | `genie/fn_genie_load_candidate_venues_dev` (verify current branch ID) | **new** | Loads full venue rows for the first N venue IDs in the existing ranked order, formats them for the model, and defaults to a maximum of 10 candidates. | Gives the model a bounded shortlist to choose from without replacing the existing retrieval logic. | Added in the supplied snapshot; branch deployment should be verified independently. | **Tested and working in Xano**, per the current project handoff. |
+| 9 | `genie/fn_genie_format_venue_for_model_dev` (verify current branch ID) | **new** | Converts a venue row into a whitelist-based, model-safe representation. Excludes sensitive or irrelevant fields such as ownership, paid-placement tier, vendor, and `sb_*` fields. | Limits the data sent to the model to the fields needed for venue selection. | Added in the supplied snapshot; branch deployment should be verified independently. | **Tested and working in Xano**, per the current project handoff. |
+| 8 | `genie/fn_genie_handle_message_v2_dev` (snapshot ID `1936`; verify current branch ID) | existing, feature | Changes the venue-results path to call `fn_genie_run_turn_dev` instead of the old commentary call. The handler uses the model result only when `used` is true; otherwise it preserves the existing fallback behavior. | Connects model-driven selection to the existing Genie message flow without making model success mandatory for a response. | Edited in the supplied `genie_model_call.xs` snapshot. The snapshot is not, by itself, proof of deployment; verify the target branch. | **Tested and working in Xano**, per the current project handoff. |
+| 7 | `genie/fn_genie_call_ai_dev` (snapshot ID `1834`; verify current branch ID) | existing, reused | Reuses the shared OpenAI transport wrapper. The orchestrator supplies system/user messages and requests JSON mode. | Avoids duplicating OpenAI request handling in the new selection flow. | Reused by the new flow; verify the current branch’s object and deployment state before promotion. | **Tested and working in Xano** as part of the new flow, per the current project handoff. |
+
+**Behavioral scope:** This is model-driven **selection from an app-provided shortlist**, not unrestricted model-driven search or a multi-call tool loop. Existing retrieval logic still produces the initial venue list. The supplied snapshot identifies the target branch as `flutter-v2-sandbox-tamu-capstone`; verify branch deployment and current Xano IDs before promoting or editing the objects.
+
 ## 2026-10-08: Move the Genie LLM work to `flutter-v2-sandbox-tamu-capstone` (branch `chore/xano-move-llm-to-capstone`)
 
 The capstone branch was cloned from `flutter-v2-sandbox` on 2026-10-08 00:24 UTC, so it already had changes #2–#6 below. The sandbox was then rolled back.
@@ -60,3 +78,33 @@ Goal: Genie now calls the model for supported cities (Houston). It writes a shor
 - Language is detected only on the 1st query of a session. Later turns default to `en`, so a Spanish user's 2nd turn gets English commentary.
 - Venue-mode latency: the existing handler takes about 13s on the sandbox before the LLM step. The commentary adds about 1.5–2s.
 - Retrieval quality: "cocktail bar for a date" returned Le Jardinier, The Breakfast Klub and Notsuoh. The model comments on whatever it is given.
+- Candidate-loading cost: `fn_genie_load_candidate_venues_dev` loads full venue rows one ID at a time. Measure the impact if the shortlist size increases.
+- Prompt and JSON validation: The validator checks structure and candidate IDs, but that alone does not prove each reason is factually supported by venue fields. Keep the prompt restrictive and consider additional validation if unsupported claims become an issue.
+- Shared-table side effects: Sandbox tests may write to tables shared across branches. Use care when running tests that create sessions, messages, or query logs.
+
+## Planned extensions (not current behavior)
+
+These are future directions, not claims about current functionality:
+
+- **Tool-calling loop:** Let the model request approved data-retrieval tools, execute them, return tool results to the model, and repeat until it returns a final answer. Bound the loop with iteration limits, timeouts, and error handling.
+- **Model-driven retrieval:** Add tools such as venue search and venue detail lookup so the model can request additional candidates when the initial shortlist is insufficient.
+- **Persistent user context:** Pass relevant saved preferences and prior-interaction notes into the prompt builder. Any read/write operations should be explicit, permission-checked, and bounded.
+- **Shared prompt module:** Extend `fn_genie_build_prompt_dev` with additional prompt types when those prompts are actually migrated.
+- **Additional fallback and observability:** Standardize failure reasons, record safe timing/usage metadata, and ensure a failed model call never prevents the legacy response from being returned.
+- **Production promotion:** Remove `_dev` suffixes only as part of a deliberate promotion process, with snapshots, tests, and branch-specific ID verification.
+
+## Entry template
+
+Copy this template for each new change and place it at the top of the change history, below the heading. Remove fields that do not apply.
+
+```markdown
+### YYYY-MM-DD: Short change title (branch `branch-name`)
+
+**Goal:** What behavior or issue is this change addressing?
+
+| # | Xano object (sandbox ID) | Type | Change | Why | Status | Tested |
+|---|---|---|---|---|---|---|
+| 1 | `function_or_api_name` (ID) | new / existing, fix / existing, feature | What changed. | Why it changed. | Commit/deployment/snapshot status. | Inputs tested, outcomes, errors, and latency if useful. |
+
+**Behavioral scope:** What changed for users, and what remains unchanged?
+```
