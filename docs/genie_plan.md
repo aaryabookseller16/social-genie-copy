@@ -231,11 +231,11 @@ Example, reason-line phrasing:
 
 #### 5.6.2 Preference data model (D1)
 
-Every preference is its own record (`user_preference`):
+Each user has one context document: a `genie_user_context` row per user (or per device ID before signup) with `context_json`, a row `version` used to reject stale writes, and `updated_at`. Every preference is its own entry inside `context_json.preferences`, with these fields:
 
 | Field | Purpose |
 |---|---|
-| `preference_id`, `user_id` | Identity |
+| `id` (`category:value`), owner from the row | Identity |
 | `category` | experience, atmosphere, food, music, community, sports_team, price, group_size, typical_time, etc. |
 | `value` | e.g., "Astros," "rooftop," "R&B / Soul" |
 | `source` | `stated` / `inferred` / `connected_account` |
