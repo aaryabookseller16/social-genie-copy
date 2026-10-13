@@ -117,29 +117,6 @@ function "genie/fn_genie_handle_message_v2_dev" {
       value = 1
     }
   
-    var $session_query_count {
-      value = ($input.session_query_number ?? 1)|to_int
-    }
-  
-    var $v_detected_language {
-      value = "en"
-    }
-  
-    conditional {
-      if ($session_query_count <= 1) {
-        function.run "genie/fn_detect_query_language_dev" {
-          input = {
-            message   : $input.message
-            session_id: ($input.session_id ?? "")
-          }
-        } as $lang_result
-      
-        var.update $v_detected_language {
-          value = $lang_result|get:"detected_language":"en"
-        }
-      }
-    }
-  
     // 2. Detect query mode
     function.run "genie/fn_genie_detect_query_mode_dev" {
       input = {message: $input.message, city_name: $input.city_context}
@@ -199,7 +176,7 @@ function "genie/fn_genie_handle_message_v2_dev" {
             lng              : $input.lng
             radius_meters    : $input.radius_meters
             location_label   : $input.location_label
-            detected_language: $v_detected_language
+            detected_language: "en"
             session_id       : ($input.session_id ?? "")
           }
         } as $venue_response
@@ -382,7 +359,7 @@ function "genie/fn_genie_handle_message_v2_dev" {
             lng              : $input.lng
             radius_meters    : $input.radius_meters
             location_label   : $input.location_label
-            detected_language: $v_detected_language
+            detected_language: "en"
             session_id       : ($input.session_id ?? "")
           }
         } as $event_response
@@ -466,7 +443,6 @@ function "genie/fn_genie_handle_message_v2_dev" {
               input = {
                 message          : $input.message
                 venues           : $venue_results
-                detected_language: $v_detected_language
                 city             : $input.city_context
               }
             } as $model_result

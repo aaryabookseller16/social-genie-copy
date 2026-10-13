@@ -15,7 +15,6 @@ function "genie/fn_genie_run_turn_dev" {
     // Ranked venue rows in display order (only their ids are used)
     json venues
 
-    text detected_language?
     text city?
 
     // Model options (defaults: gpt-4o, 800 tokens, 30s)
@@ -96,7 +95,6 @@ function "genie/fn_genie_run_turn_dev" {
             prompt_type      : $input.prompt_type
             message          : $input.message
             candidates       : $candidates
-            detected_language: $input.detected_language
             city             : $input.city
           }
         } as $prompt

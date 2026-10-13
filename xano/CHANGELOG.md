@@ -14,6 +14,14 @@ Every change this repo makes to Xano, newest first. Xano has no commit history, 
 - `local only`: edited in the repo, not pushed to Xano.
 - `committed`: the snapshot is in git (with commit hash).
 
+### 2026-10-13: Remove query-language detection from the v2 chat path (branch `flutter-v2-sandbox-tamu-capstone`)
+
+**Goal:** Avoid making first-query language detection a dependency of chat, and let the venue-response model match the language of the user's request.
+
+| # | Xano object (ID) | Type | Change | Why | Status | Tested |
+|---|---|---|---|---|---|---|
+| 32 | `fn_genie_handle_message_v2_dev` (1936), `fn_genie_run_turn_dev`, `fn_genie_build_prompt_dev` | existing, fix | Removed the first-query call to `fn_detect_query_language_dev`; the legacy handler receives `en` to avoid invoking its own detector, while the venue-response prompt now asks the model to answer in the request's language. | Prevent the first-query detector failure from failing chat without instructing GPT to always answer in English. | **local only** | Static XanoScript inspection; deployment and endpoint retest pending. Legacy deterministic fallback replies may remain English. |
+
 ### 2026-10-12: Connect model-driven venue selection and fix chat handlers (branch `flutter-v2-sandbox-tamu-capstone`)
 
 **Goal:** Connect model-driven venue selection to the chat endpoint, preserve the complete response shape, and reduce avoidable work in the legacy handler.

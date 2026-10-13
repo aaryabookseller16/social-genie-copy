@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
       : Array.isArray(upstreamJson.more_venues)
         ? upstreamJson.more_venues
         : [];
- 
+        
     const allVenues = rawVenues.map((venue) =>
   mapPublicVenue(venue as RawGenieVenue)
 );

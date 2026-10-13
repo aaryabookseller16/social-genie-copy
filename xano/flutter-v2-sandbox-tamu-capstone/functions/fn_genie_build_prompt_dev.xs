@@ -12,17 +12,12 @@ function "genie/fn_genie_build_prompt_dev" {
     // Model-safe candidate venues (output of fn_genie_load_candidate_venues_dev)
     json candidates?
 
-    text detected_language?
     text city?
   }
 
   stack {
     var $type {
       value = $input.prompt_type|first_notempty:"pick"
-    }
-
-    var $lang {
-      value = $input.detected_language|first_notempty:"en"
     }
 
     var $system_text {
@@ -121,7 +116,7 @@ function "genie/fn_genie_build_prompt_dev" {
         }
 
         text.append $system_text {
-          value = "- Write intro and reasons in the language with code '" ~ $lang ~ "' unless the user asks for another language.\n"
+          value = "- Write the intro and reasons in the same language as the user's request unless they ask for another language.\n"
         }
 
         text.append $system_text {
