@@ -1,0 +1,21 @@
+{
+  "raw_reply": "{\"intro\": \"Here are three spots.\", \"picks\": [{\"venue_id\": 101, \"reason\": \"Cozy and quiet.\"}, {\"venue_id\": 103, \"reason\": \"Great food.\"}, {\"venue_id\": 102, \"reason\": \"Lively crowd.\"}]}",
+  "candidates": [
+    {
+      "venue_id": 101,
+      "venue_name": "Alpha Bar"
+    },
+    {
+      "venue_id": 102,
+      "venue_name": "Beta Lounge"
+    },
+    {
+      "venue_id": 103,
+      "venue_name": "Gamma Grill"
+    },
+    {
+      "venue_id": 104,
+      "venue_name": "Delta Cafe"
+    }
+  ]
+}

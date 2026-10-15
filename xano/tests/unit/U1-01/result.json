@@ -1,0 +1,22 @@
+{
+  "valid": true,
+  "intro": "Here are three spots.",
+  "picks": [
+    {
+      "venue_id": 101,
+      "venue_name": "Alpha Bar",
+      "reason": "Cozy and quiet."
+    },
+    {
+      "venue_id": 103,
+      "venue_name": "Gamma Grill",
+      "reason": "Great food."
+    },
+    {
+      "venue_id": 102,
+      "venue_name": "Beta Lounge",
+      "reason": "Lively crowd."
+    }
+  ],
+  "fail_reason": null
+}

@@ -1,0 +1,8 @@
+{
+  "message": "cozy cocktail bar for a date",
+  "channel": "app",
+  "external_user_id": "test-user-1",
+  "city_context": "Houston",
+  "session_token": "it-session-01",
+  "session_query_number": 2
+}

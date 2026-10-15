@@ -1,0 +1,66 @@
+{
+  "message": "cozy cocktail bar for a date",
+  "city": "Houston",
+  "venues": [
+    {
+      "id": 618,
+      "venue_name": "Foundation Room Houston"
+    },
+    {
+      "id": 1112,
+      "venue_name": "Morton's The Steakhouse"
+    },
+    {
+      "id": 1122,
+      "venue_name": "Guard and Grace - Houston"
+    },
+    {
+      "id": 1115,
+      "venue_name": "Pappas Bros. Steakhouse"
+    },
+    {
+      "id": 437,
+      "venue_name": "Lyric Bar"
+    },
+    {
+      "id": 454,
+      "venue_name": "Space City Birria"
+    },
+    {
+      "id": 529,
+      "venue_name": "Tom's Watch Bar"
+    },
+    {
+      "id": 714,
+      "venue_name": "La Carafe"
+    },
+    {
+      "id": 730,
+      "venue_name": "La Fisheria"
+    },
+    {
+      "id": 732,
+      "venue_name": "Aquarium Restaurant"
+    },
+    {
+      "id": 1037,
+      "venue_name": "PETE'S DUELING PIANO BAR"
+    },
+    {
+      "id": 749,
+      "venue_name": "Hull & Oak"
+    },
+    {
+      "id": 415,
+      "venue_name": "Reserve 101"
+    },
+    {
+      "id": 1056,
+      "venue_name": "Hearsay Market Square"
+    },
+    {
+      "id": 1141,
+      "venue_name": "Alley Theatre-Hubbard Stage"
+    }
+  ]
+}

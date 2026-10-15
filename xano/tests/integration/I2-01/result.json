@@ -1,0 +1,92 @@
+{
+  "used": true,
+  "reply": "Here are the top cozy cocktail bars for your date night in Houston.\n1. La Carafe: Historic charm and intimate setting make it perfect for a cozy date night.\n2. Lyric Bar: Craft cocktails and a relaxed atmosphere ideal for a cultured date night.\n3. Tom's Watch Bar: Trendy bar with a relaxed vibe, great for after-work drinks and socializing.",
+  "pick_reasons": [
+    {
+      "venue_id": 714,
+      "venue_name": "La Carafe",
+      "reason": "Historic charm and intimate setting make it perfect for a cozy date night."
+    },
+    {
+      "venue_id": 437,
+      "venue_name": "Lyric Bar",
+      "reason": "Craft cocktails and a relaxed atmosphere ideal for a cultured date night."
+    },
+    {
+      "venue_id": 529,
+      "venue_name": "Tom's Watch Bar",
+      "reason": "Trendy bar with a relaxed vibe, great for after-work drinks and socializing."
+    }
+  ],
+  "picked_ids": [
+    714,
+    437,
+    529
+  ],
+  "venues": [
+    {
+      "id": 714,
+      "venue_name": "La Carafe"
+    },
+    {
+      "id": 437,
+      "venue_name": "Lyric Bar"
+    },
+    {
+      "id": 529,
+      "venue_name": "Tom's Watch Bar"
+    },
+    {
+      "id": 618,
+      "venue_name": "Foundation Room Houston"
+    },
+    {
+      "id": 1112,
+      "venue_name": "Morton's The Steakhouse"
+    },
+    {
+      "id": 1122,
+      "venue_name": "Guard and Grace - Houston"
+    },
+    {
+      "id": 1115,
+      "venue_name": "Pappas Bros. Steakhouse"
+    },
+    {
+      "id": 454,
+      "venue_name": "Space City Birria"
+    },
+    {
+      "id": 730,
+      "venue_name": "La Fisheria"
+    },
+    {
+      "id": 732,
+      "venue_name": "Aquarium Restaurant"
+    },
+    {
+      "id": 1037,
+      "venue_name": "PETE'S DUELING PIANO BAR"
+    },
+    {
+      "id": 749,
+      "venue_name": "Hull & Oak"
+    },
+    {
+      "id": 415,
+      "venue_name": "Reserve 101"
+    },
+    {
+      "id": 1056,
+      "venue_name": "Hearsay Market Square"
+    },
+    {
+      "id": 1141,
+      "venue_name": "Alley Theatre-Hubbard Stage"
+    }
+  ],
+  "candidate_count": 10,
+  "fail_reason": null,
+  "model": "gpt-4o",
+  "latency_ms": 2450
+}

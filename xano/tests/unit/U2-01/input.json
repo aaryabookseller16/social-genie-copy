@@ -1,0 +1,28 @@
+{
+  "venues": [
+    {
+      "id": 1,
+      "venue_name": "A"
+    },
+    {
+      "id": 2,
+      "venue_name": "B"
+    },
+    {
+      "id": 3,
+      "venue_name": "C"
+    },
+    {
+      "id": 4,
+      "venue_name": "D"
+    },
+    {
+      "id": 5,
+      "venue_name": "E"
+    }
+  ],
+  "picked_ids": [
+    2,
+    2
+  ]
+}
