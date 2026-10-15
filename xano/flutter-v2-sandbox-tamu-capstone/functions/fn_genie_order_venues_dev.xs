@@ -24,16 +24,28 @@ function "genie/fn_genie_order_venues_dev" {
       value = []
     }
 
+    var $seen_pids {
+      value = []
+    }
+
     foreach ($pids) {
       each as $pid {
-        foreach ($all_venues) {
-          each as $rv {
-            conditional {
-              if ((($rv|get:"id":0)|to_int) == (($pid)|to_int)) {
-                var.update $ordered {
-                  value = $ordered|append:$rv
+        conditional {
+          if (($seen_pids|in:(($pid)|to_int)) == false) {
+            foreach ($all_venues) {
+              each as $rv {
+                conditional {
+                  if ((($rv|get:"id":0)|to_int) == (($pid)|to_int)) {
+                    var.update $ordered {
+                      value = $ordered|append:$rv
+                    }
+                  }
                 }
               }
+            }
+
+            var.update $seen_pids {
+              value = $seen_pids|append:(($pid)|to_int)
             }
           }
         }
@@ -43,7 +55,7 @@ function "genie/fn_genie_order_venues_dev" {
     foreach ($all_venues) {
       each as $rv2 {
         conditional {
-          if (($pids|in:(($rv2|get:"id":0)|to_int)) == false) {
+          if (($seen_pids|in:(($rv2|get:"id":0)|to_int)) == false) {
             var.update $ordered {
               value = $ordered|append:$rv2
             }
