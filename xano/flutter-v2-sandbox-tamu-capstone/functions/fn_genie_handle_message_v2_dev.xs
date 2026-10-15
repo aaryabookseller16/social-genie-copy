@@ -430,7 +430,15 @@ function "genie/fn_genie_handle_message_v2_dev" {
     var $pick_reasons {
       value = []
     }
-  
+
+    var $picked_venue_ids {
+      value = []
+    }
+
+    var $filtered_more_nearby_venues {
+      value = []
+    }
+
     var $llm_debug {
       value = {enabled: $model_call_enabled, used: false}
     }
@@ -456,9 +464,29 @@ function "genie/fn_genie_handle_message_v2_dev" {
                 var.update $pick_reasons {
                   value = $model_result.pick_reasons
                 }
+
+                var.update $picked_venue_ids {
+                  value = $model_result|get:"picked_ids":[]|safe_array
+                }
               
                 var.update $venue_results {
                   value = $model_result.venues
+                }
+
+                foreach ($final_more_nearby_venues) {
+                  each as $nearby_venue {
+                    conditional {
+                      if (($picked_venue_ids|in:(($nearby_venue|get:"id":0)|to_int)) == false) {
+                        var.update $filtered_more_nearby_venues {
+                          value = $filtered_more_nearby_venues|append:$nearby_venue
+                        }
+                      }
+                    }
+                  }
+                }
+
+                var.update $final_more_nearby_venues {
+                  value = $filtered_more_nearby_venues
                 }
               }
             }
@@ -572,6 +600,7 @@ function "genie/fn_genie_handle_message_v2_dev" {
   }
 
   response = {
+    success               : true
     reply                 : $final_reply
     use_xano              : $final_use_xano
     reply_mode            : $final_reply_mode
