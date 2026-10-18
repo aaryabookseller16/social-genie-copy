@@ -176,7 +176,6 @@ function "genie/fn_genie_handle_message_v2_dev" {
             lng              : $input.lng
             radius_meters    : $input.radius_meters
             location_label   : $input.location_label
-            detected_language: "en"
             session_id       : ($input.session_id ?? "")
           }
         } as $venue_response
@@ -359,7 +358,6 @@ function "genie/fn_genie_handle_message_v2_dev" {
             lng              : $input.lng
             radius_meters    : $input.radius_meters
             location_label   : $input.location_label
-            detected_language: "en"
             session_id       : ($input.session_id ?? "")
           }
         } as $event_response
@@ -430,15 +428,15 @@ function "genie/fn_genie_handle_message_v2_dev" {
     var $pick_reasons {
       value = []
     }
-
+  
     var $picked_venue_ids {
       value = []
     }
-
+  
     var $filtered_more_nearby_venues {
       value = []
     }
-
+  
     var $llm_debug {
       value = {enabled: $model_call_enabled, used: false}
     }
@@ -449,9 +447,9 @@ function "genie/fn_genie_handle_message_v2_dev" {
           try {
             function.run "genie/fn_genie_run_turn_dev" {
               input = {
-                message          : $input.message
-                venues           : $venue_results
-                city             : $input.city_context
+                message: $input.message
+                venues : $venue_results
+                city   : $input.city_context
               }
             } as $model_result
           
@@ -464,7 +462,7 @@ function "genie/fn_genie_handle_message_v2_dev" {
                 var.update $pick_reasons {
                   value = $model_result.pick_reasons
                 }
-
+              
                 var.update $picked_venue_ids {
                   value = $model_result|get:"picked_ids":[]|safe_array
                 }
@@ -472,7 +470,7 @@ function "genie/fn_genie_handle_message_v2_dev" {
                 var.update $venue_results {
                   value = $model_result.venues
                 }
-
+              
                 foreach ($final_more_nearby_venues) {
                   each as $nearby_venue {
                     conditional {
@@ -484,7 +482,7 @@ function "genie/fn_genie_handle_message_v2_dev" {
                     }
                   }
                 }
-
+              
                 var.update $final_more_nearby_venues {
                   value = $filtered_more_nearby_venues
                 }
@@ -492,15 +490,17 @@ function "genie/fn_genie_handle_message_v2_dev" {
             }
           
             var.update $llm_debug {
-              value = {
-                enabled        : true
-                used           : $model_result|get:"used":false
-                fail_reason    : $model_result|get:"fail_reason":null
-                model          : $model_result|get:"model":null
-                latency_ms     : $model_result|get:"latency_ms":0
-                candidate_count: $model_result|get:"candidate_count":0
-                picked_ids     : $model_result|get:"picked_ids":[]
-              }
+              value = ```
+                {
+                  enabled        : true
+                  used           : $model_result|get:"used":false
+                  fail_reason    : $model_result|get:"fail_reason":null
+                  model          : $model_result|get:"model":null
+                  latency_ms     : $model_result|get:"latency_ms":0
+                  candidate_count: $model_result|get:"candidate_count":0
+                  picked_ids     : $model_result|get:"picked_ids":[]
+                }
+                ```
             }
           }
         

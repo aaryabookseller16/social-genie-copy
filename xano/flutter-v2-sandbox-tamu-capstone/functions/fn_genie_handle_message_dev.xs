@@ -16,7 +16,6 @@ function "genie/fn_genie_handle_message_dev" {
     decimal lng?
     int radius_meters?
     text location_label?
-    text? detected_language?
     text? session_id?
   }
 
@@ -458,11 +457,6 @@ function "genie/fn_genie_handle_message_dev" {
       value = []
     }
   
-    // Language Help
-    var $detected_language {
-      value = "en"
-    }
-  
     var $detected_intent {
       value = "general"
     }
@@ -482,38 +476,6 @@ function "genie/fn_genie_handle_message_dev" {
       if ($input.channel != null && ($input.channel|trim) != "") {
         var.update $channel_safe {
           value = $input.channel|trim
-        }
-      }
-    }
-  
-    // FIX 1: use the language the router already detected. Only call the detector if none was passed.
-    // Normalize so "English"/"EN"/"en-US" all count as English (prevents per-venue translation).
-    conditional {
-      if ($input.detected_language != null && ($input.detected_language|trim) != "") {
-        var.update $detected_language {
-          value = ($input.detected_language|trim)|to_lower
-        }
-      }
-    
-      elseif ($msg_clean != null && (($msg_clean|trim)|is_empty) == false) {
-        function.run "genie/fn_genie_detect_language_dev" {
-          input = {message: $msg_clean}
-        } as $lang_result
-      
-        conditional {
-          if ($lang_result != null && ($lang_result|has:"detected_language") && $lang_result.detected_language != null) {
-            var.update $detected_language {
-              value = ($lang_result.detected_language|trim)|to_lower
-            }
-          }
-        }
-      }
-    }
-  
-    conditional {
-      if ($detected_language == "english" || $detected_language == "" || $detected_language == "en-us" || $detected_language == "en-gb") {
-        var.update $detected_language {
-          value = "en"
         }
       }
     }
@@ -1454,25 +1416,6 @@ function "genie/fn_genie_handle_message_dev" {
       
         var.update $final_reply {
           value = $reply_bank_result
-        }
-      
-        conditional {
-          if ($detected_language != "en" && $detected_language != "english" && $final_reply != null && (($final_reply|trim)|is_empty) == false) {
-            function.run "genie/fn_genie_translate_dev" {
-              input = {
-                text_to_translate: $final_reply
-                target_language  : $detected_language
-              }
-            } as $city_missing_translation
-          
-            conditional {
-              if ($city_missing_translation != null && ($city_missing_translation|has:"translated_text") && $city_missing_translation.translated_text != null) {
-                var.update $final_reply {
-                  value = $city_missing_translation.translated_text
-                }
-              }
-            }
-          }
         }
       
         var.update $use_xano {
@@ -2658,25 +2601,6 @@ function "genie/fn_genie_handle_message_dev" {
           }
         }
       
-        conditional {
-          if ($detected_language != "en" && $detected_language != "english" && $final_reply != null && (($final_reply|trim)|is_empty) == false) {
-            function.run "genie/fn_genie_translate_dev" {
-              input = {
-                text_to_translate: $final_reply
-                target_language  : $detected_language
-              }
-            } as $reply_translation
-          
-            conditional {
-              if ($reply_translation != null && ($reply_translation|has:"translated_text") && $reply_translation.translated_text != null) {
-                var.update $final_reply {
-                  value = $reply_translation.translated_text
-                }
-              }
-            }
-          }
-        }
-      
         // Zero results fallback
         conditional {
           if ($has_results == false) {
@@ -2781,7 +2705,6 @@ function "genie/fn_genie_handle_message_dev" {
             city_context     : $city_norm
             venue_results_dev: $venue_results_dev
             reply_mode       : $reply_mode
-            detected_language: $detected_language
             lat              : $lat_in
             lng              : $lng_in
           }
@@ -2934,25 +2857,6 @@ function "genie/fn_genie_handle_message_dev" {
           }
         }
       
-        conditional {
-          if ($detected_language != "en" && $detected_language != "english" && $final_reply != null && (($final_reply|trim)|is_empty) == false) {
-            function.run "genie/fn_genie_translate_dev" {
-              input = {
-                text_to_translate: $final_reply
-                target_language  : $detected_language
-              }
-            } as $city_missing_translation
-          
-            conditional {
-              if ($city_missing_translation != null && ($city_missing_translation|has:"translated_text") && $city_missing_translation.translated_text != null) {
-                var.update $final_reply {
-                  value = $city_missing_translation.translated_text
-                }
-              }
-            }
-          }
-        }
-      
         var.update $use_xano {
           value = false
         }
@@ -3081,7 +2985,7 @@ function "genie/fn_genie_handle_message_dev" {
         session_id           : ($input.session_id ?? "")
         user_id              : ($user_id ?? 0)|to_int
         query_text           : ($input.message ?? "")
-        query_language       : ($input.detected_language ?? "en")
+        query_language       : "en"
         query_category       : $query_category
         neighborhood_queried : ($city_norm ?? "Houston")
         venue_returned       : ((($venue_results_dev ?? [])|count) > 0)
