@@ -1,42 +1,77 @@
 # Xano change log
-
+ 
 Every change this repo makes to Xano, newest first. Xano has no commit history, so this file and the `.xs` snapshots in `flutter-v2-sandbox-tamu-capstone/` and `flutter-v2-sandbox/` are the record.
-
+ 
 **Rules**
 - Workspace 1 ("Social Bees"). Capstone work goes to branch `flutter-v2-sandbox-tamu-capstone`. Never write to live `v1`.
 - Function IDs belong to one branch. The same function has a different ID on each branch (for example, `fn_genie_call_ai_dev` is 1834 on capstone, 1247 on the sandbox and 26 on `v1`).
 - Tables and data are shared by all branches. Sandbox test requests write real rows (`genie_message`, `genie_query_log`, `genie_session`, `genie_temp_sessions`) into the same database as `v1`.
 - For each change: update the `.xs` snapshot, add a row here, and commit both together.
 - To roll back: paste the `.xs` file from the commit before the change back into the object in Xano, or use `updateFunction` / `updateAPI` through the Xano MCP.
-
 **Status values**
 - `deployed`: live on the branch in Xano.
 - `local only`: edited in the repo, not pushed to Xano.
 - `committed`: the snapshot is in git (with commit hash).
-
+### 2026-10-18: Request-first venue search, open-now helper, slim venue row and model formatter v2 (branch `flutter-v2-sandbox-tamu-capstone`)
+ 
+**Goal:** Add a search function that finds and ranks venues from the request itself (it will become the `search_venues` tool in the planned tool loop), and fix what the model is shown about each venue. A review of all 755 `genie_venues` rows found that the model was being given misleading data: the stored `is_open_now` is true for 553 venues at any hour; `hours_text` is empty on 748 rows (the real hours are in `hours_json`); every `good_for_*` / `has_*` flag is false on every row, which means "never filled in", but was sent as "no"; `social_energy_state` is "quiet" for 746 of 750 venues; `venue_type` is empty on every row; and the closed flags are false everywhere even though Google marks 27 venues closed.
+ 
+| # | Xano object (ID) | Type | Change | Why | Status | Tested |
+|---|---|---|---|---|---|---|
+| 42 | `genie/fn_genie_search_venues_dev` (ID assigned on creation) | **new** | Request-first venue search. Input: `city_id` (required) and optional `venue_type` (bar, restaurant, club, cafe), `cuisine`, `neighborhood`, `price_band`, `meal_service`, `open_now`, `keywords[]`, `energy`, `sort_by` (relevance or rating), `limit` (1 to 10) and `min_results` (default 3). It loads the city's active, not-closed venues (about 706 for Houston), excludes ones that should never be recommended (lodging, vape / smoke shop / dispensary / party-supply / event-hall names, venues with no rating, vibe or cuisine data, and businesses with no bar/restaurant/cafe type, no hospitality word in the name and no vibe notes), applies the filters, and ranks what is left by Bayesian rating plus small bonuses for vibe notes, hours and a photo, +3 per soft keyword found in the venue text (max 3) and +2 for a matching energy level. If fewer than `min_results` venues match it relaxes filters one at a time (meal_service, open_now, price_band, neighborhood, cuisine, venue_type) and reports them. Returns `venues` (model-safe), `cards` (slim rows for the app, never sent to the model), `match_quality` (strong, loose or empty), `relaxed`, `count`, `fail_reason` and a `debug` block with exclusion counts and each result's score. Paid placement is not used in ranking. | The existing shortlist is built by English-keyword rules and a hand-tuned score that scans 70 venues, so good venues are cut off and bad ones get through. This gives the model, and later the tool loop, one place that applies the exclusion rules and the filters. | **local only**. `.xs` in `search_venues/`. Nothing calls it yet (the tool schema and dispatcher are Phase 3). | Not run in Xano. A Python reference (`search_venues_reference.py`, not deployed) mirrors the rules and was run on 750 of the 755 rows to produce the expected values for 13 Xano test cases (for example, bars with date-night keywords: 426 matches, top 3 Angel Share, Hidden Bar, La Carafe). Braces and parentheses balance. Unverified: Xano syntax (`some:` with `$$`, `array.map` with `by = $this\|set:`, `set_ifnotempty`, the ternary), sort direction (`true` used as descending), and speed (each call loads about 10 MB because `db.query` cannot select columns; target 1 to 2 seconds). |
+| 41 | `genie/fn_genie_format_venue_for_model_dev` (2089) | existing, fix | Rewritten as v2. It now leaves a field out when it has no real value instead of sending `""` or `false` (`set_ifnotempty`), and takes an optional `open_info` input. Added `open_now` (computed) and `today_hours`. Removed because the stored values are stale or look defaulted: `is_open_now`, `venue_type`, `social_energy_state`, the brunch / happy hour / late night flags and `reservations_supported`. Neighborhood falls back to `neighborhood_text` when `area_neighborhood` is empty, and `patio` is sent only when it is yes or no. The field whitelist is otherwise the same (no paid placement, ownership, vendor or `sb_*` fields). Output is about 55% smaller (1,098 to 494 characters per venue on average). | The old output told the model that unfilled flags were false and that almost every venue was quiet, which is a likely cause of the invented reasons and "lacks" wording seen in the first test. | **local only**. `.xs` in `search_venues/`. Callers (`fn_genie_load_candidate_venues_dev`, the search) are unchanged. Apply before or with the new `fn_genie_build_prompt_dev`, whose guardrails refer to `open_now` and `today_hours`. | Not run in Xano. Output simulated in Python for two venues (Jethro's: id, name, neighborhood, address, rating, rating count, cuisine tags, open_now, today_hours, patio only). Braces balance. |
+| 40 | `genie/fn_genie_venue_open_now_dev` (ID assigned on creation) | **new** | Helper. Input: a list of `{id, hours_json}`. Output: `[{id, open_now, today_hours}]` in the same order. Reads Google opening periods against the current Central time (day 0 is Sunday; periods that run past midnight and a single open period with no close time, meaning open around the clock, are handled). `open_now` is `null`, not false, when a venue has no hours on file. `today_hours` is the matching `weekday_text` line (the list starts on Monday). | The stored `is_open_now` is a stale snapshot, and `hours_text` is empty for nearly every venue. Houston only for now (time zone is fixed). | **local only**. `.xs` in `search_venues/`. Used by the search and the formatter. | Not run in Xano. The same arithmetic in Python matched the reference on 36,750 checks (7 days by 7 hours by 750 venues). Braces and parentheses balance. |
+| 39 | `genie/fn_genie_slim_venue_row_dev` (ID assigned on creation) | **new** | Turns a full `genie_venues` row into the card shape the frontend expects: `id`, `venue_name`, `area_neighborhood` (falls back to `neighborhood_text`), `vibe_notes`, `price_band`, `address`, `image_primary_url`, `image_fallback_url`, `social_energy_score`, `social_energy_state`, `latitude`, `longitude`. | Venues the model finds through a tool are not in the handler's venue list, so the app needs a card for them. The card shape comes from the handoff and has not been checked against the frontend. Latitude and longitude are an open decision (two lines to remove). | **local only**. `.xs` in `search_venues/`. | Not run in Xano. Braces and parentheses balance. |
+ 
+**Behavioral scope:** Nothing calls `fn_genie_search_venues_dev` yet, so users see no change from it. The formatter change applies to the existing shortlist step as soon as it is deployed: the model gets smaller, cleaner venue objects with a computed open status, and `fn_genie_load_candidate_venues_dev` now triggers one open-now helper call per candidate. `meal_service` values other than `brunch` rely on flags that look defaulted, so keep them out of the tool schema until the data is fixed. Data fixes that would help more than ranking changes: fill `vibe_notes` for the 304 venues without it (Jethro's, id 815, ranks 102nd for a date-night search because of this), set `venue_type`, set the closed flags from the Google status, review `cuisine_tags`, and add an explicit "exclude from Genie" flag to replace the name blocklist.
+ 
+### 2026-10-18: System prompt rewritten to the six-section plan (`pick-v2.1`) and resolved city, time, weather and match quality passed to the model (branch `flutter-v2-sandbox-tamu-capstone`)
+ 
+**Goal:** Improve the model prompt so it follows the plan's six-section structure, replies in the user's language from the prompt alone, and stops inventing facts, and give the model the resolved city, local time, weather and how well the shortlist fits. Parts of the plan that need things that do not exist yet (conversation state, tools, a boost label, the predictive layer, user context) are placeholders in comments, not model text.
+ 
+| # | Xano object (ID) | Type | Change | Why | Status | Tested |
+|---|---|---|---|---|---|---|
+| 38 | `fn_genie_handle_message_v2_dev` (1936) | existing, fix | Declares `$resolved_city` and `$handler_debug`. After the venue handler returns, saves its `debug` block and the resolved city (`debug.city`, falling back to the raw `city_context`). Before calling `fn_genie_run_turn_dev`, builds `$now_text` (`now\|format_timestamp:"l, F j, Y g:i A":"America/Chicago"`) and a provisional `$match_quality` (strong if the handler found exact-tier rows; loose if only signal, fallback or closest rows; otherwise unknown). Passes `city`, `now_text`, `weather_text` (the existing `$weather_context_text`) and `match_quality` to `run_turn`. The `llm` debug block now also shows `prompt_version`, `match_quality` and `city_sent`. 50 lines added. | The model was being given the raw client city string (F13), and no time or weather, so "tonight" and "patio" requests had nothing to go on. | **local only**. Diff: `prompt_v2/router_prompt_v2.diff`. It touches different lines from #34, so the two apply cleanly together in either order. | Not run in Xano. Braces balance, and the diff applies on top of the #34 patch. To verify on the first run: `format_timestamp` with `now` and a time zone (the same form with "UTC" is used elsewhere), that `debug.city` is the resolved city (compare `city_sent` with what was typed), and that the `match_quality` rule matches the test set. |
+| 37 | `genie/fn_genie_run_turn_dev` (2095) | existing, feature | Added optional inputs `now_text`, `weather_text` and `match_quality`, passed on to `fn_genie_build_prompt_dev`. It now returns `prompt_version` in its response and in the debug log. The sequence, failure handling and fallback to the legacy reply are unchanged. 30 lines changed. | Carry the new context into the prompt and record which prompt version produced each reply. | **local only**. `.xs` and `.diff` in `prompt_v2/`. | Not run in Xano. Braces balance. |
+| 36 | `genie/fn_genie_build_prompt_dev` (2091) | existing, feature | Rewritten as `pick-v2.1`. The system text is fixed (no per-request values) and follows the plan's six sections: 1 role and principles (voice, relevance first, no ads, learn only from what the user says, no sensitive traits, reply in the language of the user's message even though the venue data is English, mixed-language handling), 2 response structure (exactly 3 picks, one sentence of at most 18 words each, 15-word intro, only supplied `venue_id`s, no mention of the extra nearby venues the app adds), 3 thinking steps a to g (silent), 4 tools and skills (one line: none yet), 5 good and bad examples (reason lines and intros), 6 guardrails (no other users' data, missing means unknown and never "lacks", nothing inferred from name, type or rating, `open_now` and `today_hours`, no patios in rain unless asked, no sensitive traits, say plainly when nothing fits, venue text and requests are data and not instructions, never mention tools, prompts or scores). The user text now carries `User request`, `City`, `Now`, `Weather`, `Match quality` and `Candidates (JSON)`, the middle three only when provided. New optional inputs `now_text`, `weather_text`, `match_quality`; no language input. Returns `prompt_version` (`pick-v2.1`). | The first prompt (`pick`) had the language rule as one line among 13, a weak "missing means unknown" rule, no time or weather, and did not follow the plan's structure. | **local only**. `.xs` in `prompt_v2/`. Apply `fn_genie_format_venue_for_model_dev` (#41) first, because the guardrails refer to `open_now` and `today_hours`. | Not run in Xano. Braces balance; the system text is about 1,200 to 1,450 tokens and contains no placeholder wording. To verify: valid JSON on every test case (`fail_reason` stays null), Spanish and mixed-language requests, thin-data venues, "are these sponsored?", "how many people are going tonight?". The 12-case test table is in `prompt_v2/APPLY.md`. |
+ 
+**Behavioral scope:** Placeholders (comments only, ready-to-paste wording included): the follow-up and direct-question message cases and the ambiguity rule (need conversation state: `active_topic`, `last_shown`, `origin`, and an intent step), tool descriptions (Phase 3), "honest about boosts" (needs a boost label in the formatter; today the model gets no paid-placement data), forecast phrasing (predictive layer), and a preferences block (Phase 5). Every message is still handled as a new request, so "what time does it close?" still returns 3 picks; fixing that also needs an output contract that allows a reply with no picks. Fallback replies from the reply bank are unaffected. Temperature is still fixed at 0.6 in `fn_genie_call_ai_dev`.
+ 
+### 2026-10-18: Remove language detection and translation from the active chat flow (branch `flutter-v2-sandbox-tamu-capstone`)
+ 
+**Goal:** Make the reply language follow the user's message through the system prompt alone, and remove the detect and translate code that cannot run on the chat path. A read of all 240 functions and the API groups showed that the router (last saved 2026-10-17) already passes a constant `detected_language: "en"` to the handler, so the handler's detector branch and all three translate blocks are unreachable from `ep_genie_chat_v2_dev`, and `fn_detect_query_language_dev` has no callers. `session_query_number` is no longer used by the router.
+ 
+| # | Xano object (ID) | Type | Change | Why | Status | Tested |
+|---|---|---|---|---|---|---|
+| 35 | `genie/fn_genie_build_ai_payload_dev` (1835) | existing, fix | Removed the `detected_language` input and the 7-line `CRITICAL: respond in X` block (about 9 lines). The "Language rules (multilingual)" section stays: reply in the same language the user used. | The block was redundant, and the language it relied on was always `en`. This builder is used by the handler's AI fallback, which runs when the city is not an active row in `city_graph_cities` (`force_ai`). | **local only**. Patched `.xs` and `.diff` in `language_removal/`. Apply third. | Not run in Xano. Braces balance and no `detected_language` reference remains. |
+| 34 | `fn_genie_handle_message_v2_dev` (1936) | existing, fix | Removed the two `detected_language: "en"` arguments passed to the handler. | The handler no longer takes a language. | **local only**. Patched `.xs` and `.diff` in `language_removal/`. Apply second, after the handler: if the router's `"en"` is removed while the handler still has its detector branch, the detector would run on every message. | Not run in Xano. Braces balance. The router also keeps the unused `session_query_number` input, as do both copies of `ep_genie_chat_v2_dev` (line 182); it has no other use and can be removed. |
+| 33 | `genie/fn_genie_handle_message_dev` (1960) | existing, fix | Removed the `detected_language` input and its variable, the detect-and-normalize block (the call to `fn_genie_detect_language_dev` and the `english` / `en-us` / `en-gb` mapping), the three `fn_genie_translate_dev` blocks (city-missing reply, zero-results reply, AI-fallback reply), and the `detected_language` argument passed to `fn_genie_build_ai_payload_dev`. `genie_query_log.query_language` is now the literal `"en"`. The file went from 3,176 to 3,080 lines. | Dead code on the chat path, and the detector adds a model call and the first-query failure risk if it ever runs. Apply first. | **local only**. Patched `.xs` and `.diff` in `language_removal/`. | Not run in Xano. Braces balance, no reference to `detected_language`, `fn_genie_detect_language_dev` or `fn_genie_translate_dev` remains, and no variable defined only in a removed block is still used. The 7 tests in `language_removal/APPLY.md` are pending (English, Spanish, unsupported city, no city, first query of a session, query-log write, no detect or translate calls in function history). |
+ 
+**Behavioral scope:** Replies from the model path and the AI fallback follow the user's language from the prompt. Reply-bank text (city missing, zero results, neighborhood, ambient, event) stays English for non-English users, which was already true on the chat path because translate never ran. `genie_query_log.query_language` will read `en` for every row, so `admin/city-intelligence` (API groups 115 and 118) will show a 100% English breakdown, and `ep_worldcup_use_case_metrics_dev` reads `genie_temp_sessions.detected_language`, which nothing writes. **Not changed (left for the legacy cleanup):** `fn_genie_detect_language_dev` (1895), `fn_genie_translate_dev` (1894), `fn_detect_query_language_dev` (1974), `fn_genie_handle_message_dev_01`, `fn_genie_build_ai_payload_v2_dev`, `fn_genie_llm_commentary_dev` (kept as the rollback), the `test-genie-step-dev` endpoint, and `ep_handle_message_dev` (both copies), which still calls the handler without a language and would run the detector if the frontend calls it. Not checked: API groups 113, 116, 117, 119, 120, 122 and the frontend. Full call map: `language_detect_translate_trace.md`.
+ 
 ### 2026-10-13: Remove query-language detection from the v2 chat path (branch `flutter-v2-sandbox-tamu-capstone`)
-
+ 
 **Goal:** Avoid making first-query language detection a dependency of chat, and let the venue-response model match the language of the user's request.
-
+ 
 | # | Xano object (ID) | Type | Change | Why | Status | Tested |
 |---|---|---|---|---|---|---|
 | 32 | `fn_genie_handle_message_v2_dev` (1936), `fn_genie_run_turn_dev`, `fn_genie_build_prompt_dev` | existing, fix | Removed the first-query call to `fn_detect_query_language_dev`; the legacy handler receives `en` to avoid invoking its own detector, while the venue-response prompt now asks the model to answer in the request's language. | Prevent the first-query detector failure from failing chat without instructing GPT to always answer in English. | **local only** | Static XanoScript inspection; deployment and endpoint retest pending. Legacy deterministic fallback replies may remain English. |
-
+ 
 ### 2026-10-12: Connect model-driven venue selection and fix chat handlers (branch `flutter-v2-sandbox-tamu-capstone`)
-
+ 
 **Goal:** Connect model-driven venue selection to the chat endpoint, preserve the complete response shape, and reduce avoidable work in the legacy handler.
-
+ 
 | # | Xano object (ID) | Type | Change | Why | Status | Tested |
 |---|---|---|---|---|---|---|
 | 31 | `ep_genie_chat_v2_dev` (API 4369, group `genie_v15`, ID 118; original sandbox API ID 3139) | existing, fix | Added `pick_reasons` and `llm` to the endpoint response, extracted response fields separately, and replaced the broken catch serialization with a safe JSON error while logging details in Xano debug logs. | Make the model selection result and diagnostics available to callers and avoid a malformed error response. | **deployed** on `flutter-v2-sandbox-tamu-capstone`. | End-to-end Xano Run passed with `session_query_number: 2`: `success: true`, `llm.used: true`, model `gpt-4o`, 3 reasons, and the first 3 venue IDs (420, 455, 824) in pick order. A local proxy request has separately returned upstream HTTP 500; its cause is still unresolved. |
 | 30 | `fn_genie_handle_message_v2_dev` (1936) | existing, feature | Replaced the LLM-commentary call with `fn_genie_run_turn_dev` for venue-mode `has_results` turns. When `used` is true, applies the generated reply, pick reasons, and reordered venues; otherwise keeps the deterministic reply and venues. Adds `pick_reasons` and `llm` diagnostics. | Connect model-driven selection while preserving the prior response as a fallback. | **deployed** on `flutter-v2-sandbox-tamu-capstone`. | Xano endpoint test passed with `llm.used: true`; first 3 venue rows matched picked IDs. Model selection is currently venue-mode only. |
 | 29 | `fn_genie_handle_message_dev` (1960) | existing, fix | Uses the detected language supplied by the router (normalizing English variants to `en`), removes duplicate language detection and per-venue `vibe_notes` translation, and caps bbox candidates at 30 sorted by Google rating instead of 700 unsorted rows. | Avoid redundant model calls and prevent large-radius bbox searches from processing hundreds of candidates. | **deployed** on `flutter-v2-sandbox-tamu-capstone`. | Passed 10 Xano inputs covering geo/non-geo, language variants, brunch, unsupported city, events, and missing city. Venue search remains slow (about 13 seconds for 15 rows, 24 seconds for 30); optimization is deferred. |
 | 28 | `fn_genie_validate_picks_dev` (capstone ID not recorded) | new | Parses the model JSON and accepts only candidate venue IDs with non-empty reasons; rejects unknown IDs, invalid JSON, or too few valid picks so the caller can fall back. | Prevent malformed model output or invented venue IDs from reaching the user. | **deployed** on `flutter-v2-sandbox-tamu-capstone`. | All seven model-driven functions were tested individually in Xano per handoff; the endpoint test also passed through the validator and returned 3 picks. |
-
+ 
 ## 2026-10-12: User context model, GEN-010/011/012 (branch `feat/gen-010-012-user-context`)
-
+ 
 Goal: one `genie_user_context` row per user (or per device before signup) holding a JSON preference document, with stated-beats-inferred, tombstone removals and version checks. Table `genie_user_context` (242) already existed and is shared with `v1`; only capstone functions read it.
-
+ 
 | # | Branch | Xano object (ID) | Change | Status | Tested |
 |---|---|---|---|---|---|
 | 27 | capstone | `fn_genie_verify_social_profile_migration_dev` (2098, new) | Read-only GEN-011 check: rebuilds each profile's tags with the migration's mapping and confirms the owner's context has an active stated entry for each one. | **deployed** | After the #17 run: 551 tags checked, 551 matched, 0 missing. |
@@ -48,11 +83,11 @@ Goal: one `genie_user_context` row per user (or per device before signup) holdin
 | 21 | capstone | `fn_genie_render_user_context_dev` (2096, new) | Renders the document as `User preferences:\n- <category>: a, b (learned)`. Only `active`/`user_edited`. Sensitive entries need a `consent_ref`. Profile (age, gender) never rendered. Format provisional until GEN-053. | **deployed** | Mixed context: only Black-Owned (consented), Patio, Karaoke (learned) shown; R&B without consent, tombstoned Rooftop, expired Brunch and gender left out. Empty input → `""`, count 0 (first version crashed; fixed with an `is_array` guard). |
 | 20 | capstone | `fn_genie_update_user_context_dev` (2061) | Filled the stub. Takes `expected_version`, `ops[]` (add/remove) and optional `onboarding`. Stale version → input error. Stated beats inferred. Remove is a `user_removed` tombstone that only a stated add can undo. community/music are `sensitive`. Bumps `version`. Note: ternaries inside object literals and `get` defaults on missing keys returned null in testing, so the function uses separate vars. | **deployed** | On `gen010-test-device-2`: v1 adds → 3 entries with all fields, `bogus` op skipped. Stale v1 write rejected. v2: Rooftop tombstoned, inferred Karaoke reinforced (evidence 2, confidence kept 0.6), inferred R&B skipped `stated_wins`. v3: inferred Rooftop (0.95) skipped `tombstoned`, onboarding saved. |
 | 19 | capstone | `fn_genie_get_user_context_dev` (2062), `fn_genie_create_user_context_dev` (2059) | Filled the empty stubs. Get looks up the active row by user_id, else by device_id with genie_user_id = 0. Create is idempotent and starts `{schema:1, preferences:[], profile:{}, onboarding:{}}` at version 1. | **deployed** | Get on unknown device: null. Create with no inputs: input error. Create on `gen010-test-device` twice: same row id 1. Get: returns it. Test rows 1 and 2 deleted after the tests (see #14). |
-
+ 
 ### 2026-10-11: Creation of model-driven venue selection functions (branch `flutter-v2-sandbox-tamu-capstone`)
-
+ 
 **Goal:** Move venue selection from a purely deterministic ranking/reply flow to a model-assisted step that chooses and explains picks from a verified candidate shortlist.
-
+ 
 | # | Xano object (sandbox ID) | Type | Change | Why | Status | Tested |
 |---|---|---|---|---|---|---|
 | 18 | `genie/fn_genie_run_turn_dev` (verify current branch ID) | **new** | Orchestrates one model-driven selection turn: loads candidates, builds the prompt, calls the model, validates picks, composes the reply, and orders the selected venues. Returns result and diagnostic metadata, with failure handling. | Provides one entry point for the model-assisted selection workflow. | Added in the supplied `genie_model_call.xs` snapshot; branch deployment should be verified independently. | Tested and working in Xano, per the current project handoff. |
@@ -64,23 +99,23 @@ Goal: one `genie_user_context` row per user (or per device before signup) holdin
 | 12 | `genie/fn_genie_format_venue_for_model_dev` (verify current branch ID) | **new** | Converts a venue row into a whitelist-based, model-safe representation. Excludes sensitive or irrelevant fields such as ownership, paid-placement tier, vendor, and `sb_*` fields. | Limits the data sent to the model to the fields needed for venue selection. | Added in the supplied snapshot; branch deployment should be verified independently. | Tested and working in Xano, per the current project handoff. |
 | 11 | `genie/fn_genie_handle_message_v2_dev` (snapshot ID `1936`; verify current branch ID) | existing, feature | Changes the venue-results path to call `fn_genie_run_turn_dev` instead of the old commentary call. The handler uses the model result only when `used` is true; otherwise it preserves the existing fallback behavior. | Connects model-driven selection to the existing Genie message flow without making model success mandatory for a response. | Edited in the supplied `genie_model_call.xs` snapshot. The snapshot is not, by itself, proof of deployment; verify the target branch. | Tested and working in Xano, per the current project handoff. |
 | 10 | `genie/fn_genie_call_ai_dev` (snapshot ID `1834`; verify current branch ID) | existing, reused | Reuses the shared OpenAI transport wrapper. The orchestrator supplies system/user messages and requests JSON mode. | Avoids duplicating OpenAI request handling in the new selection flow. | Reused by the new flow; verify the current branch’s object and deployment state before promotion. | Tested and working in Xano as part of the new flow, per the current project handoff. |
-
+ 
 **Behavioral scope:** This is model-driven **selection from an app-provided shortlist**, not unrestricted model-driven search or a multi-call tool loop. Existing retrieval logic still produces the initial venue list. The supplied snapshot identifies the target branch as `flutter-v2-sandbox-tamu-capstone`; verify branch deployment and current Xano IDs before promoting or editing the objects.
-
+ 
 ## 2026-10-08: Move the Genie LLM work to `flutter-v2-sandbox-tamu-capstone` (branch `chore/xano-move-llm-to-capstone`)
-
+ 
 The capstone branch was cloned from `flutter-v2-sandbox` on 2026-10-08 00:24 UTC, so it already had changes #2–#6 below. The sandbox was then rolled back.
-
+ 
 | # | Branch | Xano object (ID) | Change | Status | Tested |
 |---|---|---|---|---|---|
 | 9 | capstone | `fn_genie_call_ai_dev` (1834), `fn_genie_llm_commentary_dev` (2057), `fn_genie_handle_message_v2_dev` (1936), `fn_genie_handle_message_dev` (1960) | No change. They already match #2–#5. | snapshots in `flutter-v2-sandbox-tamu-capstone/`, committed `c581194` | Commentary run: `used=true`, 3 reasons, 2.9s. v2 handler, 2nd query, Montrose: `llm.used=true`, 3 `pick_reasons`, 2.6s. |
 | 8 | capstone | `fn_detect_query_language_dev` (1974) | #6 (the failing WIP fix) dropped. Restored to the original from `9667cdc`. | **deployed**, committed `c581194` | Fetched back; matches `9667cdc`. The 1st query of a session still fails, as before this work. |
 | 7 | sandbox | 1349, 1247, 1387; 1550 deleted | v2 handler and `call_ai` restored to `3882f2a`; language detector restored to `9667cdc`; `fn_genie_llm_commentary_dev` deleted. `fn_genie_handle_message_dev` (1373) **keeps** the #5 fix on purpose, because the original crashes every guest request. | **deployed**, committed `335d9de` | Search for `commentary` on the sandbox returns nothing. v2 handler, 2nd query, Montrose: reply-bank text, no `llm` field, 1.05s. |
-
+ 
 ## 2026-10-06: Genie LLM commentary (branch `feat/genie-llm-commentary`; sandbox IDs, moved to capstone on 2026-10-08)
-
+ 
 Goal: Genie now calls the model for supported cities (Houston). It writes a short intro plus one reason for each of the 3 picks. Before this, the model only ran for unsupported cities.
-
+ 
 | # | Xano object (sandbox ID) | Type | Change | Why | Status | Tested |
 |---|---|---|---|---|---|---|
 | 6 | `genie/fn_detect_query_language_dev` (1387) | existing, fix | 1st edit: `headers` array rebuilt with `push` (the original had no comma between items) and an 8s timeout. 2nd edit: `params` rewritten as a plain object instead of a backtick expression. | Existing bug, not caused by the LLM work. Every first message of a session (`session_query_number <= 1`) returned HTTP 500 with PHP "Array to string conversion". | Both edits **deployed**. Snapshot before the change: `9667cdc`. Attempted fix: `90fa9f6` (wip). | Still failing: `runWorkspaceFunction` errors, and the 1st query of every session still returns HTTP 500. Root cause not found. |
@@ -89,7 +124,7 @@ Goal: Genie now calls the model for supported cities (Houston). It writes a shor
 | 3 | `genie/fn_genie_llm_commentary_dev` (1550) | **new** | Sends only the top 3 picks (no ownership tags, no paid-placement tier) to `gpt-4o-mini` in JSON mode. Returns `{used, reply, pick_reasons, fail_reason, model, latency_ms}`. Rejects the result if any pick has no reason or the model returns a venue that wasn't given. On failure, the caller keeps its reply-bank text. | The core of the LLM feature. | **deployed**, committed `1e12a32` | `runWorkspaceFunction`: English request 1.8–2.2s; Spanish request answered in Spanish; empty venues gives `no_picks`; 1s timeout gives `used=false`. |
 | 2 | `genie/fn_genie_call_ai_dev` (1247) | existing, feature | Optional inputs `model`, `max_tokens`, `timeout`, `json_mode`. Also returns `model` and `latency_ms`. The defaults keep the old behavior (`gpt-4o`, 350 tokens, 30s). | Lets the commentary use a faster model, JSON output and a short timeout. | **deployed**, committed `ffccf78` | Defaults: 200 in 1962 ms. `gpt-4o-mini` + JSON: 200 in 915 ms. |
 | 1 | `ep_genie_chat_v2_dev` (API 3139) and 7 functions | snapshot only | Baseline export, no change in Xano. | Git baseline and rollback copy. | committed `3882f2a` | n/a |
-
+ 
 ### Open issues found during this work (not fixed)
 - **The OpenAI API key is written to Xano debug logs.** `genie/fn_genie_detect_language_dev` (1308) logs the whole OpenAI request, including the `Authorization: Bearer sk-proj-…` header (label `LANG_DETECT_FULL_RAW`). Anyone who can see sandbox logs or run history can read the key. **The key should be rotated.** Also, `fn_genie_call_ai_dev` returns the raw request in `error` when a call fails, so that error should not be passed on to clients.
 - `ep_genie_chat_v2_dev` (3139) has a broken catch line (`stack: $error.`). Any exception turns into an HTML PHP fatal (HTTP 500) instead of a JSON error.
@@ -100,30 +135,28 @@ Goal: Genie now calls the model for supported cities (Houston). It writes a shor
 - Candidate-loading cost: `fn_genie_load_candidate_venues_dev` loads full venue rows one ID at a time. Measure the impact if the shortlist size increases.
 - Prompt and JSON validation: The validator checks structure and candidate IDs, but that alone does not prove each reason is factually supported by venue fields. Keep the prompt restrictive and consider additional validation if unsupported claims become an issue.
 - Shared-table side effects: Sandbox tests may write to tables shared across branches. Use care when running tests that create sessions, messages, or query logs.
-
 ## Planned extensions (not current behavior)
-
+ 
 These are future directions, not claims about current functionality:
-
+ 
 - **Tool-calling loop:** Let the model request approved data-retrieval tools, execute them, return tool results to the model, and repeat until it returns a final answer. Bound the loop with iteration limits, timeouts, and error handling.
 - **Model-driven retrieval:** Add tools such as venue search and venue detail lookup so the model can request additional candidates when the initial shortlist is insufficient.
 - **Persistent user context:** Pass relevant saved preferences and prior-interaction notes into the prompt builder. Any read/write operations should be explicit, permission-checked, and bounded.
 - **Shared prompt module:** Extend `fn_genie_build_prompt_dev` with additional prompt types when those prompts are actually migrated.
 - **Additional fallback and observability:** Standardize failure reasons, record safe timing/usage metadata, and ensure a failed model call never prevents the legacy response from being returned.
 - **Production promotion:** Remove `_dev` suffixes only as part of a deliberate promotion process, with snapshots, tests, and branch-specific ID verification.
-
 ## Entry template
-
+ 
 Copy this template for each new change and place it at the top of the change history, below the heading. Remove fields that do not apply.
-
+ 
 ```markdown
 ### YYYY-MM-DD: Short change title (branch `branch-name`)
-
+ 
 **Goal:** What behavior or issue is this change addressing?
-
+ 
 | # | Xano object (ID) | Type | Change | Why | Status | Tested |
 |---|---|---|---|---|---|---|
 | 31 | `function_or_api_name` (branch-specific ID; include API group for APIs) | new / existing, fix / existing, feature | What changed. | Why it changed. | Deployment/commit/snapshot status. | Inputs tested, outcomes, errors, and latency if useful. |
-
+ 
 **Behavioral scope:** What changed for users, and what remains unchanged?
 ```
