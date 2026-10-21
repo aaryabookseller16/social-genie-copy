@@ -6,6 +6,15 @@
 //  Future steps slot in here without rewriting it: user context (extra input to the prompt
 //  builder), the tool loop (between the model call and validation) and the shortlist cache
 //  (as the source of `venues`).
+// 
+//  Changes in this version (v2.1b):
+//   1. The model request is built variables-first (message objects, messages list, payload),
+//      the pattern that fixed the missing-key bugs in the helper, slim row and formatter.
+//   2. reason_flags: after validation, each pick's reason is scanned for phrases the prompt
+//      forbids (lacks, though, "but it", currently closed, opens later...). It only REPORTS
+//      matches in the response and the debug log; it never changes the reply or fails the
+//      turn. Use it to measure how often the model breaks the grounding rules.
+//  The grounding rules themselves live in fn_genie_build_prompt_dev, not here.
 //  =====================================================================================
 function "genie/fn_genie_run_turn_dev" {
   input {
@@ -76,6 +85,10 @@ function "genie/fn_genie_run_turn_dev" {
       value = null
     }
   
+    var $reason_flags {
+      value = []
+    }
+  
     var $model {
       value = $input.model|first_notempty:"gpt-4o"
     }
@@ -136,11 +149,34 @@ function "genie/fn_genie_run_turn_dev" {
   
     conditional {
       if ($fail_reason == null) {
+        // Variables first: each message and the payload are built from plain references.
+        var $sys_text {
+          value = $prompt|get:"system_text":""
+        }
+      
+        var $usr_text {
+          value = $prompt|get:"user_text":""
+        }
+      
+        var $sys_msg {
+          value = {role: "system", content: $sys_text}
+        }
+      
+        var $usr_msg {
+          value = {role: "user", content: $usr_text}
+        }
+      
+        var $messages {
+          value = [$sys_msg, $usr_msg]
+        }
+      
+        var $ai_payload {
+          value = {messages: $messages}
+        }
+      
         function.run "genie/fn_genie_call_ai_dev" {
           input = {
-            ai_payload: {
-            messages: [{role: "system", content: $prompt.system_text}, {role: "user", content: $prompt.user_text}]
-          }
+            ai_payload: $ai_payload
             model     : $model
             max_tokens: $input.max_tokens|first_notempty:800
             timeout   : $input.timeout|first_notempty:30
@@ -214,6 +250,49 @@ function "genie/fn_genie_run_turn_dev" {
           value = $ordered
         }
       
+        // Report-only check: phrases the prompt forbids. Never changes the reply.
+        var $flag_terms {
+          value = [
+            "lacks"
+            "though"
+            "but it"
+            "currently closed"
+            "now closed"
+            "opens later"
+            "opens at"
+            "does not have"
+            "doesn't have"
+          ]
+        }
+      
+        foreach ($validation.picks) {
+          each as $pk2 {
+            var $pk2_id {
+              value = $pk2|get:"venue_id":0
+            }
+          
+            var $pk2_reason {
+              value = $pk2|get:"reason":""
+            }
+          
+            foreach ($flag_terms) {
+              each as $ft {
+                conditional {
+                  if ($pk2_reason|icontains:$ft) {
+                    var $flag_row {
+                      value = {venue_id: $pk2_id, term: $ft}
+                    }
+                  
+                    array.push $reason_flags {
+                      value = $flag_row
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      
         var.update $used {
           value = true
         }
@@ -238,6 +317,10 @@ function "genie/fn_genie_run_turn_dev" {
         var.update $ordered_venues {
           value = $input.venues|safe_array
         }
+      
+        var.update $reason_flags {
+          value = []
+        }
       }
     }
   
@@ -251,6 +334,7 @@ function "genie/fn_genie_run_turn_dev" {
         latency_ms     : $latency_ms
         candidate_count: $candidate_count
         picked_ids     : $picked_ids
+        reason_flags   : $reason_flags
       }
     }
   }
@@ -266,5 +350,6 @@ function "genie/fn_genie_run_turn_dev" {
     model          : $model
     prompt_version : $prompt_version
     latency_ms     : $latency_ms
+    reason_flags   : $reason_flags
   }
 }

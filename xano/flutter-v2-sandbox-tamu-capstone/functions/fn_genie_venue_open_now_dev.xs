@@ -1,12 +1,12 @@
-// Works out, for a list of venues, whether each one is open right now and what today's hours are.
-// The stored is_open_now column is a stale snapshot (true for about 74% of venues at any hour),
-// so it is never used. This reads hours_json (Google opening periods) against the current
-// Central time. Houston only for now.
-//
-// Input items: [{id, hours_json}]. Output: [{id, open_now, today_hours}] in the same order.
-// open_now is true, false, or null when the venue has no hours on file (unknown, not closed).
-// A single open period with no close time means open around the clock.
-// =====================================================================================
+//  Works out, for a list of venues, whether each one is open right now and what today's hours are.
+//  The stored is_open_now column is a stale snapshot (true for about 74% of venues at any hour),
+//  so it is never used. This reads hours_json (Google opening periods) against the current
+//  Central time. Houston only for now.
+// 
+//  Input items: [{id, hours_json}]. Output: [{id, open_now, today_hours}] in the same order.
+//  open_now is true, false, or null when the venue has no hours on file (unknown, not closed).
+//  A single open period with no close time means open around the clock.
+//  =====================================================================================
 function "genie/fn_genie_venue_open_now_dev" {
   input {
     json items
@@ -60,12 +60,28 @@ function "genie/fn_genie_venue_open_now_dev" {
       
         conditional {
           if ($hj != null) {
-            var.update $periods {
-              value = ($hj|get:"periods":[])|safe_array
+            var $raw_periods {
+              value = $hj|get:"periods":null
             }
           
-            var.update $weekday_text {
-              value = ($hj|get:"weekday_text":[])|safe_array
+            var $raw_weekday {
+              value = $hj|get:"weekday_text":null
+            }
+          
+            conditional {
+              if ($raw_periods|is_array) {
+                var.update $periods {
+                  value = $raw_periods
+                }
+              }
+            }
+          
+            conditional {
+              if ($raw_weekday|is_array) {
+                var.update $weekday_text {
+                  value = $raw_weekday
+                }
+              }
             }
           }
         }
@@ -145,10 +161,15 @@ function "genie/fn_genie_venue_open_now_dev" {
           }
         }
       
+        var $item_id {
+          value = $it|get:"id":0
+        }
+      
         array.push $out {
           value = {
-            id         : $it|get:"id":0
+            id         : $item_id
             open_now   : $open_now
+            open_a     : $open_now
             today_hours: $today
           }
         }

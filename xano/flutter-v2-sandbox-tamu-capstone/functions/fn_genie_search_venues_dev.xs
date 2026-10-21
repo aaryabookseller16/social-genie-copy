@@ -459,7 +459,7 @@ function "genie/fn_genie_search_venues_dev" {
                 }
               
                 conditional {
-                  if (((((($r|get:"hours_json":{})|get:"periods":[])|safe_array))|count) > 0) {
+                  if ((($r|get:"hours_json":{})|get:"periods":null)|is_array) {
                     math.add $score {
                       value = 0.3
                     }
@@ -504,17 +504,21 @@ function "genie/fn_genie_search_venues_dev" {
               }
             }
           
+            var $r_id {
+              value = $r|get:"id":0
+            }
+          
             array.push $cands {
               value = {
-                id             : $r|get:"id":0
-                row            : $r
-                ok_venue_type  : $ok_type
-                ok_cuisine     : $ok_cuisine
-                ok_neighborhood: $ok_hood
-                ok_price_band  : $ok_price
-                ok_meal_service: $ok_meal
-                ok_open_now    : true
-                score          : $score
+                id             : $r_id,
+                row            : $r,
+                ok_venue_type  : $ok_type,
+                ok_cuisine     : $ok_cuisine,
+                ok_neighborhood: $ok_hood,
+                ok_price_band  : $ok_price,
+                ok_meal_service: $ok_meal,
+                ok_open_now    : true,
+                score          : $score,
                 hits           : $hits
               }
             }
@@ -648,6 +652,14 @@ function "genie/fn_genie_search_venues_dev" {
       }
     }
   
+    var $n_rows {
+      value = $rows|count
+    }
+  
+    var $n_cands {
+      value = $cands|count
+    }
+  
     var $match_quality {
       value = "strong"
     }
@@ -683,11 +695,11 @@ function "genie/fn_genie_search_venues_dev" {
     count        : $pool_count
     fail_reason  : $fail_reason
     debug        : {
-      base_rows : $rows|count
-      candidates: $cands|count
-      excluded  : $excluded
-      requested : $requested
-      sort_by   : $sort_by
+      base_rows : $n_rows,
+      candidates: $n_cands,
+      excluded  : $excluded,
+      requested : $requested,
+      sort_by   : $sort_by,
       ranking   : $ranking
     }
   }
