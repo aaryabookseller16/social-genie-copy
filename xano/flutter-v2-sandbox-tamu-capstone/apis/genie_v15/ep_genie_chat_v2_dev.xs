@@ -1,6 +1,6 @@
 // V2 Genie chat endpoint. Replaces ep_external_genie_message_dev as the primary chat endpoint.
 // Adds weather awareness, neighborhood routing, and ambient recommendations.
-// Version: 1.5.5 (Final Stability)
+// Version: 1.6.0 (city resolution contract, device_id, real error responses)
 query "genie/ep_genie_chat_v2_dev" verb=POST {
   api_group = "genie_v15"
 
@@ -40,6 +40,12 @@ query "genie/ep_genie_chat_v2_dev" verb=POST {
   
     // Session ID if available
     text? session_id?
+  
+    // Device ID from the web app; finds a guest's user context (GEN-013)
+    text? device_id? filters=trim
+  
+    // Include diagnostic blocks and stage timings when explicitly requested
+    bool debug?=false
   }
 
   stack {
@@ -181,159 +187,70 @@ query "genie/ep_genie_chat_v2_dev" verb=POST {
             location_label      : $input.location_label
             session_query_number: $input.session_query_number
             session_id          : $final_session_id|to_text
+            device_id           : $input.device_id
           }
         } as $genie_response
       
-        debug.log {
-          value = {
-            checkpoint    : "ENDPOINT_RECEIVED_GENIE_RESPONSE"
-            genie_response: $genie_response
-          }
-        }
-      
         // --- 5. Assemble final response ---
-        // Extract each field into its own variable first (one small
-        // expression per statement) instead of evaluating many chained
-        // |get calls against $genie_response inside a single large
-        // backtick literal block.
-        var $r_reply {
-          value = $genie_response|get:"reply":""
-        }
-      
-        var $r_use_xano {
-          value = $genie_response|get:"use_xano":false
-        }
-      
-        var $r_reply_mode {
-          value = $genie_response|get:"reply_mode":""
-        }
-      
-        var $r_venues {
-          value = $genie_response|get:"venues":[]
-        }
-      
-        var $r_more_nearby_venues {
-          value = $genie_response|get:"more_nearby_venues":[]
-        }
-      
-        var $r_events {
-          value = $genie_response|get:"events":[]
-        }
-      
-        var $r_query_mode {
-          value = $genie_response|get:"query_mode":"venue"
-        }
-      
-        var $r_needs_location {
-          value = $genie_response|get:"needs_location":false
-        }
-      
-        var $r_filters {
-          value = $genie_response|get:"filters":{}
-        }
-      
-        var $r_show_intake_prompt {
-          value = $genie_response|get:"show_intake_prompt":false
-        }
-      
-        var $r_intake_prompt_copy {
-          value = $genie_response|get:"intake_prompt_copy":""
-        }
-      
-        var $r_weather_context_text {
-          value = $genie_response|get:"weather_context_text":""
-        }
-      
-        var $r_should_avoid_outdoor {
-          value = $genie_response|get:"should_avoid_outdoor":false
-        }
-      
-        var $r_should_promote_outdoor {
-          value = $genie_response
-            |get:"should_promote_outdoor":false
-        }
-      
-        var $r_neighborhood_context {
-          value = $genie_response|get:"neighborhood_context":null
-        }
-      
-        var $r_is_outdoor_sensitive {
-          value = $genie_response|get:"is_outdoor_sensitive":false
-        }
-      
-        var $r_detected_neighborhood {
-          value = $genie_response|get:"detected_neighborhood":""
-        }
-      
-        var $r_pick_reasons {
-          value = $genie_response|get:"pick_reasons":[]
-        }
-      
-        var $r_llm {
-          value = $genie_response|get:"llm":null
-        }
-      
-        debug.log {
-          value = {
-            checkpoint                : "ENDPOINT_AFTER_FIELD_EXTRACTION"
-            r_reply                   : $r_reply
-            r_reply_mode              : $r_reply_mode
-            r_use_xano                : $r_use_xano
-            r_query_mode              : $r_query_mode
-            r_venues_count            : $r_venues|count
-            r_more_nearby_venues_count: $r_more_nearby_venues|count
-            r_filters                 : $r_filters
-            r_intake_prompt_copy      : $r_intake_prompt_copy
-          }
-        }
-      
         var.update $final_result {
           value = {
             success               : true
-            reply                 : $r_reply
-            use_xano              : $r_use_xano
-            reply_mode            : $r_reply_mode
-            venues                : $r_venues
-            more_nearby_venues    : $r_more_nearby_venues
-            events                : $r_events
-            query_mode            : $r_query_mode
-            needs_location        : $r_needs_location
-            filters               : $r_filters
-            show_intake_prompt    : $r_show_intake_prompt
-            intake_prompt_copy    : $r_intake_prompt_copy
-            weather_context_text  : $r_weather_context_text
-            should_avoid_outdoor  : $r_should_avoid_outdoor
-            should_promote_outdoor: $r_should_promote_outdoor
-            neighborhood_context  : $r_neighborhood_context
-            is_outdoor_sensitive  : $r_is_outdoor_sensitive
-            detected_neighborhood : $r_detected_neighborhood
-            pick_reasons          : $r_pick_reasons
-            llm                   : $r_llm
+            reply                 : $genie_response|get:"reply":""
+            venues                : $genie_response|get:"venues":[]
+            more_nearby_venues    : $genie_response|get:"more_nearby_venues":[]
+            events                : $genie_response|get:"events":[]
+            query_mode            : $genie_response|get:"query_mode":"venue"
+            reply_mode            : $genie_response|get:"reply_mode":""
+            use_xano              : $genie_response|get:"use_xano":false
+            needs_location        : $genie_response|get:"needs_location":false
+            filters               : $genie_response|get:"filters":{}
+            pick_reasons          : $genie_response|get:"pick_reasons":[]
+            show_intake_prompt    : $genie_response|get:"show_intake_prompt":false
+            intake_prompt_copy    : $genie_response|get:"intake_prompt_copy":""
+            profile_strength_tier : $genie_response|get:"profile_strength_tier":null
+            weather_context_text  : $genie_response|get:"weather_context_text":""
+            should_avoid_outdoor  : $genie_response|get:"should_avoid_outdoor":false
+            should_promote_outdoor: $genie_response|get:"should_promote_outdoor":false
+            neighborhood_context  : $genie_response|get:"neighborhood_context":null
+            is_outdoor_sensitive  : $genie_response|get:"is_outdoor_sensitive":false
+            detected_neighborhood : $genie_response|get:"detected_neighborhood":""
+            resolved_city         : $genie_response|get:"resolved_city":null
+            city_source           : $genie_response|get:"city_source":"none"
+            geo_used              : $genie_response|get:"geo_used":false
+            location_status       : $genie_response|get:"location_status":"ok"
+            supported_cities      : $genie_response|get:"supported_cities":[]
+            unsupported_city      : $genie_response|get:"unsupported_city":""
             session_id            : $final_session_id
             session_token         : $v_session_token
+          }
+        }
+      
+        conditional {
+          if ($input.debug == true) {
+            var.update $final_result {
+              value = $final_result
+                |set:"search":($genie_response|get:"search":null)
+                |set:"search_filters":($genie_response|get:"search_filters":null)
+                |set:"city":($genie_response|get:"city":null)
+                |set:"llm":($genie_response|get:"llm":null)
+                |set:"context":($genie_response|get:"context":null)
+                |set:"timings":($genie_response|get:"timings":{})
+            }
           }
         }
       }
     
       catch {
-        var.update $final_result {
-          value = {
-            success   : false
-            error     : "Genie request failed"
-            error_type: "exception"
-          }
+        // Log the full error, then rethrow so the caller gets a real error
+        // response instead of an HTTP 200 with success:false and a null message.
+        debug.log {
+          value = {checkpoint: "EP_GENIE_CHAT_V2_FAILED", error: $error}
         }
       
-        debug.log {
-          value = {checkpoint: "ENDPOINT_CAUGHT_ERROR", error: $error}
+        throw {
+          name = "GenieChatError"
+          value = "Genie chat failed: " ~ ($error|json_encode)
         }
-      }
-    }
-  
-    debug.log {
-      value = {
-        checkpoint  : "ENDPOINT_FINAL_RESULT"
-        final_result: $final_result
       }
     }
   }

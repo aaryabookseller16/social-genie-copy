@@ -4,6 +4,9 @@
 // - venues returned (cards)
 // - supported city => reply is short + venues array (no list text)
 // - unsupported city => reply is text list from AI, venues empty
+// CITY-RESOLUTION PATCH: fn_genie_handle_message_v2_dev now resolves the city first and passes the
+// canonical city name as city_context (and lat/lng only when they belong to that city). Event query,
+// event reply, zero-results reply and the log/signal defaults no longer hardcode Houston.
 function "genie/fn_genie_handle_message_dev" {
   input {
     text message
@@ -1566,8 +1569,13 @@ function "genie/fn_genie_handle_message_dev" {
   
     conditional {
       if ($query_mode == "event" && $should_stop == false) {
+        // CITY-RESOLUTION PATCH A: events follow the resolved city instead of a hardcoded Houston.
+        var $event_city_lower {
+          value = $city_name_match|to_lower
+        }
+      
         db.query genie_social_events {
-          where = ($db.genie_social_events.city == "Houston" || $db.genie_social_events.city == "houston") && $db.genie_social_events.status == "active" && $db.genie_social_events.event_date >= $today_date
+          where = ($db.genie_social_events.city == $city_name_match || $db.genie_social_events.city == $event_city_lower) && $db.genie_social_events.status == "active" && $db.genie_social_events.event_date >= $today_date
           sort = {event_date: "asc"}
           return = {type: "list", paging: {page: 1, per_page: 10}}
         } as $event_query_result
@@ -1591,7 +1599,7 @@ function "genie/fn_genie_handle_message_dev" {
             }
           
             var.update $final_reply {
-              value = "Here are some events happening in Houston that match your vibe."
+              value = ("Here are some events happening in " ~ $city_name_match) ~ " that match your vibe."
             }
           
             var.update $should_stop {
@@ -2628,8 +2636,9 @@ function "genie/fn_genie_handle_message_dev" {
                   value = true
                 }
               
+                // CITY-RESOLUTION PATCH B: name the resolved city instead of Houston.
                 var.update $final_reply {
-                  value = "I couldn't find an exact match for that — here are some popular spots in Houston you might love."
+                  value = ("I couldn't find an exact match for that — here are some popular spots in " ~ $city_name_match) ~ " you might love."
                 }
               }
             
@@ -2979,6 +2988,7 @@ function "genie/fn_genie_handle_message_dev" {
       }
     }
   
+    // CITY-RESOLUTION PATCH C: log defaults no longer fall back to "Houston".
     db.add genie_query_log {
       enforce_hidden_fields = false
       data = {
@@ -2987,7 +2997,7 @@ function "genie/fn_genie_handle_message_dev" {
         query_text           : ($input.message ?? "")
         query_language       : "en"
         query_category       : $query_category
-        neighborhood_queried : ($city_norm ?? "Houston")
+        neighborhood_queried : ($city_norm ?? "")
         venue_returned       : ((($venue_results_dev ?? [])|count) > 0)
         venues_returned_count: (($venue_results_dev ?? [])|count)
         is_worldcup_window   : ($is_worldcup_window_qlog ?? false)
@@ -3003,7 +3013,7 @@ function "genie/fn_genie_handle_message_dev" {
         user_id         : ($user_id ?? 0)|to_int
         external_user_id: ($external_user_id_final ?? "")
         message_text    : ($msg_clean ?? "")
-        city            : ($city_norm ?? "Houston")
+        city            : ($city_norm ?? "")
         query_mode      : ($query_mode ?? "venue")
         detected_intent : ($detected_intent ?? "general")
         query_category  : ($query_category ?? "general")
