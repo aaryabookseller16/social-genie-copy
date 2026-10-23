@@ -15,6 +15,11 @@
 // fallback and the search-on-every-turn behavior are kept. The city is NOT taken from the model or
 // from fn_resolve_nearest_city_dev any more: the resolver above is the single authority. The search
 // receives lat/lng only when geo_used is true (the device is within 80 km of the resolved city).
+// GEN-072 (2026-10-22): the venue branch no longer calls fn_genie_handle_message_dev. It calls
+// fn_genie_request_lifecycle_dev (identity, session, message log, intake fields, keyword filters)
+// and fn_genie_log_turn_analytics_dev (query log and behavior signal, at the end of the turn).
+// fn_genie_search_venues_dev is the only venue source: zero cards is a normal no-results reply and
+// a search exception is reply_mode "search_error". The event branch still calls the legacy handler.
 function "genie/fn_genie_handle_message_v2_dev" {
   input {
     // The user's message
@@ -66,7 +71,7 @@ function "genie/fn_genie_handle_message_v2_dev" {
       value = 0
     }
   
-    var $legacy_handler_ms {
+    var $lifecycle_ms {
       value = 0
     }
   
@@ -254,6 +259,23 @@ function "genie/fn_genie_handle_message_v2_dev" {
   
     var $legacy_events {
       value = []
+    }
+  
+    // GEN-072: lifecycle result, intent for the reply bank, and the search failure flag.
+    var $lifecycle {
+      value = {}
+    }
+  
+    var $lifecycle_ran {
+      value = false
+    }
+  
+    var $detected_intent {
+      value = "general"
+    }
+  
+    var $search_failed {
+      value = false
     }
   
     // 1b. Resolve which supported city this request is about, and whether the
@@ -487,96 +509,120 @@ function "genie/fn_genie_handle_message_v2_dev" {
     // 4. Route by query_mode
   
     // VENUE MODE (default)
+    // GEN-072: the legacy handler (venue query, scoring, AI intent parse; ~52 s in the 2026-10-22
+    // test) is no longer called on venue turns. The lifecycle function does identity, session,
+    // message log and the intake fields; the search below is the only source of venues; analytics
+    // are written at the end of the turn. The event branch still calls the legacy handler.
     conditional {
       if ($query_mode == "venue") {
-        var $legacy_started_at {
+        var $lifecycle_started_at {
           value = "now"|to_ms
         }
       
-        function.run "genie/fn_genie_handle_message_dev" {
+        function.run "genie/fn_genie_request_lifecycle_dev" {
           input = {
             message         : $input.message
             channel         : $input.channel
             external_user_id: $input.external_user_id
             user_name       : $input.user_name
-            city_context    : $resolved_city_name
+            city_name       : $resolved_city_name
             session_token   : $input.session_token
-            lat             : $inner_lat
-            lng             : $inner_lng
-            radius_meters   : $input.radius_meters
-            location_label  : $input.location_label
-            session_id      : ($input.session_id ?? "")
           }
-        } as $venue_response
+        } as $lifecycle_resp
       
-        var.update $legacy_handler_ms {
-          value = ("now"|to_ms) - $legacy_started_at
+        var.update $lifecycle {
+          value = $lifecycle_resp
+        }
+      
+        var.update $lifecycle_ran {
+          value = true
+        }
+      
+        var.update $lifecycle_ms {
+          value = ("now"|to_ms) - $lifecycle_started_at
         }
       
         var.update $inner_timings {
           value = {
-            user_ms   : $venue_response|get:"t_user_ms":null
-            session_ms: $venue_response|get:"t_session_ms":null
-            log_ms    : $venue_response|get:"t_log_ms":null
-            intent_ms : $venue_response|get:"t_intent_ms":null
-            venues_ms : $venue_response|get:"t_venues_ms":null
-            total_ms  : $venue_response|get:"t_total_ms":null
+            user_ms   : $lifecycle|get:"t_user_ms":null
+            session_ms: $lifecycle|get:"t_session_ms":null
+            log_ms    : $lifecycle|get:"t_log_ms":null
+            total_ms  : $lifecycle|get:"t_total_ms":null
           }
         }
       
-        var.update $final_reply {
-          value = $venue_response|get:"reply":""
-        }
-      
-        // Update outer query_mode and events from inner response
-        var.update $query_mode {
-          value = $venue_response|get:"query_mode":"venue"
-        }
-      
-        var.update $event_results {
-          value = $venue_response|get:"events":[]
-        }
-      
-        // Keep primary venues and "more nearby" venues as two distinct
-        // lists instead of merging them into one.
-        var.update $venue_results {
-          value = $venue_response|get:"venues":[]
-        }
-      
-        var.update $final_more_nearby_venues {
-          value = $venue_response|get:"more_nearby_venues":[]
-        }
-      
-        var.update $final_use_xano {
-          value = $venue_response|get:"use_xano":false
-        }
-      
-        var.update $final_reply_mode {
-          value = $venue_response|get:"reply_mode":""
-        }
-      
-        var.update $final_needs_location {
-          value = $venue_response|get:"needs_location":false
-        }
-      
-        var.update $final_filters {
-          value = $venue_response|get:"filters":{}
-        }
-      
         var.update $final_show_intake_prompt {
-          value = $venue_response|get:"show_intake_prompt":false
+          value = $lifecycle|get:"show_intake_prompt":false
         }
       
         var.update $final_intake_prompt_copy {
-          value = $venue_response|get:"intake_prompt_copy":""
+          value = $lifecycle|get:"intake_prompt_copy":""
         }
       
         var.update $final_profile_strength_tier {
-          value = $venue_response|get:"profile_strength_tier":null
+          value = $lifecycle|get:"profile_strength_tier":null
         }
       
-        var.update $final_debug {
-          value = $venue_response|get:"debug":null
+        // Filters returned to the client and used by the search's rules fallback when the model
+        // filter extraction failed: keyword rules from the lifecycle function, overlaid with the
+        // model's cuisine, meal service and venue type when it answered.
+        var.update $final_filters {
+          value = $lifecycle|get:"rules_filters":{}
+        }
+      
+        conditional {
+          if ($mf|get:"ok") {
+            conditional {
+              if ((($mf|get:"cuisine") ?? "") != "") {
+                var.update $final_filters {
+                  value = $final_filters|merge:{cuisine: ($mf|get:"cuisine")}
+                }
+              }
+            }
+          
+            conditional {
+              if ((($mf|get:"meal_service") ?? "") != "") {
+                var.update $final_filters {
+                  value = $final_filters|merge:{type: ($mf|get:"meal_service")}
+                }
+              }
+            }
+          
+            conditional {
+              if ((($mf|get:"venue_type") ?? "") != "") {
+                var.update $final_filters {
+                  value = $final_filters|merge:{venue_type: ($mf|get:"venue_type")}
+                }
+              }
+            }
+          }
+        }
+      
+        // Intent for the reply-bank fallback, from the model's meal service or the rules type.
+        var $intent_src {
+          value = (($mf|get:"meal_service") ?? "")|to_lower
+        }
+      
+        conditional {
+          if (["brunch", "happy_hour", "late_night"]|in:$intent_src) {
+            var.update $detected_intent {
+              value = $intent_src
+            }
+          }
+        
+          else {
+            var $rules_type {
+              value = (($final_filters|get:"type") ?? "")|to_lower
+            }
+          
+            conditional {
+              if (["brunch", "happy_hour", "late_night", "hookah", "patio", "date_night", "dinner"]|in:$rules_type) {
+                var.update $detected_intent {
+                  value = $rules_type
+                }
+              }
+            }
+          }
         }
       }
     }
@@ -1311,6 +1357,10 @@ function "genie/fn_genie_handle_message_v2_dev" {
               }
             
               catch {
+                var.update $search_failed {
+                  value = true
+                }
+              
                 var.update $search_debug {
                   value = {enabled: true, used: false, skipped: "error"}
                 }
@@ -1325,6 +1375,42 @@ function "genie/fn_genie_handle_message_v2_dev" {
     // endpoint already returns.
     var.update $search_debug {
       value = ($search_debug|set:"filters":$mf)|set:"city":$city_debug
+    }
+  
+    // GEN-072: search is the only source of venues on a venue turn. A search exception is its own
+    // reply_mode; zero cards is a normal no-results answer (no legacy fallback list).
+    conditional {
+      if ($lifecycle_ran && $query_mode == "venue") {
+        conditional {
+          if ($search_failed) {
+            var.update $final_reply_mode {
+              value = "search_error"
+            }
+          
+            var.update $final_use_xano {
+              value = false
+            }
+          
+            var.update $final_reply {
+              value = "I hit a snag searching just now. Give it another try in a moment."
+            }
+          }
+        
+          elseif (($venue_results|count) == 0) {
+            var.update $final_reply_mode {
+              value = "supported_no_results"
+            }
+          
+            var.update $final_use_xano {
+              value = false
+            }
+          
+            var.update $final_reply {
+              value = (("I couldn't find a match for that in " ~ $resolved_city_name) ~ ". Try a different vibe, cuisine or neighborhood?")
+            }
+          }
+        }
+      }
     }
   
     // GEN-071: nothing found for a venue request that the legacy handler took as an event
@@ -1431,6 +1517,41 @@ function "genie/fn_genie_handle_message_v2_dev" {
           catch {
             var.update $llm_debug {
               value = {enabled: true, used: false, fail_reason: "exception"}
+            }
+          }
+        }
+      }
+    }
+  
+    // GEN-072: the pick model did not write a reply: use the reply bank, as the legacy handler did.
+    conditional {
+      if ($lifecycle_ran && $query_mode == "venue" && $final_reply_mode == "has_results" && (($final_reply == null) || (($final_reply|trim) == ""))) {
+        try_catch {
+          try {
+            var $bank_mode {
+              value = "has_results"
+            }
+          
+            conditional {
+              if (($city_res|get:"wants_near_me":false) && $geo_used) {
+                var.update $bank_mode {
+                  value = "near_me"
+                }
+              }
+            }
+          
+            function.run "genie/fn_genie_get_reply_dev" {
+              input = {intent: $detected_intent, reply_mode: $bank_mode}
+            } as $bank_reply
+          
+            var.update $final_reply {
+              value = $bank_reply
+            }
+          }
+        
+          catch {
+            debug.log {
+              value = {checkpoint: "V2_REPLY_BANK_FALLBACK_FAILED"}
             }
           }
         }
@@ -1620,6 +1741,37 @@ function "genie/fn_genie_handle_message_v2_dev" {
       }
     }
   
+    // 9. GEN-072: the analytics the legacy handler wrote at the end of a turn (genie_query_log and
+    // the behavior signal). Never blocks the reply.
+    conditional {
+      if ($lifecycle_ran) {
+        try_catch {
+          try {
+            function.run "genie/fn_genie_log_turn_analytics_dev" {
+              input = {
+                user_id         : (($lifecycle|get:"user_id":0) ?? 0)|to_int
+                external_user_id: ($input.external_user_id ?? "")|trim
+                message         : $input.message
+                city            : $resolved_city_name
+                query_mode      : $query_mode
+                temp_session_id : ($input.session_id ?? "")
+                session_id      : ((($lifecycle|get:"session_id":"") ?? "")|to_text)
+                session_meta    : $lifecycle|get:"session_meta":{}
+                venue_count     : $venue_results|count
+                detected_intent : $detected_intent
+              }
+            } as $analytics_resp
+          }
+        
+          catch {
+            debug.log {
+              value = {checkpoint: "V2_ANALYTICS_FAILED"}
+            }
+          }
+        }
+      }
+    }
+  
     debug.log {
       value = {
         checkpoint             : "V2_HANDLER_FINAL_STATE"
@@ -1658,7 +1810,7 @@ function "genie/fn_genie_handle_message_v2_dev" {
     timings               : {
       v2_total_ms          : ("now"|to_ms) - $v2_started_at
       filter_extraction_ms : $filter_extraction_ms
-      legacy_handler_ms    : $legacy_handler_ms
+      lifecycle_ms         : $lifecycle_ms
       inner                : $inner_timings
       search_ms            : $search_ms
       pick_ms              : $pick_ms
