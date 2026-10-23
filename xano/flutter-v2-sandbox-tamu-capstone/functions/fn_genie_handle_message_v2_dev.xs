@@ -1,25 +1,5 @@
-// V2 upgrade of fn_genie_handle_message_dev. Adds query_mode routing, weather awareness, neighborhood context, and ambient cross-table recommendations on top of the existing V1.5 pipeline.
-// V2 upgrade of fn_genie_handle_message_dev. Adds query_mode routing, weather awareness, neighborhood context, and ambient cross-table recommendations.
-// GEN-013 (2026-10-21), added without changing existing lines: optional device_id; on venue
-// turns the user context is read (read-only, never linked here) and rendered for the pick
-// prompt; when no location is sent, fn_genie_search_venues_dev re-ranks the shortlist with the
-// intent filters and the user's preference keywords. Both have kill switches and try_catch,
-// and report in the context / search response keys.
-// GEN-014: dislikes (sentiment "dislike") are kept out of the preference keywords and sent to
-// the search as avoid_keywords, a small ranking penalty; they are listed in debug as avoid.
-// CITY-RESOLUTION: the city is resolved once up front by fn_genie_resolve_city_dev. The user's
-// coordinates only reach the inner handler when they are within 80 km of the resolved city
-// (geo_used). Missing, outside-area and unsupported-city cases return early with a structured
-// response. The resolved city is saved on the session for follow-ups.
-// GEN-071 (2026-10-22) MERGED with CITY-RESOLUTION: the model filter extraction, the model event
-// fallback and the search-on-every-turn behavior are kept. The city is NOT taken from the model or
-// from fn_resolve_nearest_city_dev any more: the resolver above is the single authority. The search
-// receives lat/lng only when geo_used is true (the device is within 80 km of the resolved city).
-// GEN-072 (2026-10-22): the venue branch no longer calls fn_genie_handle_message_dev. It calls
-// fn_genie_request_lifecycle_dev (identity, session, message log, intake fields, keyword filters)
-// and fn_genie_log_turn_analytics_dev (query log and behavior signal, at the end of the turn).
-// fn_genie_search_venues_dev is the only venue source: zero cards is a normal no-results reply and
-// a search exception is reply_mode "search_error". The event branch still calls the legacy handler.
+// Routes Genie requests by query mode, resolving the city and coordinating lifecycle, event, and venue flows.
+// Enriches venue results with search, context, weather, and model picks, then returns a unified response.
 function "genie/fn_genie_handle_message_v2_dev" {
   input {
     // The user's message
@@ -257,8 +237,8 @@ function "genie/fn_genie_handle_message_v2_dev" {
       value = {source: "none", city_id: null}
     }
   
-    var $legacy_events {
-      value = []
+    var $event_fallback {
+      value = false
     }
   
     // GEN-072: lifecycle result, intent for the reply bank, and the search failure flag.
@@ -472,7 +452,52 @@ function "genie/fn_genie_handle_message_v2_dev" {
         }
       }
     }
-  
+
+    // Event turns query events directly. If none match, route the same turn through venue search.
+    conditional {
+      if ($query_mode == "event") {
+        var $ev_today {
+          value = now|format_timestamp:"Y-m-d":"UTC"
+        }
+
+        db.query genie_social_events {
+          where = ($db.genie_social_events.city == $resolved_city_name || $db.genie_social_events.city == ($resolved_city_name|to_lower)) && $db.genie_social_events.status == "active" && $db.genie_social_events.event_date >= $ev_today
+          sort = {event_date: "asc"}
+          return = {type: "list", paging: {page: 1, per_page: 10}}
+        } as $ev_result
+
+        var.update $event_results {
+          value = ($ev_result|get:"items") ?? []
+        }
+
+        conditional {
+          if (($event_results|count) > 0) {
+            var.update $final_reply_mode {
+              value = "has_results"
+            }
+
+            var.update $final_use_xano {
+              value = true
+            }
+
+            var.update $final_reply {
+              value = (("Here are some events happening in " ~ $resolved_city_name) ~ " that match your vibe.")
+            }
+          }
+
+          else {
+            var.update $event_fallback {
+              value = true
+            }
+
+            var.update $query_mode {
+              value = "venue"
+            }
+          }
+        }
+      }
+    }
+
     // 3. Get weather context. Wrapped so a weather subsystem failure
     // can't take down the whole chat endpoint; falls back to safe defaults.
     var $weather_result {
@@ -509,12 +534,10 @@ function "genie/fn_genie_handle_message_v2_dev" {
     // 4. Route by query_mode
   
     // VENUE MODE (default)
-    // GEN-072: the legacy handler (venue query, scoring, AI intent parse; ~52 s in the 2026-10-22
-    // test) is no longer called on venue turns. The lifecycle function does identity, session,
-    // message log and the intake fields; the search below is the only source of venues; analytics
-    // are written at the end of the turn. The event branch still calls the legacy handler.
+    // GEN-072: lifecycle runs once for venue and event turns. Venue search and the direct event
+    // query are the only sources of results; analytics are written at the end of the turn.
     conditional {
-      if ($query_mode == "venue") {
+      if ($query_mode == "venue" || $query_mode == "event") {
         var $lifecycle_started_at {
           value = "now"|to_ms
         }
@@ -627,25 +650,6 @@ function "genie/fn_genie_handle_message_v2_dev" {
       }
     }
   
-    // GEN-071: fn_genie_handle_message_dev has its own English event check ("tonight", "show").
-    // When the model said venue, keep venue mode; its events are set aside and come back only if
-    // the search finds nothing.
-    conditional {
-      if (($mf|get:"ok") && ($mf|get:"mode") == "venue" && $query_mode == "event") {
-        var.update $legacy_events {
-          value = $event_results
-        }
-      
-        var.update $event_results {
-          value = []
-        }
-      
-        var.update $query_mode {
-          value = "venue"
-        }
-      }
-    }
-  
     // NEIGHBORHOOD MODE
     conditional {
       if ($query_mode == "neighborhood") {
@@ -748,145 +752,6 @@ function "genie/fn_genie_handle_message_v2_dev" {
       
         var.update $final_reply {
           value = $ambient_reply
-        }
-      }
-    }
-  
-    // EVENT MODE
-    conditional {
-      if ($query_mode == "event") {
-        function.run "genie/fn_genie_handle_message_dev" {
-          input = {
-            message         : $input.message
-            channel         : $input.channel
-            external_user_id: $input.external_user_id
-            user_name       : $input.user_name
-            city_context    : $resolved_city_name
-            session_token   : $input.session_token
-            lat             : $inner_lat
-            lng             : $inner_lng
-            radius_meters   : $input.radius_meters
-            location_label  : $input.location_label
-            session_id      : ($input.session_id ?? "")
-          }
-        } as $event_response
-      
-        var.update $final_reply {
-          value = $event_response|get:"reply":""
-        }
-      
-        // Update outer query_mode and events from inner response
-        var.update $query_mode {
-          value = $event_response|get:"query_mode":"event"
-        }
-      
-        var.update $event_results {
-          value = $event_response|get:"events":[]
-        }
-      
-        // Keep primary venues and "more nearby" venues as two distinct
-        // lists instead of merging them into one.
-        var.update $venue_results {
-          value = $event_response|get:"venues":[]
-        }
-      
-        var.update $final_more_nearby_venues {
-          value = $event_response|get:"more_nearby_venues":[]
-        }
-      
-        var.update $final_use_xano {
-          value = $event_response|get:"use_xano":false
-        }
-      
-        var.update $final_reply_mode {
-          value = $event_response|get:"reply_mode":""
-        }
-      
-        var.update $final_needs_location {
-          value = $event_response|get:"needs_location":false
-        }
-      
-        var.update $final_filters {
-          value = $event_response|get:"filters":{}
-        }
-      
-        var.update $final_show_intake_prompt {
-          value = $event_response|get:"show_intake_prompt":false
-        }
-      
-        var.update $final_intake_prompt_copy {
-          value = $event_response|get:"intake_prompt_copy":""
-        }
-      
-        var.update $final_profile_strength_tier {
-          value = $event_response|get:"profile_strength_tier":null
-        }
-      
-        var.update $final_debug {
-          value = $event_response|get:"debug":null
-        }
-      }
-    }
-  
-    // GEN-071: an event request the model recognised but the legacy English check did not
-    // ("conciertos", "eventos"): run the legacy event query here (active, from today, 10 by date)
-    // for the RESOLVED city. No Houston fallback: status "ok" guarantees a resolved city.
-    conditional {
-      if (($mf|get:"ok") && ($mf|get:"mode") == "event" && $query_mode != "event") {
-        var $ev_today {
-          value = now|format_timestamp:"Y-m-d":"UTC"
-        }
-      
-        var $ev_city {
-          value = $resolved_city_name
-        }
-      
-        db.query genie_social_events {
-          where = ($db.genie_social_events.city == $ev_city || $db.genie_social_events.city == ($ev_city|to_lower)) && $db.genie_social_events.status == "active" && $db.genie_social_events.event_date >= $ev_today
-          sort = {event_date: "asc"}
-          return = {type: "list", paging: {page: 1, per_page: 10}}
-        } as $ev_result
-      
-        var $ev_items {
-          value = ($ev_result|get:"items") ?? []
-        }
-      
-        var.update $query_mode {
-          value = "event"
-        }
-      
-        var.update $event_results {
-          value = $ev_items
-        }
-      
-        var.update $venue_results {
-          value = []
-        }
-      
-        conditional {
-          if (($ev_items|count) > 0) {
-            var.update $final_reply_mode {
-              value = "has_results"
-            }
-          
-            var.update $final_use_xano {
-              value = true
-            }
-          
-            var.update $final_reply {
-              value = (("Here are some events happening in " ~ $ev_city) ~ " that match your vibe.")
-            }
-          }
-        
-          else {
-            var.update $final_reply_mode {
-              value = "supported_no_results"
-            }
-          
-            var.update $final_use_xano {
-              value = false
-            }
-          }
         }
       }
     }
@@ -1413,20 +1278,6 @@ function "genie/fn_genie_handle_message_v2_dev" {
       }
     }
   
-    // GEN-071: nothing found for a venue request that the legacy handler took as an event
-    // request: show its events after all.
-    conditional {
-      if (($legacy_events|count) > 0 && ($search_debug|get:"used") != true) {
-        var.update $event_results {
-          value = $legacy_events
-        }
-      
-        var.update $query_mode {
-          value = "event"
-        }
-      }
-    }
-  
     // 4b. Model-driven picks for has_results turns (replaces LLM commentary).
     // Kill switch: set to false to go back to reply-bank text.
     var $model_call_enabled {
@@ -1702,6 +1553,14 @@ function "genie/fn_genie_handle_message_v2_dev" {
       if (($final_reply == null) || (($final_reply|trim) == "")) {
         var.update $final_reply {
           value = "Let me find something great for you."
+        }
+      }
+    }
+
+    conditional {
+      if ($event_fallback) {
+        var.update $final_reply {
+          value = (("I couldn't find any events in " ~ $resolved_city_name) ~ ". ") ~ $final_reply
         }
       }
     }

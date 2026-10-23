@@ -1,25 +1,5 @@
-//  Builds the system and user prompt text. This is the seed of the single shared prompt
-//  module: prompt_type selects which prompt to build. Only "pick" exists today.
-// 
-//  pick-v2.2: the system text follows the six-section structure from the plan (5.4):
-//    1 Role and principles, 2 Response structure, 3 Thinking steps, 4 Tools and skills,
-//    5 Good and bad examples, 6 Guardrails.
-//  The system text is fixed (no per-request values), so it stays identical across requests.
-//  Everything that changes per request (message, city, time, weather, match quality,
-//  candidates) goes in the user text.
-// 
-//  v2.2 (from the R1 to R10 test run): two new guardrails in section 6.
-//    - open_now false: no closed/open contrast and no invented opening times (R6, R7 had
-//      "though currently closed", "but it's currently closed", "opens later today").
-//    - occasion fit: a request for an occasion is not evidence that a venue suits it
-//      (R3 called Jethro's, which has no vibe text, "great for a casual date night").
-//  Section breaks are explicit "\n" appends because Xano can strip the trailing newline of
-//  a triple-quote block when the function is re-saved. Keep them.
-// 
-//  Parts of the plan that depend on things that do not exist yet are NOT in the model's text.
-//  They are marked PLACEHOLDER in comments below, with the draft wording ready to paste in
-//  once the dependency lands. Today every message is handled as a new request.
-//  =====================================================================================
+// Builds the model's system and user prompts from the request, city, context, and candidate venues.
+// Returns the prompt version and reports an error for unsupported prompt types.
 function "genie/fn_genie_build_prompt_dev" {
   input {
     // Which prompt to build. Default "pick".

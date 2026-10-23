@@ -1,16 +1,5 @@
-//  Turns one venue row into the model-safe object. The field whitelist lives here only.
-//  One genie_venues row -> the object the model is allowed to see.
-//  Field whitelist: no paid placement (priority_*), no ownership/community flags, no
-//  vendor/monetization fields, no sb_* counts. Add fields here and every caller gets them.
-// 
-//  v2: a field with no real value is left out instead of being sent as "" or false. In the
-//  data, flags such as good_for_dates or has_rooftop are false for every venue (never filled
-//  in), so false means unknown, and sending it made the model read it as "no". Only values
-//  that are present are sent, which matches the prompt's "missing means unknown" rule.
-//  Left out on purpose because the stored values are defaults or stale:
-//    is_open_now (replaced by open_now computed from the hours), social_energy_state
-//    (quiet for 746 of 750 venues), brunch / happy_hour / late_night / reservations flags.
-//  =====================================================================================
+// Converts a venue row into a model-safe object using an explicit field whitelist.
+// Computes open status when needed and omits fields that are empty or unavailable.
 function "genie/fn_genie_format_venue_for_model_dev" {
   input {
     json venue

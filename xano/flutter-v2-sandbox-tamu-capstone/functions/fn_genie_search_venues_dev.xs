@@ -1,31 +1,5 @@
-// Request-first venue search. One function for the shortlist step and for the search_venues
-// tool. It loads the city's active venues, drops the ones that should never be recommended,
-// applies the filters the caller asked for, ranks what is left, and returns the best few in
-// the model-safe shape plus card rows for the app.
-//
-// What it never returns: closed venues (Google status, closed flags), venues that are not
-// active, lodging, vape / smoke shops and party-supply or event-hall businesses (name
-// terms), venues with no data at all (no rating, no vibe, no cuisine), and businesses with
-// no bar / restaurant / cafe type, no hospitality word in the name and no vibe notes.
-// The venue_type column is empty for every venue, so type comes from google_types.
-// Paid placement is not used in ranking.
-//
-// Filters (all optional): venue_type bar|restaurant|club|cafe, cuisine, neighborhood (also
-// matched against the address), price_band $ to $$$$, meal_service, open_now (computed from
-// hours; venues with no hours do not match). If fewer than min_results venues match, the
-// least important filters are relaxed one at a time (meal_service, open_now, price_band,
-// neighborhood, cuisine, venue_type) and listed in `relaxed`.
-// meal_service: brunch uses the cuisine tags; happy_hour / late_night / reverse_happy_hour
-// use the ms_* flags, which look defaulted in the data (low trust).
-//
-// Ranking: rating (Bayesian, so a few reviews do not win), small bonuses for venues with
-// vibe notes, hours and a photo, +3 per soft keyword found in the venue text (max 3), +2
-// for a matching energy level. sort_by "rating" ranks by rating alone.
-// match_quality: strong = every filter met with at least min_results venues;
-// loose = filters relaxed or too few matches; empty = nothing.
-//
-// The Python reference next to this file (search_venues_reference.py) mirrors these rules.
-// =====================================================================================
+// Searches active venues in a city, excludes unsuitable records, applies optional filters, and ranks matches.
+// Relaxes filters when needed and returns model-safe venue data, app cards, and search diagnostics.
 function "genie/fn_genie_search_venues_dev" {
   input {
     // City to search (genie_venues.city_id)

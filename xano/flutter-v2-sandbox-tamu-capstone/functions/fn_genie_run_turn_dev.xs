@@ -1,21 +1,5 @@
-//  One Genie model turn: candidates -> prompt -> model -> validate -> reply + ordered list.
-//  Contains no prompt text, no field lists and no parsing; it only sequences the steps and
-//  carries the failure reason. On any failure used=false and the caller keeps its existing
-//  reply and order.
-// 
-//  Future steps slot in here without rewriting it: user context (extra input to the prompt
-//  builder), the tool loop (between the model call and validation) and the shortlist cache
-//  (as the source of `venues`).
-// 
-//  Changes in this version (v2.1b):
-//   1. The model request is built variables-first (message objects, messages list, payload),
-//      the pattern that fixed the missing-key bugs in the helper, slim row and formatter.
-//   2. reason_flags: after validation, each pick's reason is scanned for phrases the prompt
-//      forbids (lacks, though, "but it", currently closed, opens later...). It only REPORTS
-//      matches in the response and the debug log; it never changes the reply or fails the
-//      turn. Use it to measure how often the model breaks the grounding rules.
-//  The grounding rules themselves live in fn_genie_build_prompt_dev, not here.
-//  =====================================================================================
+// Runs one venue-picking model turn: prepares candidates and prompts, calls the model, validates picks, and orders venues.
+// On failure, returns the original venue list and a failure reason so the caller can preserve its response.
 function "genie/fn_genie_run_turn_dev" {
   input {
     // The user's message for this turn

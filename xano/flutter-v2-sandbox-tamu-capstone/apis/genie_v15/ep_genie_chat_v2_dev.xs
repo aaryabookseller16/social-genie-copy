@@ -45,7 +45,7 @@ query "genie/ep_genie_chat_v2_dev" verb=POST {
     text? device_id? filters=trim
   
     // Include diagnostic blocks and stage timings when explicitly requested
-    bool debug?=false
+    bool debug?
   }
 
   stack {
@@ -193,40 +193,42 @@ query "genie/ep_genie_chat_v2_dev" verb=POST {
       
         // --- 5. Assemble final response ---
         var.update $final_result {
-          value = {
-            success               : true
-            reply                 : $genie_response|get:"reply":""
-            venues                : $genie_response|get:"venues":[]
-            more_nearby_venues    : $genie_response|get:"more_nearby_venues":[]
-            events                : $genie_response|get:"events":[]
-            query_mode            : $genie_response|get:"query_mode":"venue"
-            reply_mode            : $genie_response|get:"reply_mode":""
-            use_xano              : $genie_response|get:"use_xano":false
-            needs_location        : $genie_response|get:"needs_location":false
-            filters               : $genie_response|get:"filters":{}
-            pick_reasons          : $genie_response|get:"pick_reasons":[]
-            show_intake_prompt    : $genie_response|get:"show_intake_prompt":false
-            intake_prompt_copy    : $genie_response|get:"intake_prompt_copy":""
-            profile_strength_tier : $genie_response|get:"profile_strength_tier":null
-            weather_context_text  : $genie_response|get:"weather_context_text":""
-            should_avoid_outdoor  : $genie_response|get:"should_avoid_outdoor":false
-            should_promote_outdoor: $genie_response|get:"should_promote_outdoor":false
-            neighborhood_context  : $genie_response|get:"neighborhood_context":null
-            is_outdoor_sensitive  : $genie_response|get:"is_outdoor_sensitive":false
-            detected_neighborhood : $genie_response|get:"detected_neighborhood":""
-            resolved_city         : $genie_response|get:"resolved_city":null
-            city_source           : $genie_response|get:"city_source":"none"
-            geo_used              : $genie_response|get:"geo_used":false
-            location_status       : $genie_response|get:"location_status":"ok"
-            supported_cities      : $genie_response|get:"supported_cities":[]
-            unsupported_city      : $genie_response|get:"unsupported_city":""
-            session_id            : $final_session_id
-            session_token         : $v_session_token
-          }
+          value = ```
+            {
+              success               : $genie_response|get:"success":false
+              reply                 : $genie_response|get:"reply":""
+              venues                : $genie_response|get:"venues":[]
+              more_nearby_venues    : $genie_response|get:"more_nearby_venues":[]
+              events                : $genie_response|get:"events":[]
+              query_mode            : $genie_response|get:"query_mode":"venue"
+              reply_mode            : $genie_response|get:"reply_mode":""
+              use_xano              : $genie_response|get:"use_xano":false
+              needs_location        : $genie_response|get:"needs_location":false
+              filters               : $genie_response|get:"filters":{}
+              pick_reasons          : $genie_response|get:"pick_reasons":[]
+              show_intake_prompt    : $genie_response|get:"show_intake_prompt":false
+              intake_prompt_copy    : $genie_response|get:"intake_prompt_copy":""
+              profile_strength_tier : $genie_response|get:"profile_strength_tier":null
+              weather_context_text  : $genie_response|get:"weather_context_text":""
+              should_avoid_outdoor  : $genie_response|get:"should_avoid_outdoor":false
+              should_promote_outdoor: $genie_response|get:"should_promote_outdoor":false
+              neighborhood_context  : $genie_response|get:"neighborhood_context":null
+              is_outdoor_sensitive  : $genie_response|get:"is_outdoor_sensitive":false
+              detected_neighborhood : $genie_response|get:"detected_neighborhood":""
+              resolved_city         : $genie_response|get:"resolved_city":null
+              city_source           : $genie_response|get:"city_source":"none"
+              geo_used              : $genie_response|get:"geo_used":false
+              location_status       : $genie_response|get:"location_status":"ok"
+              supported_cities      : $genie_response|get:"supported_cities":[]
+              unsupported_city      : $genie_response|get:"unsupported_city":""
+              session_id            : $final_session_id
+              session_token         : $v_session_token
+            }
+            ```
         }
       
         conditional {
-          if ($input.debug == true) {
+          if ($input.debug) {
             var.update $final_result {
               value = $final_result
                 |set:"search":($genie_response|get:"search":null)

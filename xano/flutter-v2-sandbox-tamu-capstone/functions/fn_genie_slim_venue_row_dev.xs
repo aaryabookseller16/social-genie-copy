@@ -1,14 +1,5 @@
-//  Full genie_venues row -> the slim card shape the frontend expects.
-//  Used for picks the model found through a tool (they are not in the handler's venue list),
-//  so run_turn can add a card for them before order_venues runs. Unlike the model formatter,
-//  this is for display, so it keeps social_energy_state and the image URLs and drops nothing
-//  the card needs. Nothing paid, ownership or sb_* related goes out.
-// 
-//  Shape from the handoff: id, venue_name, area_neighborhood, vibe_notes, price_band,
-//  address, image_primary_url, image_fallback_url, social_energy_score, social_energy_state.
-//  latitude and longitude are included (open decision in the handoff); remove the latitude and longitude
-//  variables and their two lines in the object to drop them.
-//  =====================================================================================
+// Converts a venue row into the compact card shape used by the app.
+// Includes display details, image URLs, social energy, and coordinates.
 function "genie/fn_genie_slim_venue_row_dev" {
   input {
     json venue
