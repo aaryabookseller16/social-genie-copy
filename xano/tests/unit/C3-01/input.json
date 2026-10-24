@@ -1,0 +1,22 @@
+{
+  "event": {
+    "id": 501,
+    "title": "Jazz Night",
+    "primary_category": "Music",
+    "event_date": "2026-10-30",
+    "start_time": "8:00 PM",
+    "venue_name": "Blue Room",
+    "neighborhood": "Midtown",
+    "city": "Houston",
+    "description": "Live jazz trio.",
+    "is_free": true,
+    "promoted": true,
+    "boost_tier": "gold",
+    "going_count": 42,
+    "interested_count": 10,
+    "producer_id": 7,
+    "stripe_connect_account_id": "acct_x",
+    "dedup_hash": "abc",
+    "dress_code": ""
+  }
+}

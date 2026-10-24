@@ -1,0 +1,58 @@
+[
+  {
+    "channel": "app",
+    "external_user_id": "conv-test-user-1",
+    "city_context": "Houston",
+    "debug": true,
+    "message": "rooftop bars in Midtown",
+    "session_token": "conv-it-01"
+  },
+  {
+    "channel": "app",
+    "external_user_id": "conv-test-user-1",
+    "city_context": "Houston",
+    "debug": true,
+    "message": "does the second one have a patio?",
+    "session_token": "conv-it-01"
+  },
+  {
+    "channel": "app",
+    "external_user_id": "conv-test-user-1",
+    "city_context": "Houston",
+    "debug": true,
+    "message": "actually, brunch spots for Sunday",
+    "session_token": "conv-it-01"
+  },
+  {
+    "channel": "app",
+    "external_user_id": "conv-test-user-1",
+    "city_context": "Houston",
+    "debug": true,
+    "message": "going back to the rooftop ones, which is best for a big group?",
+    "session_token": "conv-it-01"
+  },
+  {
+    "channel": "app",
+    "external_user_id": "conv-test-user-1",
+    "city_context": "Houston",
+    "debug": true,
+    "message": "show me more",
+    "session_token": "conv-it-01"
+  },
+  {
+    "channel": "app",
+    "external_user_id": "conv-test-user-1",
+    "city_context": "Houston",
+    "debug": true,
+    "message": "anything cheaper?",
+    "session_token": "conv-it-01"
+  },
+  {
+    "channel": "app",
+    "external_user_id": "conv-test-user-1",
+    "city_context": "Houston",
+    "debug": true,
+    "message": "thanks!",
+    "session_token": "conv-it-01"
+  }
+]

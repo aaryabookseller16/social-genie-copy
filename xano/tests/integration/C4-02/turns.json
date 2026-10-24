@@ -1,0 +1,26 @@
+[
+  {
+    "channel": "app",
+    "external_user_id": "conv-test-user-1",
+    "city_context": "Houston",
+    "debug": true,
+    "message": "any comedy shows this weekend?",
+    "session_token": "conv-it-02"
+  },
+  {
+    "channel": "app",
+    "external_user_id": "conv-test-user-1",
+    "city_context": "Houston",
+    "debug": true,
+    "message": "what time does the first one start?",
+    "session_token": "conv-it-02"
+  },
+  {
+    "channel": "app",
+    "external_user_id": "conv-test-user-1",
+    "city_context": "Houston",
+    "debug": true,
+    "message": "more events please",
+    "session_token": "conv-it-02"
+  }
+]

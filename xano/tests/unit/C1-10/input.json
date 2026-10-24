@@ -1,0 +1,17 @@
+{
+  "message": "about the second list",
+  "model_result": {
+    "ok": true,
+    "mode": "venue",
+    "turn_kind": "followup",
+    "refers_to_request": 7
+  },
+  "requests": [
+    {
+      "request_index": 1
+    },
+    {
+      "request_index": 2
+    }
+  ]
+}

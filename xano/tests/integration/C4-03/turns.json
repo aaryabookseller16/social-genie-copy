@@ -1,0 +1,28 @@
+[
+  {
+    "channel": "app",
+    "external_user_id": "conv-test-user-1",
+    "city_context": "Houston",
+    "debug": true,
+    "message": "cozy cocktail bar for a date",
+    "session_token": "conv-it-03"
+  },
+  {
+    "channel": "app",
+    "external_user_id": "conv-test-user-1",
+    "city_context": "Houston",
+    "debug": true,
+    "message": "which one is the quietest?",
+    "session_token": "conv-it-03",
+    "turn_hint": "request"
+  },
+  {
+    "channel": "app",
+    "external_user_id": "conv-test-user-1",
+    "city_context": "Houston",
+    "debug": true,
+    "message": "thanks",
+    "session_token": "conv-it-03",
+    "turn_hint": "followup"
+  }
+]

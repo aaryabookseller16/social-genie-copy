@@ -1,0 +1,14 @@
+{
+  "message": "find me a jazz club",
+  "model_result": {
+    "ok": false
+  },
+  "requests": [
+    {
+      "request_index": 1
+    },
+    {
+      "request_index": 2
+    }
+  ]
+}

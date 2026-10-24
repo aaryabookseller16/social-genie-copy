@@ -1,0 +1,8 @@
+{
+  "message": "thanks!",
+  "turn_hint": "followup",
+  "model_result": {
+    "ok": false
+  },
+  "requests": []
+}

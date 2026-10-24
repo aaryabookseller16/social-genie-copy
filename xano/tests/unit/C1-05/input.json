@@ -1,0 +1,18 @@
+{
+  "message": "any others?",
+  "model_result": {
+    "ok": true,
+    "mode": "venue",
+    "turn_kind": "followup",
+    "refers_to_request": 2,
+    "wants_more": true
+  },
+  "requests": [
+    {
+      "request_index": 1
+    },
+    {
+      "request_index": 2
+    }
+  ]
+}

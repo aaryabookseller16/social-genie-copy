@@ -1,0 +1,22 @@
+{
+  "raw_reply": "{\"reply\": \"You're welcome! Have fun tonight.\", \"picks\": []}",
+  "candidates": [
+    {
+      "venue_id": 101,
+      "venue_name": "Alpha Bar"
+    },
+    {
+      "venue_id": 102,
+      "venue_name": "Beta Lounge"
+    },
+    {
+      "venue_id": 103,
+      "venue_name": "Gamma Grill"
+    },
+    {
+      "venue_id": 104,
+      "venue_name": "Delta Cafe"
+    }
+  ],
+  "mode": "followup"
+}

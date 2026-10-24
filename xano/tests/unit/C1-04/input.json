@@ -1,0 +1,19 @@
+{
+  "message": "does the second one have a patio?",
+  "model_result": {
+    "ok": true,
+    "mode": "venue",
+    "turn_kind": "followup",
+    "refers_to_request": 1,
+    "inherit_filters": false,
+    "wants_more": false
+  },
+  "requests": [
+    {
+      "request_index": 1
+    },
+    {
+      "request_index": 2
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "message": "rooftop bars in Midtown",
+  "model_result": {
+    "ok": true,
+    "mode": "venue",
+    "turn_kind": "followup"
+  },
+  "requests": []
+}

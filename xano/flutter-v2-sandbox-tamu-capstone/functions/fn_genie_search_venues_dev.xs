@@ -113,15 +113,56 @@ function "genie/fn_genie_search_venues_dev" {
   
     // ---------- Rules (edit here) ----------
     var $allowed_types {
-      value = ["bar", "restaurant", "night_club", "cafe", "bakery", "food", "meal_takeaway", "meal_delivery"]
+      value = [
+        "bar"
+        "restaurant"
+        "night_club"
+        "cafe"
+        "bakery"
+        "food"
+        "meal_takeaway"
+        "meal_delivery"
+      ]
     }
   
     var $block_terms {
-      value = ["vape", "smoke shop", "dispensary", "party supply", "party house", "supply", "events", "event center", "wedding"]
+      value = [
+        "vape"
+        "smoke shop"
+        "dispensary"
+        "party supply"
+        "party house"
+        "supply"
+        "events"
+        "event center"
+        "wedding"
+      ]
     }
   
     var $hospitality_terms {
-      value = ["lounge", "loung", "bar", "grill", "cantina", "tavern", "pub", "kitchen", "cigar", "hookah", "hooka", "club", "cafe", "coffee", "restaurant", "bistro", "brewery", "taproom", "cocktail", "eatery", "diner"]
+      value = [
+        "lounge"
+        "loung"
+        "bar"
+        "grill"
+        "cantina"
+        "tavern"
+        "pub"
+        "kitchen"
+        "cigar"
+        "hookah"
+        "hooka"
+        "club"
+        "cafe"
+        "coffee"
+        "restaurant"
+        "bistro"
+        "brewery"
+        "taproom"
+        "cocktail"
+        "eatery"
+        "diner"
+      ]
     }
   
     // The google_types values that count as the requested venue_type.
@@ -290,8 +331,17 @@ function "genie/fn_genie_search_venues_dev" {
       
         conditional {
           if ($reason != "") {
+            // Variables first: arithmetic inside a |set: argument breaks after Xano saves it.
+            var $prev_count {
+              value = $excluded|get:$reason:0
+            }
+          
+            math.add $prev_count {
+              value = 1
+            }
+          
             var.update $excluded {
-              value = $excluded|set:$reason:(($excluded|get:$reason:0) + 1)
+              value = $excluded|set:$reason:$prev_count
             }
           }
         
@@ -484,15 +534,15 @@ function "genie/fn_genie_search_venues_dev" {
           
             array.push $cands {
               value = {
-                id             : $r_id,
-                row            : $r,
-                ok_venue_type  : $ok_type,
-                ok_cuisine     : $ok_cuisine,
-                ok_neighborhood: $ok_hood,
-                ok_price_band  : $ok_price,
-                ok_meal_service: $ok_meal,
-                ok_open_now    : true,
-                score          : $score,
+                id             : $r_id
+                row            : $r
+                ok_venue_type  : $ok_type
+                ok_cuisine     : $ok_cuisine
+                ok_neighborhood: $ok_hood
+                ok_price_band  : $ok_price
+                ok_meal_service: $ok_meal
+                ok_open_now    : true
+                score          : $score
                 hits           : $hits
               }
             }
@@ -509,7 +559,10 @@ function "genie/fn_genie_search_venues_dev" {
     conditional {
       if ($want_open) {
         array.map ($cands) {
-          by = {id: $this.id, hours_json: ($this.row|get:"hours_json":null)}
+          by = {
+            id        : $this.id
+            hours_json: $this.row|get:"hours_json":null
+          }
         } as $hour_items
       
         function.run "genie/fn_genie_venue_open_now_dev" {
@@ -518,15 +571,48 @@ function "genie/fn_genie_search_venues_dev" {
       
         foreach ($open_rows) {
           each as $o {
+            var $o_id {
+              value = $o|get:"id":0
+            }
+          
+            var $o_key {
+              value = $o_id|to_text
+            }
+          
             var.update $open_map {
-              value = $open_map|set:(($o|get:"id":0)|to_text):$o
+              value = $open_map|set:$o_key:$o
             }
           }
         }
       
-        array.map ($cands) {
-          by = $this|set:"ok_open_now":((($open_map|get:(($this.id)|to_text):{})|get:"open_now":null) == true)
-        } as $cands_open
+        // Variables first: the open flag is computed before |set:, not inside its argument.
+        var $cands_open {
+          value = []
+        }
+      
+        foreach ($cands) {
+          each as $oc {
+            var $oc_key {
+              value = ($oc|get:"id":0)|to_text
+            }
+          
+            var $oc_info {
+              value = $open_map|get:$oc_key:{}
+            }
+          
+            var $oc_is_open {
+              value = ($oc_info|get:"open_now":null) == true
+            }
+          
+            var $oc_updated {
+              value = $oc|set:"ok_open_now":$oc_is_open
+            }
+          
+            array.push $cands_open {
+              value = $oc_updated
+            }
+          }
+        }
       
         var.update $cands {
           value = $cands_open
@@ -539,11 +625,74 @@ function "genie/fn_genie_search_venues_dev" {
       value = []
     }
   
+    // A candidate stays in the pool unless it fails a filter that has not been relaxed.
+    // Built with foreach, not a filter lambda: the long lambda is the suspected "Invalid expression".
     var $pool {
-      value = $cands|filter:(($$.ok_venue_type || ($relaxed|in:"venue_type")) && ($$.ok_cuisine || ($relaxed|in:"cuisine")) && ($$.ok_neighborhood || ($relaxed|in:"neighborhood")) && ($$.ok_price_band || ($relaxed|in:"price_band")) && ($$.ok_meal_service || ($relaxed|in:"meal_service")) && ($$.ok_open_now || ($relaxed|in:"open_now")))
+      value = []
     }
   
-    foreach (["meal_service", "open_now", "price_band", "neighborhood", "cuisine", "venue_type"]) {
+    foreach ($cands) {
+      each as $pc {
+        var $pc_keep {
+          value = true
+        }
+      
+        conditional {
+          if ($pc.ok_venue_type == false && ($relaxed|in:"venue_type") == false) {
+            var.update $pc_keep {
+              value = false
+            }
+          }
+        
+          elseif ($pc.ok_cuisine == false && ($relaxed|in:"cuisine") == false) {
+            var.update $pc_keep {
+              value = false
+            }
+          }
+        
+          elseif ($pc.ok_neighborhood == false && ($relaxed|in:"neighborhood") == false) {
+            var.update $pc_keep {
+              value = false
+            }
+          }
+        
+          elseif ($pc.ok_price_band == false && ($relaxed|in:"price_band") == false) {
+            var.update $pc_keep {
+              value = false
+            }
+          }
+        
+          elseif ($pc.ok_meal_service == false && ($relaxed|in:"meal_service") == false) {
+            var.update $pc_keep {
+              value = false
+            }
+          }
+        
+          elseif ($pc.ok_open_now == false && ($relaxed|in:"open_now") == false) {
+            var.update $pc_keep {
+              value = false
+            }
+          }
+        }
+      
+        conditional {
+          if ($pc_keep) {
+            array.push $pool {
+              value = $pc
+            }
+          }
+        }
+      }
+    }
+  
+    foreach ([
+      "meal_service"
+      "open_now"
+      "price_band"
+      "neighborhood"
+      "cuisine"
+      "venue_type"
+    ]) {
       each as $step {
         conditional {
           if (($pool|count) < $min_n && ($requested|in:$step)) {
@@ -551,8 +700,63 @@ function "genie/fn_genie_search_venues_dev" {
               value = $step
             }
           
+            // Same rule as the first pool build above, with this step now relaxed.
             var.update $pool {
-              value = $cands|filter:(($$.ok_venue_type || ($relaxed|in:"venue_type")) && ($$.ok_cuisine || ($relaxed|in:"cuisine")) && ($$.ok_neighborhood || ($relaxed|in:"neighborhood")) && ($$.ok_price_band || ($relaxed|in:"price_band")) && ($$.ok_meal_service || ($relaxed|in:"meal_service")) && ($$.ok_open_now || ($relaxed|in:"open_now")))
+              value = []
+            }
+          
+            foreach ($cands) {
+              each as $rc {
+                var $rc_keep {
+                  value = true
+                }
+              
+                conditional {
+                  if ($rc.ok_venue_type == false && ($relaxed|in:"venue_type") == false) {
+                    var.update $rc_keep {
+                      value = false
+                    }
+                  }
+                
+                  elseif ($rc.ok_cuisine == false && ($relaxed|in:"cuisine") == false) {
+                    var.update $rc_keep {
+                      value = false
+                    }
+                  }
+                
+                  elseif ($rc.ok_neighborhood == false && ($relaxed|in:"neighborhood") == false) {
+                    var.update $rc_keep {
+                      value = false
+                    }
+                  }
+                
+                  elseif ($rc.ok_price_band == false && ($relaxed|in:"price_band") == false) {
+                    var.update $rc_keep {
+                      value = false
+                    }
+                  }
+                
+                  elseif ($rc.ok_meal_service == false && ($relaxed|in:"meal_service") == false) {
+                    var.update $rc_keep {
+                      value = false
+                    }
+                  }
+                
+                  elseif ($rc.ok_open_now == false && ($relaxed|in:"open_now") == false) {
+                    var.update $rc_keep {
+                      value = false
+                    }
+                  }
+                }
+              
+                conditional {
+                  if ($rc_keep) {
+                    array.push $pool {
+                      value = $rc
+                    }
+                  }
+                }
+              }
             }
           }
         }
@@ -565,14 +769,17 @@ function "genie/fn_genie_search_venues_dev" {
   
     // ---------- Rank and take the top ----------
     var $top {
-      value = ($pool|sort:"score":"number":true)|slice:0:$limit_n
+      value = ($pool|sort:"score":"number":false)|slice:0:$limit_n
     }
   
     // Open status for display, when it was not already computed for the filter.
     conditional {
       if ($want_open == false && ($top|count) > 0) {
         array.map ($top) {
-          by = {id: $this.id, hours_json: ($this.row|get:"hours_json":null)}
+          by = {
+            id        : $this.id
+            hours_json: $this.row|get:"hours_json":null
+          }
         } as $top_items
       
         function.run "genie/fn_genie_venue_open_now_dev" {
@@ -581,8 +788,16 @@ function "genie/fn_genie_search_venues_dev" {
       
         foreach ($top_open_rows) {
           each as $o2 {
+            var $o2_id {
+              value = $o2|get:"id":0
+            }
+          
+            var $o2_key {
+              value = $o2_id|to_text
+            }
+          
             var.update $open_map {
-              value = $open_map|set:(($o2|get:"id":0)|to_text):$o2
+              value = $open_map|set:$o2_key:$o2
             }
           }
         }
@@ -605,7 +820,10 @@ function "genie/fn_genie_search_venues_dev" {
     foreach ($top) {
       each as $c {
         function.run "genie/fn_genie_format_venue_for_model_dev" {
-          input = {venue: $c.row, open_info: ($open_map|get:(($c.id)|to_text):null)}
+          input = {
+            venue    : $c.row
+            open_info: $open_map|get:(($c.id)|to_text):null
+          }
         } as $formatted
       
         function.run "genie/fn_genie_slim_venue_row_dev" {
@@ -659,6 +877,17 @@ function "genie/fn_genie_search_venues_dev" {
         }
       }
     }
+  
+    var $debug_out {
+      value = {
+        base_rows : $n_rows
+        candidates: $n_cands
+        excluded  : $excluded
+        requested : $requested
+        sort_by   : $sort_by
+        ranking   : $ranking
+      }
+    }
   }
 
   response = {
@@ -668,13 +897,6 @@ function "genie/fn_genie_search_venues_dev" {
     relaxed      : $relaxed
     count        : $pool_count
     fail_reason  : $fail_reason
-    debug        : {
-      base_rows : $n_rows,
-      candidates: $n_cands,
-      excluded  : $excluded,
-      requested : $requested,
-      sort_by   : $sort_by,
-      ranking   : $ranking
-    }
+    debug        : $debug_out
   }
 }

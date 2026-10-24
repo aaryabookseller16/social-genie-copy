@@ -1,0 +1,19 @@
+{
+  "message": "anything cheaper?",
+  "model_result": {
+    "ok": true,
+    "mode": "venue",
+    "turn_kind": "request",
+    "refers_to_request": 2,
+    "inherit_filters": true,
+    "price_band": "$"
+  },
+  "requests": [
+    {
+      "request_index": 1
+    },
+    {
+      "request_index": 2
+    }
+  ]
+}

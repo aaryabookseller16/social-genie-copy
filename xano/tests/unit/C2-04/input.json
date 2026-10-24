@@ -1,0 +1,11 @@
+{
+  "raw_reply": "{\"reply\": \"The show starts at 8.\", \"picks\": [{\"event_id\": 501, \"reason\": \"start time\"}]}",
+  "candidates": [],
+  "event_candidates": [
+    {
+      "event_id": 501,
+      "event_name": "Jazz Night"
+    }
+  ],
+  "mode": "followup"
+}

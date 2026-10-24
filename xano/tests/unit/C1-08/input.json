@@ -1,0 +1,15 @@
+{
+  "message": "is the first one loud?",
+  "model_result": {
+    "ok": false,
+    "fail_reason": "model_call_failed"
+  },
+  "requests": [
+    {
+      "request_index": 1
+    },
+    {
+      "request_index": 2
+    }
+  ]
+}
