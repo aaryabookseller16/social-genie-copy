@@ -6,11 +6,15 @@ function "genie/fn_genie_call_ai_dev" {
   
     // Optional overrides. Defaults keep the original behavior for existing callers.
     text model?
+  
     int max_tokens?
     int timeout?
   
     // When true, ask OpenAI for a JSON object response (response_format json_object).
     bool json_mode?
+  
+    // Optional sampling temperature (GEN-014). Empty keeps the default 0.6.
+    decimal? temperature?
   }
 
   stack {
@@ -65,10 +69,21 @@ function "genie/fn_genie_call_ai_dev" {
       }
     }
   
+    // GEN-014: caller-chosen temperature, only when one is passed.
     conditional {
-      if ($input.json_mode == true) {
+      if ($input.temperature != null) {
         var.update $params {
-          value = $params|merge:{response_format: {type: "json_object"}}
+          value = $params
+            |set:"temperature":$input.temperature
+        }
+      }
+    }
+  
+    conditional {
+      if ($input.json_mode) {
+        var.update $params {
+          value = $params
+            |merge:{response_format: {type: "json_object"}}
         }
       }
     }
@@ -84,7 +99,6 @@ function "genie/fn_genie_call_ai_dev" {
       url = "https://api.openai.com/v1/chat/completions"
       method = "POST"
       params = $params
-    
       headers = []
         |push:"Content-Type: application/json"
         |push:"Authorization: Bearer " ~ $env.OPENAI_API_KEY

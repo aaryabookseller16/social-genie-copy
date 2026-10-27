@@ -273,7 +273,7 @@ function "genie/fn_genie_resolve_city_dev" {
         }
       
         conditional {
-          if (($msg_norm|contains:$c_needle)) {
+          if ($msg_norm|contains:$c_needle) {
             math.add $matched_count {
               value = 1
             }
@@ -357,7 +357,31 @@ function "genie/fn_genie_resolve_city_dev" {
     }
   
     var $known_other_cities {
-      value = ["new york", "los angeles", "chicago", "dallas", "austin", "san antonio", "atlanta", "miami", "san francisco", "seattle", "denver", "phoenix", "boston", "philadelphia", "las vegas", "nashville", "new orleans", "san diego", "college station", "orlando", "detroit", "minneapolis", "fort worth"]
+      value = [
+        "new york"
+        "los angeles"
+        "chicago"
+        "dallas"
+        "austin"
+        "san antonio"
+        "atlanta"
+        "miami"
+        "san francisco"
+        "seattle"
+        "denver"
+        "phoenix"
+        "boston"
+        "philadelphia"
+        "las vegas"
+        "nashville"
+        "new orleans"
+        "san diego"
+        "college station"
+        "orlando"
+        "detroit"
+        "minneapolis"
+        "fort worth"
+      ]
     }
   
     conditional {
@@ -365,7 +389,7 @@ function "genie/fn_genie_resolve_city_dev" {
         foreach ($known_other_cities) {
           each as $kc {
             conditional {
-              if ($unsupported_name == "" && ($msg_norm|contains:((" " ~ $kc) ~ " "))) {
+              if ($unsupported_name == "" && ($msg_norm|contains:(" " ~ $kc) ~ " ")) {
                 var.update $unsupported_name {
                   value = $kc|capitalize
                 }
@@ -385,13 +409,13 @@ function "genie/fn_genie_resolve_city_dev" {
         }
       
         conditional {
-          if (($msg_raw|contains:" in ")) {
+          if ($msg_raw|contains:" in ") {
             var.update $in_parts {
               value = $msg_raw|split:" in "
             }
           }
         
-          elseif (($msg_raw|contains:" In ")) {
+          elseif ($msg_raw|contains:" In ") {
             var.update $in_parts {
               value = $msg_raw|split:" In "
             }
@@ -441,11 +465,47 @@ function "genie/fn_genie_resolve_city_dev" {
             }
           
             var $skip_words {
-              value = ["the", "a", "an", "my", "this", "that", "our", "your", "town", "there", "here", "love", "time"]
+              value = [
+                "the"
+                "a"
+                "an"
+                "my"
+                "this"
+                "that"
+                "our"
+                "your"
+                "town"
+                "there"
+                "here"
+                "love"
+                "time"
+              ]
             }
           
             var $hood_words {
-              value = ["third ward", "midtown", "montrose", "downtown", "heights", "river oaks", "eado", "east end", "museum district", "galleria", "medical center", "upper kirby", "west u", "bellaire", "meyerland", "memorial", "spring branch", "fifth ward", "sunnyside", "rice village", "washington ave"]
+              value = [
+                "third ward"
+                "midtown"
+                "montrose"
+                "downtown"
+                "heights"
+                "river oaks"
+                "eado"
+                "east end"
+                "museum district"
+                "galleria"
+                "medical center"
+                "upper kirby"
+                "west u"
+                "bellaire"
+                "meyerland"
+                "memorial"
+                "spring branch"
+                "fifth ward"
+                "sunnyside"
+                "rice village"
+                "washington ave"
+              ]
             }
           
             var $is_hood {
@@ -455,7 +515,7 @@ function "genie/fn_genie_resolve_city_dev" {
             foreach ($hood_words) {
               each as $hw {
                 conditional {
-                  if (($cand_lower|contains:$hw)) {
+                  if ($cand_lower|contains:$hw) {
                     var.update $is_hood {
                       value = true
                     }

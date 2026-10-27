@@ -10,19 +10,19 @@ function "genie/fn_genie_request_lifecycle_dev" {
   input {
     // The user's message
     text message
-
+  
     // The messaging channel
     text channel?
-
+  
     // The unique identifier for the user on the channel
     text external_user_id?
-
+  
     // The user's display name
     text user_name?
-
+  
     // The resolved city name, saved on a new session
     text city_name?
-
+  
     // The session token if available
     text? session_token? filters=trim
   }
@@ -31,71 +31,71 @@ function "genie/fn_genie_request_lifecycle_dev" {
     var $t_start {
       value = "now"|to_ms
     }
-
+  
     var $t_mark {
       value = $t_start
     }
-
+  
     var $t_user_ms {
       value = 0
     }
-
+  
     var $t_session_ms {
       value = 0
     }
-
+  
     var $t_log_ms {
       value = 0
     }
-
+  
     var $channel_safe {
       value = "test"
     }
-
+  
     var $ext_id {
       value = ($input.external_user_id ?? "")|trim
     }
-
+  
     var $user_id {
       value = null
     }
-
+  
     var $session_id {
       value = null
     }
-
+  
     var $session_token_out {
       value = null
     }
-
+  
     var $session_row {
       value = null
     }
-
+  
     var $user_message_id {
       value = null
     }
-
+  
     var $show_intake_prompt {
       value = false
     }
-
+  
     var $intake_prompt_copy {
       value = ""
     }
-
+  
     var $profile_strength_tier {
       value = "new"
     }
-
+  
     var $rules_filters {
       value = {}
     }
-
+  
     var $error_out {
       value = null
     }
-
+  
     conditional {
       if ((($input.channel ?? "")|trim) != "") {
         var.update $channel_safe {
@@ -103,7 +103,7 @@ function "genie/fn_genie_request_lifecycle_dev" {
         }
       }
     }
-
+  
     try_catch {
       try {
         // 1) Identify user. Also creates the genie_user_profile row when missing. An empty
@@ -139,7 +139,7 @@ function "genie/fn_genie_request_lifecycle_dev" {
             }
           }
         }
-
+      
         // 2) Social profile: only for the intake prompt and the profile strength tier.
         conditional {
           if ($ext_id != "") {
@@ -147,25 +147,25 @@ function "genie/fn_genie_request_lifecycle_dev" {
               where = $db.genie_user_social_profile.external_user_id == $ext_id
               return = {type: "list", paging: {page: 1, per_page: 1}}
             } as $sp_list
-
+          
             var $sp_row {
               value = ($sp_list|get:"items":[])|first
             }
-
+          
             conditional {
               if ((($sp_row|get:"id":0)|to_int) != 0) {
                 var $intake_done {
                   value = $sp_row|get:"intake_completed":false
                 }
-
+              
                 var $intake_shown {
                   value = $sp_row|get:"intake_shown_count":0
                 }
-
+              
                 var $sig_ct {
                   value = $sp_row|get:"signal_count":0
                 }
-
+              
                 conditional {
                   if ($intake_done == false) {
                     conditional {
@@ -173,19 +173,19 @@ function "genie/fn_genie_request_lifecycle_dev" {
                         var.update $show_intake_prompt {
                           value = true
                         }
-
+                      
                         var.update $intake_prompt_copy {
                           value = "Help Genie know you better — takes just 30 seconds!"
                         }
                       }
                     }
-
+                  
                     conditional {
                       if ($sig_ct >= 6 && $sig_ct <= 7 && $intake_shown <= 1) {
                         var.update $show_intake_prompt {
                           value = true
                         }
-
+                      
                         var.update $intake_prompt_copy {
                           value = "Genie's learning what you like, help get to know you better — takes only 30 seconds!"
                         }
@@ -193,20 +193,20 @@ function "genie/fn_genie_request_lifecycle_dev" {
                     }
                   }
                 }
-
+              
                 conditional {
                   if ($sig_ct >= 10) {
                     var.update $profile_strength_tier {
                       value = "strong"
                     }
                   }
-
+                
                   elseif ($sig_ct >= 5) {
                     var.update $profile_strength_tier {
                       value = "learning"
                     }
                   }
-
+                
                   elseif ($sig_ct >= 2) {
                     var.update $profile_strength_tier {
                       value = "getting_started"
@@ -217,15 +217,15 @@ function "genie/fn_genie_request_lifecycle_dev" {
             }
           }
         }
-
+      
         var.update $t_user_ms {
           value = ("now"|to_ms) - $t_mark
         }
-
+      
         var.update $t_mark {
           value = "now"|to_ms
         }
-
+      
         // 3) Get or create the session.
         conditional {
           if ($user_id != null) {
@@ -240,19 +240,19 @@ function "genie/fn_genie_request_lifecycle_dev" {
                 session_token    : $input.session_token
               }
             } as $sess_resp
-
+          
             var.update $session_id {
               value = $sess_resp|get:"session_id":null
             }
-
+          
             var.update $session_token_out {
               value = $sess_resp|get:"session_token":null
             }
-
+          
             var.update $session_row {
               value = $sess_resp|get:"session":null
             }
-
+          
             conditional {
               if ($session_id == null) {
                 var.update $error_out {
@@ -264,15 +264,15 @@ function "genie/fn_genie_request_lifecycle_dev" {
             }
           }
         }
-
+      
         var.update $t_session_ms {
           value = ("now"|to_ms) - $t_mark
         }
-
+      
         var.update $t_mark {
           value = "now"|to_ms
         }
-
+      
         // 4) Log the user message.
         conditional {
           if ($session_id != null) {
@@ -284,24 +284,24 @@ function "genie/fn_genie_request_lifecycle_dev" {
                 raw_payload : {}
               }
             } as $log_resp
-
+          
             var.update $user_message_id {
               value = $log_resp|get:"message_id":null
             }
           }
         }
-
+      
         var.update $t_log_ms {
           value = ("now"|to_ms) - $t_mark
         }
-
+      
         // 5) Keyword filters (rules only), the same rules and normalized values that
         // fn_genie_parse_intent_dev used before it asked the model. Later rules win, so
         // "reverse happy hour" overrides "happy hour".
         var $msg_l {
           value = ($input.message ?? "")|to_lower
         }
-
+      
         var $rules {
           value = [
             {patch: {type: "happy_hour"}, terms: ["happy hour", "happyhour"]}
@@ -327,7 +327,7 @@ function "genie/fn_genie_request_lifecycle_dev" {
             {patch: {vibe: "cigar"}, terms: ["cigar"]}
           ]
         }
-
+      
         foreach ($rules) {
           each as $rule {
             foreach ($rule.terms) {
@@ -344,14 +344,18 @@ function "genie/fn_genie_request_lifecycle_dev" {
           }
         }
       }
-
+    
       catch {
         var.update $error_out {
-          value = {message: "lifecycle_exception", code: $error.code, detail: $error.message}
+          value = {
+            message: "lifecycle_exception"
+            code   : $error.code
+            detail : $error.message
+          }
         }
       }
     }
-
+  
     var $ok {
       value = ($error_out == null) && ($user_id != null) && ($session_id != null)
     }
@@ -367,10 +371,12 @@ function "genie/fn_genie_request_lifecycle_dev" {
     intake_prompt_copy   : $intake_prompt_copy
     profile_strength_tier: $profile_strength_tier
     rules_filters        : $rules_filters
-    session_meta         : {
-      acquisition_source: $session_row|get:"acquisition_source":""
-      nearest_match_id  : $session_row|get:"nearest_match_id":null
-    }
+    session_meta         : ```
+      {
+        acquisition_source: $session_row|get:"acquisition_source":""
+        nearest_match_id  : $session_row|get:"nearest_match_id":null
+      }
+      ```
     error                : $error_out
     t_user_ms            : $t_user_ms
     t_session_ms         : $t_session_ms

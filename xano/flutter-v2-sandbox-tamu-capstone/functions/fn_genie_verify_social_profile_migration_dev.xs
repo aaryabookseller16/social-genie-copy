@@ -25,23 +25,23 @@ function "genie/fn_genie_verify_social_profile_migration_dev" {
         {field: "typical_time", category: "typical_time"}
       ]
     }
-
+  
     var $tags_checked {
       value = 0
     }
-
+  
     var $tags_matched {
       value = 0
     }
-
+  
     var $missing {
       value = []
     }
-
+  
     var $done {
       value = false
     }
-
+  
     for ($input.pages) {
       each as $batch_index {
         conditional {
@@ -49,56 +49,56 @@ function "genie/fn_genie_verify_social_profile_migration_dev" {
             continue
           }
         }
-
+      
         var $current_page {
           value = $input.page + $batch_index
         }
-
+      
         db.query genie_user_social_profile {
           sort = {id: "asc"}
           return = {type: "list", paging: {page: $current_page, per_page: 25}}
         } as $batch
-
+      
         conditional {
           if (($batch.items|count) == 0) {
             var.update $done {
               value = true
             }
-
+          
             continue
           }
         }
-
+      
         foreach ($batch.items) {
           each as $profile {
             var $ops {
               value = []
             }
-
+          
             foreach ($field_map) {
               each as $map {
                 var $raw {
                   value = $profile|get:$map.field
                 }
-
+              
                 var $values {
                   value = []
                 }
-
+              
                 conditional {
                   if ($raw|is_array) {
                     var.update $values {
                       value = $raw
                     }
                   }
-
+                
                   elseif ($raw|is_text) {
                     var.update $values {
                       value = [$raw]
                     }
                   }
                 }
-
+              
                 foreach ($values) {
                   each as $item {
                     conditional {
@@ -106,11 +106,16 @@ function "genie/fn_genie_verify_social_profile_migration_dev" {
                         var $label {
                           value = $item|trim
                         }
-
+                      
                         conditional {
                           if ($label != "" && $label != "{}" && ($label|to_lower) != "[object object]") {
                             array.push $ops {
-                              value = {op: "add", category: $map.category, value: $label, source: "stated"}
+                              value = {
+                                op      : "add"
+                                category: $map.category
+                                value   : $label
+                                source  : "stated"
+                              }
                             }
                           }
                         }
@@ -120,32 +125,32 @@ function "genie/fn_genie_verify_social_profile_migration_dev" {
                 }
               }
             }
-
+          
             conditional {
               if (($ops|count) == 0) {
                 continue
               }
             }
-
+          
             var $owner_user_id {
               value = 0
             }
-
+          
             var $ext_id {
               value = (($profile.external_user_id ?? "")|to_text)|trim
             }
-
+          
             var $dev_id {
               value = (($profile.device_id ?? "")|to_text)|trim
             }
-
+          
             conditional {
               if ($ext_id != "") {
                 db.query genie_user {
                   where = $db.genie_user.external_user_id == $ext_id
                   return = {type: "single"}
                 } as $owner
-
+              
                 conditional {
                   if ($owner != null) {
                     var.update $owner_user_id {
@@ -155,42 +160,41 @@ function "genie/fn_genie_verify_social_profile_migration_dev" {
                 }
               }
             }
-
+          
             function.run "genie/fn_genie_get_user_context_dev" {
               input = {user_id: $owner_user_id, device_id: $dev_id}
             } as $ctx
-
+          
             var $prefs {
               value = []
             }
-
+          
             conditional {
-              if ($ctx != null && (($ctx.context_json|get:"preferences")|is_array)) {
+              if ($ctx != null && ($ctx.context_json|get:"preferences")|is_array) {
                 var.update $prefs {
                   value = $ctx.context_json|get:"preferences"
                 }
               }
             }
-
+          
             foreach ($ops) {
               each as $op {
                 math.add $tags_checked {
                   value = 1
                 }
-
+              
                 var $key {
                   value = $op.category ~ ":" ~ ($op.value|to_lower)
                 }
-
+              
                 array.find ($prefs) if ($this.id == $key && $this.source == "stated" && $this.status == "active") as $hit
-
                 conditional {
                   if ($hit != null) {
                     math.add $tags_matched {
                       value = 1
                     }
                   }
-
+                
                   else {
                     array.push $missing {
                       value = {profile_id: $profile.id, key: $key}
