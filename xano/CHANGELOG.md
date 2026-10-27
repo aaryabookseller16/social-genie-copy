@@ -55,6 +55,19 @@ Every change this repo makes to Xano, newest first. Xano has no commit history, 
 - unit: `xano/tests/unit/C1-*`, `C2-*`, `C3-01`
 - integration: `xano/tests/integration/C4-*` (use a fresh `session_token` per run)
 
+**End-to-end run (2026-10-23, after both endpoints were published at 01:38 UTC):** C4-01, C4-02, C4-03, C5-04 and C5-05 sent over HTTP to `ep_genie_chat_v2_dev` (group `genie_v15`), then `ep_genie_conversation_dev` read back. Run twice, each on fresh tokens (`conv-it-0N-10231840`, `conv-it-0N-1023184426`), because the `conv-it-0N-b` tokens already held earlier turns. **39/39 checks passed both times.**
+- Turn kinds, `request_index`, `refers_to_request_index`, `turn.source` (`first_request`, `model`, `hint`), `wants_more` exclusion (4 venues excluded, none repeated), `inherit_filters`, `search.source: model_inherited` and the `location_prompt` row (`kind`, `pending_request_text`) all matched.
+- `ep_genie_conversation_dev`: the owner gets all 14 messages in order, and each Genie turn's indexes, kind and card ids match the chat responses. A wrong `external_user_id` or an unknown token gets `found: false` and no messages. `limit` and `include_cards: false` work.
+- Follow-up answers checked against the data: Sol7 does have `patio: "yes"`; the first comedy-search event (1104) does start at 15:00 on 2026-10-24.
+- Request turns took 10–22 s, follow-ups 4–7 s.
+
+**Problems the run found (the checks pass, but the answers are wrong or weak):**
+- **"anything cheaper?" is not cheaper.** No rooftop bar has `price_band` `$`, so the search relaxes the price filter (`relaxed: ["price_band", "neighborhood"]`) and returns `$$` venues that were already shown, while the reply says "easier on the wallet". The search reports what it relaxed, but the reply never says so.
+- **"in Midtown" is always relaxed.** Every rooftop search drops the neighborhood (`match_quality: loose`), and the reply says "in Houston" without mentioning it.
+- **Event requests ignore the category.** "any comedy shows this weekend?" returned one theatre and two music events: the event query is city and date only.
+- **A forced request loses the earlier filters.** With `turn_hint: "request"`, "which one is the quietest?" runs a fresh search with no filters, so a cocktail-bar date search came back with a cigar shop.
+- `turn_events` returns the full `genie_social_events` row (including internal fields such as `stripe_connect_account_id`), not a trimmed card.
+
 ### 2026-10-23: Trimmed object descriptions and refreshed the architecture doc (branch `flutter-v2-sandbox-tamu-capstone`, commit `362f461`)
 
 **Goal:** Shorten the long header comments and descriptions on the capstone Genie objects, and bring `genie-workflow-and-architecture.md` in line with the lifecycle change.
