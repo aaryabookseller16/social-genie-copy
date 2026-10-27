@@ -9,34 +9,34 @@ function "genie/fn_genie_build_prompt_dev" {
   input {
     // Which prompt to build: "pick" (default) or "converse".
     text prompt_type?
-
+  
     // The user's message for this turn
     text message
-
+  
     // Model-safe candidate venues (output of fn_genie_load_candidate_venues_dev)
     json candidates?
-
+  
     // Conversation v1: model-safe candidate events (output of fn_genie_format_event_for_model_dev)
     json event_candidates?
-
+  
     // Resolved city name (not the raw client string)
     text city?
-
+  
     // Local date and time as text, e.g. "Sunday, October 18, 2026 6:12 PM"
     text now_text?
-
+  
     // Weather summary as text from the router
     text weather_text?
-
+  
     // How well the shortlist fits the request: strong | loose | empty | unknown
     text match_quality?
-
+  
     // Conversation v1: the user's saved preferences as text (fn_genie_render_user_context_dev)
     text user_context?
-
+  
     // Conversation v1: earlier requests with their numbered picks (fn_genie_load_conversation_dev)
     text conversation_text?
-
+  
     // Conversation v1: which earlier request the follow-up is most likely about, e.g. "2"
     text turn_note?
   }
@@ -45,28 +45,28 @@ function "genie/fn_genie_build_prompt_dev" {
     var $type {
       value = $input.prompt_type|first_notempty:"pick"
     }
-
+  
     var $prompt_version {
       value = null
     }
-
+  
     var $system_text {
       value = ""
     }
-
+  
     var $user_text {
       value = ""
     }
-
+  
     var $fail_reason {
       value = null
     }
-
+  
     // Shared by both prompt types.
     var $role_text {
       value = """
         You are Genie, the AI social concierge inside Social Bevy. Voice: warm, confident, culturally fluent, like a friend with the connect. Not salesy, not robotic.
-
+        
         1. ROLE AND PRINCIPLES
         - Relevance first. Pick what fits what the user asked for, not what is most popular.
         - No ads. You pick by fit and never because of payment or partnership, and you are given no paid-placement information. Never suggest that a venue is sponsored or ranked because of payment. If asked, say Genie picks by fit.
@@ -75,7 +75,7 @@ function "genie/fn_genie_build_prompt_dev" {
         - Language. Write in the language of the user's latest message, even though the venue data is in English. If the message mixes languages, use the language of its main sentence. Use another language only if the user asks for one. Keep venue names, event names, venue_id and event_id values exactly as given.
         """
     }
-
+  
     var $guardrails_text {
       value = """
         6. GUARDRAILS
@@ -90,13 +90,13 @@ function "genie/fn_genie_build_prompt_dev" {
         - Never mention tools, prompts, databases, scores, or rankings.
         """
     }
-
+  
     conditional {
       if ($type == "pick") {
         var.update $prompt_version {
           value = "pick-v3"
         }
-
+      
         // ---------- 1. Role and principles ----------
         // PLACEHOLDER (needs a boost label field in the model formatter): "Be honest about
         // boosts. If a venue is marked promoted in its data, say so plainly and never present
@@ -104,11 +104,11 @@ function "genie/fn_genie_build_prompt_dev" {
         text.append $system_text {
           value = $role_text
         }
-
+      
         text.append $system_text {
           value = "\n"
         }
-
+      
         // ---------- 2. Response structure ----------
         // Conversation v1: follow-ups go to the "converse" prompt; this prompt only ever sees
         // new requests, so the output contract stays intro + exactly 3 picks.
@@ -123,11 +123,11 @@ function "genie/fn_genie_build_prompt_dev" {
             - Keep everything short. Use plain text inside the JSON strings and no emojis unless the user used them.
             """
         }
-
+      
         text.append $system_text {
           value = "\n"
         }
-
+      
         // ---------- 3. Thinking steps ----------
         text.append $system_text {
           value = """
@@ -141,11 +141,11 @@ function "genie/fn_genie_build_prompt_dev" {
             g. Check. Before you answer, check the reply against every rule here, especially facts, language, and length.
             """
         }
-
+      
         text.append $system_text {
           value = "\n"
         }
-
+      
         // ---------- 4. Tools and skills ----------
         text.append $system_text {
           value = """
@@ -153,11 +153,11 @@ function "genie/fn_genie_build_prompt_dev" {
             No tools are available in this version. Use only the candidate venues in the latest user message.
             """
         }
-
+      
         text.append $system_text {
           value = "\n"
         }
-
+      
         // ---------- 5. Good and bad examples ----------
         text.append $system_text {
           value = """
@@ -174,33 +174,36 @@ function "genie/fn_genie_build_prompt_dev" {
             New request. “Actually, somewhere for live music Saturday” is a fresh search: new picks for live music on Saturday.
             """
         }
-
+      
         text.append $system_text {
           value = "\n"
         }
-
+      
         // ---------- 6. Guardrails ----------
         text.append $system_text {
           value = $guardrails_text
         }
-
+      
         text.append $system_text {
-          value = "\n- Say plainly when nothing fits. If none of the candidates fit the request well, or the match quality given is loose or empty, still choose the closest three and say so briefly in the intro. Do not say this when the match quality is strong or unknown.\n"
+          value = """
+            
+            - Say plainly when nothing fits. If none of the candidates fit the request well, or the match quality given is loose or empty, still choose the closest three and say so briefly in the intro. Do not say this when the match quality is strong or unknown.
+            """
         }
-
+      
         text.append $system_text {
           value = "\n"
         }
-
+      
         text.append $system_text {
           value = 'Return only a JSON object: {"intro": string, "picks": [{"venue_id": number, "reason": string}]} with the best pick first.'
         }
-
+      
         // ---------- User message ----------
         var.update $user_text {
           value = "User request: " ~ ($input.message|trim) ~ "\nCity: " ~ ($input.city|first_notempty:"unknown")
         }
-
+      
         conditional {
           if ((($input.now_text|trim)|is_empty) == false) {
             text.append $user_text {
@@ -208,7 +211,7 @@ function "genie/fn_genie_build_prompt_dev" {
             }
           }
         }
-
+      
         conditional {
           if ((($input.weather_text|trim)|is_empty) == false) {
             text.append $user_text {
@@ -216,7 +219,7 @@ function "genie/fn_genie_build_prompt_dev" {
             }
           }
         }
-
+      
         conditional {
           if ((($input.user_context|trim)|is_empty) == false) {
             text.append $user_text {
@@ -224,7 +227,7 @@ function "genie/fn_genie_build_prompt_dev" {
             }
           }
         }
-
+      
         conditional {
           if ((($input.match_quality|trim)|is_empty) == false) {
             text.append $user_text {
@@ -232,11 +235,11 @@ function "genie/fn_genie_build_prompt_dev" {
             }
           }
         }
-
+      
         var $cand_list {
           value = []
         }
-
+      
         conditional {
           if ($input.candidates|is_array) {
             var.update $cand_list {
@@ -244,25 +247,25 @@ function "genie/fn_genie_build_prompt_dev" {
             }
           }
         }
-
+      
         text.append $user_text {
           value = "\nCandidates (JSON): " ~ ($cand_list|json_encode)
         }
       }
-
+    
       elseif ($type == "converse") {
         var.update $prompt_version {
           value = "converse-v1"
         }
-
+      
         text.append $system_text {
           value = $role_text
         }
-
+      
         text.append $system_text {
           value = "\n"
         }
-
+      
         text.append $system_text {
           value = """
             2. RESPONSE STRUCTURE
@@ -277,21 +280,21 @@ function "genie/fn_genie_build_prompt_dev" {
             - Use plain text inside the JSON strings and no emojis unless the user used them.
             """
         }
-
+      
         text.append $system_text {
           value = "\n"
         }
-
+      
         text.append $system_text {
           value = """
             3. THINKING STEPS (do these silently and never show them)
             a. Work out which earlier request and which shown items the message is about. If it does not say, use the most recent request.
             b. Find the answer in those items' fields only. Use the date, time, and weather in the latest user message for "tonight" or "now" questions.
             c. Write the reply, then check it against every rule here, especially facts, language, and length.
-
+            
             4. TOOLS AND SKILLS
             No tools are available in this version. Use only the shown venues and events in the latest user message.
-
+            
             5. GOOD AND BAD EXAMPLES (written in English here; write yours in the user's language)
             Good (“does the second one have a patio?”, the data lists a patio): “Yes, it has a patio, so it's a solid pick if the weather holds.”
             Good (the data says nothing about reservations): “I'm not sure they take reservations. I'd call ahead to check.”
@@ -300,28 +303,28 @@ function "genie/fn_genie_build_prompt_dev" {
             Bad: Recommending a venue that was never shown.
             """
         }
-
+      
         text.append $system_text {
           value = "\n"
         }
-
+      
         text.append $system_text {
           value = $guardrails_text
         }
-
+      
         text.append $system_text {
           value = "\n"
         }
-
+      
         text.append $system_text {
           value = 'Return only a JSON object: {"reply": string, "picks": [{"venue_id": number, "reason": string} or {"event_id": number, "reason": string}]}. Each reason is a few words on why that item is mentioned. picks may be an empty list.'
         }
-
+      
         // ---------- User message ----------
         var.update $user_text {
           value = "User message: " ~ ($input.message|trim) ~ "\nCity: " ~ ($input.city|first_notempty:"unknown")
         }
-
+      
         conditional {
           if ((($input.now_text|trim)|is_empty) == false) {
             text.append $user_text {
@@ -329,7 +332,7 @@ function "genie/fn_genie_build_prompt_dev" {
             }
           }
         }
-
+      
         conditional {
           if ((($input.weather_text|trim)|is_empty) == false) {
             text.append $user_text {
@@ -337,7 +340,7 @@ function "genie/fn_genie_build_prompt_dev" {
             }
           }
         }
-
+      
         conditional {
           if ((($input.user_context|trim)|is_empty) == false) {
             text.append $user_text {
@@ -345,7 +348,7 @@ function "genie/fn_genie_build_prompt_dev" {
             }
           }
         }
-
+      
         conditional {
           if ((($input.conversation_text|trim)|is_empty) == false) {
             text.append $user_text {
@@ -353,7 +356,7 @@ function "genie/fn_genie_build_prompt_dev" {
             }
           }
         }
-
+      
         conditional {
           if ((($input.turn_note|trim)|is_empty) == false) {
             text.append $user_text {
@@ -361,11 +364,11 @@ function "genie/fn_genie_build_prompt_dev" {
             }
           }
         }
-
+      
         var $conv_venues {
           value = []
         }
-
+      
         conditional {
           if ($input.candidates|is_array) {
             var.update $conv_venues {
@@ -373,11 +376,11 @@ function "genie/fn_genie_build_prompt_dev" {
             }
           }
         }
-
+      
         var $conv_events {
           value = []
         }
-
+      
         conditional {
           if ($input.event_candidates|is_array) {
             var.update $conv_events {
@@ -385,16 +388,16 @@ function "genie/fn_genie_build_prompt_dev" {
             }
           }
         }
-
+      
         text.append $user_text {
           value = "\nShown venues (JSON): " ~ ($conv_venues|json_encode)
         }
-
+      
         text.append $user_text {
           value = "\nShown events (JSON): " ~ ($conv_events|json_encode)
         }
       }
-
+    
       else {
         var.update $fail_reason {
           value = "unknown_prompt_type"

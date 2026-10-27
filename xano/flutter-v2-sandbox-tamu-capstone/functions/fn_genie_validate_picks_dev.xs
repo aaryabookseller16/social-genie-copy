@@ -16,16 +16,16 @@ function "genie/fn_genie_validate_picks_dev" {
   input {
     // Raw text the model returned (expected: JSON object with intro or reply, and picks)
     text raw_reply
-
+  
     // Model-safe candidates the model was given (each has venue_id and venue_name)
     json candidates
-
+  
     // Conversation v1: model-safe events the model was given (each has event_id and event_name)
     json event_candidates?
-
+  
     // Maximum number of picks to accept (default 3)
     int max_picks?
-
+  
     // Conversation v1: "request" (default) or "followup" (see above)
     text? mode? filters=trim|lower
   }
@@ -34,27 +34,27 @@ function "genie/fn_genie_validate_picks_dev" {
     var $max_picks {
       value = $input.max_picks|first_notempty:3
     }
-
+  
     var $is_followup {
       value = ($input.mode ?? "") == "followup"
     }
-
+  
     var $allow_empty_reason {
       value = $is_followup
     }
-
+  
     var $cands {
       value = $input.candidates|safe_array
     }
-
+  
     var $ev_cands {
       value = ($input.event_candidates ?? [])|safe_array
     }
-
+  
     var $cand_ids {
       value = []
     }
-
+  
     foreach ($cands) {
       each as $c {
         var.update $cand_ids {
@@ -63,11 +63,11 @@ function "genie/fn_genie_validate_picks_dev" {
         }
       }
     }
-
+  
     var $ev_ids {
       value = []
     }
-
+  
     foreach ($ev_cands) {
       each as $ec {
         var.update $ev_ids {
@@ -76,15 +76,15 @@ function "genie/fn_genie_validate_picks_dev" {
         }
       }
     }
-
+  
     var $fail_reason {
       value = null
     }
-
+  
     var $parsed {
       value = null
     }
-
+  
     conditional {
       if (($input.raw_reply|trim)|is_empty) {
         var.update $fail_reason {
@@ -92,7 +92,7 @@ function "genie/fn_genie_validate_picks_dev" {
         }
       }
     }
-
+  
     conditional {
       if ($fail_reason == null) {
         try_catch {
@@ -101,7 +101,7 @@ function "genie/fn_genie_validate_picks_dev" {
               value = $input.raw_reply|json_decode
             }
           }
-
+        
           catch {
             var.update $fail_reason {
               value = "invalid_json"
@@ -110,45 +110,45 @@ function "genie/fn_genie_validate_picks_dev" {
         }
       }
     }
-
+  
     var $intro {
       value = (($parsed|get:"intro":"")|first_notempty:($parsed|get:"reply":""))|trim
     }
-
+  
     var $model_picks {
       value = ($parsed|get:"picks":[])|safe_array
     }
-
+  
     var $valid_picks {
       value = []
     }
-
+  
     var $seen_ids {
       value = []
     }
-
+  
     var $seen_event_ids {
       value = []
     }
-
+  
     foreach ($model_picks) {
       each as $mp {
         var $mid {
           value = ($mp|get:"venue_id":0)|to_int
         }
-
+      
         var $meid {
           value = ($mp|get:"event_id":0)|to_int
         }
-
+      
         var $mreason {
           value = ($mp|get:"reason":"")|trim
         }
-
+      
         var $reason_ok {
           value = $allow_empty_reason || (($mreason|is_empty) == false)
         }
-
+      
         conditional {
           // Venue pick
           if ($mid > 0) {
@@ -160,13 +160,13 @@ function "genie/fn_genie_validate_picks_dev" {
                 }
               }
             }
-
+          
             conditional {
               if (($cand_ids|in:$mid) && ($seen_ids|in:$mid) == false && $reason_ok && ($valid_picks|count) < $max_picks) {
                 var $mname {
                   value = ""
                 }
-
+              
                 foreach ($cands) {
                   each as $cd {
                     conditional {
@@ -178,19 +178,19 @@ function "genie/fn_genie_validate_picks_dev" {
                     }
                   }
                 }
-
+              
                 var.update $valid_picks {
                   value = $valid_picks
                     |append:{kind: "venue", venue_id: $mid, venue_name: $mname, reason: $mreason}
                 }
-
+              
                 var.update $seen_ids {
                   value = $seen_ids|append:$mid
                 }
               }
             }
           }
-
+        
           // Event pick
           elseif ($meid > 0) {
             conditional {
@@ -200,13 +200,13 @@ function "genie/fn_genie_validate_picks_dev" {
                 }
               }
             }
-
+          
             conditional {
               if (($ev_ids|in:$meid) && ($seen_event_ids|in:$meid) == false && $reason_ok && ($valid_picks|count) < $max_picks) {
                 var $ename {
                   value = ""
                 }
-
+              
                 foreach ($ev_cands) {
                   each as $ecd {
                     conditional {
@@ -218,19 +218,19 @@ function "genie/fn_genie_validate_picks_dev" {
                     }
                   }
                 }
-
+              
                 var.update $valid_picks {
                   value = $valid_picks
                     |append:{kind: "event", event_id: $meid, event_name: $ename, reason: $mreason}
                 }
-
+              
                 var.update $seen_event_ids {
                   value = $seen_event_ids|append:$meid
                 }
               }
             }
           }
-
+        
           // A pick with neither id: as before, an id of 0 is not in the candidates.
           else {
             var.update $fail_reason {
@@ -240,15 +240,15 @@ function "genie/fn_genie_validate_picks_dev" {
         }
       }
     }
-
+  
     var $cand_total {
       value = ($cand_ids|count) + ($ev_ids|count)
     }
-
+  
     var $need {
       value = ($cand_total < $max_picks) ? $cand_total : $max_picks
     }
-
+  
     conditional {
       if ($is_followup) {
         var.update $need {
@@ -256,7 +256,7 @@ function "genie/fn_genie_validate_picks_dev" {
         }
       }
     }
-
+  
     conditional {
       if ($fail_reason == null && ($valid_picks|count) < $need) {
         var.update $fail_reason {
@@ -264,7 +264,7 @@ function "genie/fn_genie_validate_picks_dev" {
         }
       }
     }
-
+  
     // A follow-up must still have something to say.
     conditional {
       if ($fail_reason == null && $is_followup && ($intro|is_empty)) {
@@ -273,11 +273,11 @@ function "genie/fn_genie_validate_picks_dev" {
         }
       }
     }
-
+  
     var $is_valid {
       value = ($fail_reason == null)
     }
-
+  
     conditional {
       if ($is_valid == false) {
         var.update $valid_picks {

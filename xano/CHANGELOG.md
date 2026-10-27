@@ -12,6 +12,16 @@ Every change this repo makes to Xano, newest first. Xano has no commit history, 
 - `deployed`: live on the branch in Xano.
 - `local only`: edited in the repo, not pushed to Xano.
 - `committed`: the snapshot is in git (with commit hash).
+### 2026-10-26: Capstone snapshots re-exported from Xano (branch `flutter-v2-sandbox-tamu-capstone`)
+
+**Goal:** Make `flutter-v2-sandbox-tamu-capstone/` match what is published in Xano, byte for byte. Nothing in Xano was changed. Every file was read back with the Xano MCP (`listFunctions` / `listAPIs` with `include_xanoscript`, published versions; no object had an unpublished draft) on 2026-10-26.
+
+| # | Xano object (ID) | Type | Change | Why | Status | Tested |
+|---|---|---|---|---|---|---|
+| 64 | Conversation v1 objects: `ep_genie_chat_v2_dev` (4369), `genie/ep_genie_conversation_dev` (4576), `fn_genie_handle_message_v2_dev` (1936), `fn_genie_extract_search_filters_dev` (2209), `fn_genie_build_prompt_dev` (2091), `fn_genie_run_turn_dev` (2095), `fn_genie_validate_picks_dev` (2092), `fn_genie_load_conversation_dev` (2221), `fn_genie_resolve_turn_kind_dev` (2220), `fn_genie_format_event_for_model_dev` (2219) | snapshot only | Replaced the `6e6d4d5` snapshots with the text Xano saved. The differences are formatting Xano applies on save. Most of the diff is blank lines that keep their indentation; the rest is object literals wrapped in triple backticks, `"\n…"` strings turned into `"""` blocks, filter chains split onto a new line, redundant parentheses dropped, aligned colons, no final newline. No logic changed. | Rows 53–63 were committed as written, not as saved, so a rollback paste or a diff against Xano showed false changes. | committed | Compared with the `6e6d4d5` files after removing whitespace, backtick/`"""` wrappers and parentheses: identical. |
+
+**Behavioral scope:** None. Snapshots only.
+
 ### 2026-10-23: Conversation v1: request and follow-up turns in one conversation (branch `flutter-v2-sandbox-tamu-capstone`, commit `6e6d4d5`)
 
 **Goal:** Switch Genie from one answer per message ("3 picks + more nearby") to a conversation. One `session_token` is one conversation. Every message is either a **request** (fresh search, always 3 choices) or a **follow-up** (no search, a free-form reply about venues and events already shown). Requests and follow-ups can be mixed, and a follow-up can refer to any earlier request. Design: `xano/genie-workflow-and-architecture.md`; frontend guide: `xano/conversation-v1/FRONTEND_INTEGRATION.md`.

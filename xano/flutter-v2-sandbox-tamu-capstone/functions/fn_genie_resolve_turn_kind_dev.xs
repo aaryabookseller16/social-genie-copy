@@ -15,14 +15,14 @@ function "genie/fn_genie_resolve_turn_kind_dev" {
   input {
     // The user's message for this turn
     text message
-
+  
     // Optional client hint: "request" | "followup" (anything else is ignored)
     text? turn_hint?
-
+  
     // Output of fn_genie_extract_search_filters_dev (ok, turn_kind, refers_to_request,
     // inherit_filters, wants_more)
     json model_result?
-
+  
     // Earlier requests from fn_genie_load_conversation_dev (only request_index is read)
     json requests?
   }
@@ -36,25 +36,25 @@ function "genie/fn_genie_resolve_turn_kind_dev" {
         const requests = Array.isArray($input.requests) ? $input.requests : [];
         const indexes = requests.map((r) => Number(r && r.request_index) || 0).filter((n) => n > 0);
         const latest = indexes.length ? Math.max(...indexes) : 0;
-
+        
         const refFrom = (v) => {
           const n = Number(v);
           return Number.isInteger(n) && indexes.includes(n) ? n : (latest || null);
         };
-
+        
         // Keyword rules (used when the model failed). English plus common Spanish.
         const MORE_RE = /\b(more|another|other|others|else|different|instead|similar|alternatives?|cheaper|closer|fancier|quieter|livelier|bigger|smaller|m[aá]s|otros?|otras?|diferentes?|parecidos?|en vez)\b/i;
         const MORE_ONLY_RE = /\b(more|another|other|others|else|different|alternatives?|m[aá]s|otros?|otras?)\b/i;
         const REF_RE = /\b(first|second|third|1st|2nd|3rd|last one|that one|this one|that place|those|them|it|they|primero|segundo|tercero|ese|esa|esos)\b/i;
         const ASK_RE = /\b(find|show me|recommend|suggest|search|looking for|look for|where can|any good|buscar|busca|recomienda|recomi[eé]ndame|quiero)\b/i;
         const NEW_TOPIC_RE = /\b(what about|how about|actually|now|y si|qu[eé] tal)\b/i;
-
+        
         let kind = null;
         let source = null;
         let inherit = false;
         let wantsMore = false;
         let ref = null;
-
+        
         if (hint === "request" || hint === "followup") {
           source = "hint";
           kind = hint === "followup" && latest === 0 ? "request" : hint;
@@ -86,10 +86,10 @@ function "genie/fn_genie_resolve_turn_kind_dev" {
           }
           ref = latest || null;
         }
-
+        
         if (kind === "request" && !inherit) wantsMore = false;
         if (kind === "request" && !inherit && !wantsMore) ref = null;
-
+        
         return {
           turn_kind: kind,
           refers_to_request_index: ref,
