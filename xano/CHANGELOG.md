@@ -12,6 +12,21 @@ Every change this repo makes to Xano, newest first. Xano has no commit history, 
 - `deployed`: live on the branch in Xano.
 - `local only`: edited in the repo, not pushed to Xano.
 - `committed`: the snapshot is in git (with commit hash).
+### 2026-10-26: Capstone snapshots re-exported from Xano (branch `flutter-v2-sandbox-tamu-capstone`)
+
+**Goal:** Make `flutter-v2-sandbox-tamu-capstone/` match what is published in Xano, byte for byte. Nothing in Xano was changed. Every file was read back with the Xano MCP (`listFunctions` / `listAPIs` with `include_xanoscript`, published versions; no object had an unpublished draft) on 2026-10-26.
+
+| # | Xano object (ID) | Type | Change | Why | Status | Tested |
+|---|---|---|---|---|---|---|
+| 64 | Conversation v1 objects: `ep_genie_chat_v2_dev` (4369), `genie/ep_genie_conversation_dev` (4576), `fn_genie_handle_message_v2_dev` (1936), `fn_genie_extract_search_filters_dev` (2209), `fn_genie_build_prompt_dev` (2091), `fn_genie_run_turn_dev` (2095), `fn_genie_validate_picks_dev` (2092), `fn_genie_load_conversation_dev` (2221), `fn_genie_resolve_turn_kind_dev` (2220), `fn_genie_format_event_for_model_dev` (2219) | snapshot only | Replaced the `6e6d4d5` snapshots with the text Xano saved. The differences are formatting Xano applies on save. Most of the diff is blank lines that keep their indentation; the rest is object literals wrapped in triple backticks, `"\n…"` strings turned into `"""` blocks, filter chains split onto a new line, redundant parentheses dropped, aligned colons, no final newline. No logic changed. | Rows 53–63 were committed as written, not as saved, so a rollback paste or a diff against Xano showed false changes. | committed | Compared with the `6e6d4d5` files after removing whitespace, backtick/`"""` wrappers and parentheses: identical. |
+| 65 | `fn_genie_call_ai_dev` (1834), `fn_genie_create_user_context_dev` (2059), `fn_genie_get_user_context_dev` (2062), `fn_genie_update_user_context_dev` (2061), `fn_genie_render_user_context_dev` (2096), `fn_genie_migrate_social_profile_to_context_dev` (2097), `fn_genie_verify_social_profile_migration_dev` (2098), `ep_get_user_context_dev` (4527, group `Genie_Dev` 115), `ep_save_quick_picks_dev` (4528, group 115) | snapshot only | Re-exported. These snapshots were last committed on 2026-10-08 or 2026-10-12 and never picked up the later GEN-013/014 edits made in Xano: `call_ai`'s optional `temperature` input, user-context caps and like/dislike sentiment, the longer rendered prompt text, and `ep_get_user_context_dev` reading through `fn_genie_resolve_user_context_dev` (`link: false`) with readable timestamps. | The repo copies were older than Xano, so a rollback paste would have reverted that work. | committed | Read back from Xano on 2026-10-26; byte-identical to the published text. |
+| 66 | `fn_genie_resolve_user_context_dev` (2125) | snapshot only | First snapshot. | Called by `fn_genie_handle_message_v2_dev`, `ep_get_user_context_dev` and `merge_guest_profile`, but had no copy in the repo. | committed | Read back from Xano on 2026-10-26. |
+| 67 | `fn_genie_llm_commentary_dev` (2057), `fn_genie_compose_reply_dev` (2093), `fn_genie_load_candidate_venues_dev` (2090), `fn_genie_order_venues_dev` (2094), `fn_detect_query_language_dev` (1974), `fn_genie_request_lifecycle_dev` (2216), `fn_genie_log_turn_analytics_dev` (2215), `fn_genie_resolve_city_dev` (2214) | snapshot only | Re-exported. Xano's save-time formatting only (one-line objects and lists split one item per line, strings turned into `"""` blocks, redundant parentheses dropped, indented blank lines), plus header comments added in Xano to `compose_reply` and `load_candidate_venues`. No logic change. | Same as row 65. | committed | Read back from Xano on 2026-10-26; compared token by token with the old snapshots. |
+
+**Behavioral scope:** None. Snapshots only.
+
+**Not re-exported:** `fn_genie_handle_message_dev` (1960). Xano still has the `detected_language` input and detect-and-normalize block that row 33 removes, and row 33 is **local only**, so the repo copy is the pending edit, not a stale export. `fn_genie_build_ai_payload_dev` (1835) was not compared; Xano last changed it on 2026-10-08 00:25 UTC, before its snapshot (`c581194`, 2026-10-08 18:39 UTC).
+
 ### 2026-10-23: Conversation v1: request and follow-up turns in one conversation (branch `flutter-v2-sandbox-tamu-capstone`, commit `6e6d4d5`)
 
 **Goal:** Switch Genie from one answer per message ("3 picks + more nearby") to a conversation. One `session_token` is one conversation. Every message is either a **request** (fresh search, always 3 choices) or a **follow-up** (no search, a free-form reply about venues and events already shown). Requests and follow-ups can be mixed, and a follow-up can refer to any earlier request. Design: `xano/genie-workflow-and-architecture.md`; frontend guide: `xano/conversation-v1/FRONTEND_INTEGRATION.md`.
@@ -39,6 +54,19 @@ Every change this repo makes to Xano, newest first. Xano has no commit history, 
 **Test inputs:**
 - unit: `xano/tests/unit/C1-*`, `C2-*`, `C3-01`
 - integration: `xano/tests/integration/C4-*` (use a fresh `session_token` per run)
+
+**End-to-end run (2026-10-23, after both endpoints were published at 01:38 UTC):** C4-01, C4-02, C4-03, C5-04 and C5-05 sent over HTTP to `ep_genie_chat_v2_dev` (group `genie_v15`), then `ep_genie_conversation_dev` read back. Run twice, each on fresh tokens (`conv-it-0N-10231840`, `conv-it-0N-1023184426`), because the `conv-it-0N-b` tokens already held earlier turns. **39/39 checks passed both times.**
+- Turn kinds, `request_index`, `refers_to_request_index`, `turn.source` (`first_request`, `model`, `hint`), `wants_more` exclusion (4 venues excluded, none repeated), `inherit_filters`, `search.source: model_inherited` and the `location_prompt` row (`kind`, `pending_request_text`) all matched.
+- `ep_genie_conversation_dev`: the owner gets all 14 messages in order, and each Genie turn's indexes, kind and card ids match the chat responses. A wrong `external_user_id` or an unknown token gets `found: false` and no messages. `limit` and `include_cards: false` work.
+- Follow-up answers checked against the data: Sol7 does have `patio: "yes"`; the first comedy-search event (1104) does start at 15:00 on 2026-10-24.
+- Request turns took 10–22 s, follow-ups 4–7 s.
+
+**Problems the run found (the checks pass, but the answers are wrong or weak):**
+- **"anything cheaper?" is not cheaper.** No rooftop bar has `price_band` `$`, so the search relaxes the price filter (`relaxed: ["price_band", "neighborhood"]`) and returns `$$` venues that were already shown, while the reply says "easier on the wallet". The search reports what it relaxed, but the reply never says so.
+- **"in Midtown" is always relaxed.** Every rooftop search drops the neighborhood (`match_quality: loose`), and the reply says "in Houston" without mentioning it.
+- **Event requests ignore the category.** "any comedy shows this weekend?" returned one theatre and two music events: the event query is city and date only.
+- **A forced request loses the earlier filters.** With `turn_hint: "request"`, "which one is the quietest?" runs a fresh search with no filters, so a cocktail-bar date search came back with a cigar shop.
+- `turn_events` returns the full `genie_social_events` row (including internal fields such as `stripe_connect_account_id`), not a trimmed card.
 
 ### 2026-10-23: Trimmed object descriptions and refreshed the architecture doc (branch `flutter-v2-sandbox-tamu-capstone`, commit `362f461`)
 

@@ -16,13 +16,13 @@ function "genie/fn_genie_extract_search_filters_dev" {
   input {
     // The user's chat message
     text message
-
+  
     // City the app sent, if any (e.g. "Houston")
     text? city_context?
-
+  
     // Conversation v1: recent messages as text, from fn_genie_load_conversation_dev
     text? history_text?
-
+  
     // Conversation v1: one line per earlier request with its numbered picks
     text? requests_text?
   }
@@ -31,46 +31,46 @@ function "genie/fn_genie_extract_search_filters_dev" {
     var $message {
       value = ($input.message ?? "")|trim
     }
-
+  
     var $city_context {
       value = ($input.city_context ?? "")|trim
     }
-
+  
     var $history_text {
       value = ($input.history_text ?? "")|trim
     }
-
+  
     var $requests_text {
       value = ($input.requests_text ?? "")|trim
     }
-
+  
     var $has_conversation {
       value = $history_text != "" || $requests_text != ""
     }
-
+  
     var $raw {
       value = null
     }
-
+  
     var $fail_reason {
       value = null
     }
-
+  
     var $system {
       value = ""
     }
-
+  
     text.append $system {
       value = """
         You read one message a user sent to Genie, a nightlife and dining concierge, and turn it into search filters. The message can be in any language. Judge by meaning, not by single words.
-
+        
         mode:
         - "venue": the user wants places to go (bars, restaurants, clubs, cafes, lounges), even if they mention a time ("a bar tonight", "brunch this weekend") or a neighborhood ("cocktails in Montrose").
         - "event": the user wants events, shows, concerts, festivals, games or things happening ("what's happening this weekend", "conciertos esta noche", "any comedy shows Friday").
         - "ambient": open-ended with no type of place, vibe or event at all ("surprise me", "I'm bored, what should I do", "no plans tonight"). A vibe or plan to go out ("let's go party", "somewhere quiet to talk") is a venue request.
-
+        
         Fix obvious typos and use the usual spelling of place names (e.g. "dwntwn" -> "Downtown", "sushie" -> "sushi").
-
+        
         Filters (leave a filter empty when the message does not ask for it; never guess):
         - city: a city named in the message, in English (e.g. "Houston"). Empty if none.
         - neighborhood: a neighborhood or area named in the message, as written in English (e.g. "Montrose", "Midtown", "EaDo"). Empty if none.
@@ -82,7 +82,7 @@ function "genie/fn_genie_extract_search_filters_dev" {
         - energy: one of Chill, Medium, High when the user asks for a level of energy in any language ("chill", "lowkey", "relaxed", "calm" = Chill; "lit", "turnt", "loud", "wild" = High). Empty if none.
         - keywords: up to 5 short English words or phrases that describe the place the user wants and that a venue description would contain: vibe, setting, crowd, music, features (e.g. "rooftop", "patio", "romantic", "live music", "sports", "hookah", "speakeasy", "dancing", "jazz"). Always write keywords in English, even when the message is in another language: translate the meaning, never copy a non-English word. Do not repeat venue_type, cuisine or neighborhood here. No dates or times.
         - language: the ISO 639-1 code of the message's main language (e.g. "en", "es").
-
+        
         Examples:
         - "find me a rooftop bar in Midtown" -> {"mode":"venue","neighborhood":"Midtown","venue_type":"bar","keywords":["rooftop"],"language":"en"}
         - "un bar con terraza en Midtown" -> {"mode":"venue","neighborhood":"Midtown","venue_type":"bar","keywords":["patio"],"language":"es"}
@@ -91,13 +91,13 @@ function "genie/fn_genie_extract_search_filters_dev" {
         - "cheap tacos open right now" -> {"mode":"venue","cuisine":"tacos","open_now":true,"price_band":"$","language":"en"}
         """
     }
-
+  
     // Conversation v1: turn classification, only when there is a conversation to follow up on.
     conditional {
       if ($has_conversation) {
         text.append $system {
           value = """
-
+            
             This message is part of a conversation. Earlier messages and earlier requests (with the numbered choices Genie showed) are given for context. Also classify the message:
             - turn_kind "request": the user wants NEW or DIFFERENT places or events: a new topic ("actually, live music Saturday"), more or other options ("show me more", "any others?"), or a change to an earlier search ("anything cheaper?", "what about brunch instead?", "closer to Montrose?").
             - turn_kind "followup": the user is asking about or reacting to places or events already shown ("does the second one take reservations?", "which is better for a group?", "how far is it?", "thanks!", "sounds good"). No new search is needed.
@@ -105,7 +105,7 @@ function "genie/fn_genie_extract_search_filters_dev" {
             - inherit_filters: true when a request changes or extends an earlier request instead of starting fresh ("cheaper?", "more like that", "same but in Midtown"). False for a new topic.
             - wants_more: true when the user asks for more, other or different options than the ones already shown.
             Filters always describe only what THIS message asks for; do not copy filters from earlier requests (the app combines them when inherit_filters is true).
-
+            
             Conversation examples:
             - after rooftop bars were shown: "anything cheaper?" -> {"turn_kind":"request","refers_to_request":1,"inherit_filters":true,"wants_more":false,"mode":"venue","price_band":"$","language":"en"}
             - after rooftop bars were shown: "does the second one have a patio?" -> {"turn_kind":"followup","refers_to_request":1,"inherit_filters":false,"wants_more":false,"mode":"venue","language":"en"}
@@ -115,25 +115,31 @@ function "genie/fn_genie_extract_search_filters_dev" {
         }
       }
     }
-
+  
     conditional {
       if ($has_conversation) {
         text.append $system {
-          value = "\nReturn only JSON with these keys: turn_kind, refers_to_request, inherit_filters, wants_more, mode, city, neighborhood, venue_type, cuisine, meal_service, open_now, price_band, energy, keywords, language."
+          value = """
+            
+            Return only JSON with these keys: turn_kind, refers_to_request, inherit_filters, wants_more, mode, city, neighborhood, venue_type, cuisine, meal_service, open_now, price_band, energy, keywords, language.
+            """
         }
       }
-
+    
       else {
         text.append $system {
-          value = "\nReturn only JSON with these keys: mode, city, neighborhood, venue_type, cuisine, meal_service, open_now, price_band, energy, keywords, language."
+          value = """
+            
+            Return only JSON with these keys: mode, city, neighborhood, venue_type, cuisine, meal_service, open_now, price_band, energy, keywords, language.
+            """
         }
       }
     }
-
+  
     var $user_text {
       value = ""
     }
-
+  
     conditional {
       if ($requests_text != "") {
         text.append $user_text {
@@ -141,7 +147,7 @@ function "genie/fn_genie_extract_search_filters_dev" {
         }
       }
     }
-
+  
     conditional {
       if ($history_text != "") {
         text.append $user_text {
@@ -149,11 +155,11 @@ function "genie/fn_genie_extract_search_filters_dev" {
         }
       }
     }
-
+  
     text.append $user_text {
       value = "Message: " ~ $message
     }
-
+  
     conditional {
       if ($city_context != "") {
         text.append $user_text {
@@ -161,33 +167,33 @@ function "genie/fn_genie_extract_search_filters_dev" {
         }
       }
     }
-
+  
     conditional {
       if ($message == "") {
         var.update $fail_reason {
           value = "empty_message"
         }
       }
-
+    
       else {
         try_catch {
           try {
             var $sys_msg {
               value = {role: "system", content: $system}
             }
-
+          
             var $usr_msg {
               value = {role: "user", content: $user_text}
             }
-
+          
             var $messages {
               value = [$sys_msg, $usr_msg]
             }
-
+          
             var $payload {
               value = {messages: $messages}
             }
-
+          
             function.run "genie/fn_genie_call_ai_dev" {
               input = {
                 ai_payload : $payload
@@ -198,11 +204,11 @@ function "genie/fn_genie_extract_search_filters_dev" {
                 json_mode  : true
               }
             } as $ai
-
+          
             var.update $raw {
               value = ($ai|get:"assistant_reply") ?? null
             }
-
+          
             conditional {
               if ($raw == null) {
                 var.update $fail_reason {
@@ -211,7 +217,7 @@ function "genie/fn_genie_extract_search_filters_dev" {
               }
             }
           }
-
+        
           catch {
             var.update $fail_reason {
               value = "model_call_failed"
@@ -220,11 +226,11 @@ function "genie/fn_genie_extract_search_filters_dev" {
         }
       }
     }
-
+  
     var $filters {
       value = {ok: false}
     }
-
+  
     // Shape checks only. The judgement is the model's.
     conditional {
       if ($raw != null) {
@@ -276,13 +282,13 @@ function "genie/fn_genie_extract_search_filters_dev" {
             """
           timeout = 5
         } as $checked
-
+      
         var.update $filters {
           value = $checked
         }
       }
     }
-
+  
     conditional {
       if ($fail_reason != null) {
         var.update $filters {

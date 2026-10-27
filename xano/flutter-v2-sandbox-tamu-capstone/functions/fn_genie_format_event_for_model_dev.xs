@@ -8,7 +8,7 @@ function "genie/fn_genie_format_event_for_model_dev" {
   input {
     // One genie_social_events row
     json event
-
+  
     // Optional venue name when the caller already loaded the venue
     text? venue_name?
   }
@@ -24,13 +24,13 @@ function "genie/fn_genie_format_event_for_model_dev" {
         };
         const num = (v) => (typeof v === "number" && isFinite(v) && v > 0 ? v : null);
         const list = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string" && x.trim() !== "").slice(0, 8) : []);
-
+        
         const out = { event_id: Number(e.id) || 0, event_name: text(e.title, 120) };
         const put = (k, v) => {
           if (v === null || v === undefined || v === "" || (Array.isArray(v) && v.length === 0)) return;
           out[k] = v;
         };
-
+        
         put("category", text(e.primary_category) || text(e.category));
         put("event_date", typeof e.event_date === "string" ? e.event_date : "");
         put("start_time", text(e.start_time));
