@@ -49,8 +49,10 @@ query "genie/ep_save_quick_picks_dev" verb=POST {
           return = {type: "single"}
         } as $user_row
 
+        // Only a verified account owns a context (2026-10-27); guests' unverified rows are
+        // ignored so quick picks land on the device row like every other guest write.
         conditional {
-          if ($user_row != null) {
+          if ($user_row != null && $user_row.verified == true) {
             var.update $user_id {
               value = $user_row.id
             }

@@ -6,8 +6,10 @@ import {
   type RawHandleMessageResponse,
 } from "./genieTypes";
 import { readAuthToken, readConsumerAccount } from "./localState";
+import { buildReplySummary } from "./replySummary";
 import { getRuntimeConfig } from "./runtimeConfig";
 import {
+  getOrCreateDeviceId,
   readSessionToken,
   readExternalUserId,
   writeSessionToken,
@@ -15,6 +17,10 @@ import {
 } from "./sessionToken";
 
 export type { GenieFilters, GenieResponseEnvelope, GenieVenue };
+
+// Genie's last reply in this page session, sent with the next message so reactions like
+// "love the first one" can be understood when learning the user's tastes (GEN-014).
+let lastReplySummary = "";
 
 export type CallGenieOptions = {
   coords?: { lat: number; lng: number } | null;
@@ -41,6 +47,9 @@ export async function callGenie(
     channel: "web",
     external_user_id: readExternalUserId() || (account?.id ? String(account.id) : "web_guest"),
     user_name: account?.firstName || undefined,
+    // Lets Xano find a guest's saved preferences (user context, GEN-013).
+    device_id: getOrCreateDeviceId(),
+    previous_reply: lastReplySummary || undefined,
     session_token: readSessionToken(),
     city_context:
       typeof cityContext === "string" && cityContext.trim().length > 0
@@ -116,6 +125,7 @@ export async function callGenie(
   }
 
   const data = (await res.json()) as RawHandleMessageResponse;
+  lastReplySummary = buildReplySummary(data);
   const normalized = normalizeHandleMessageResponse(data, message);
 
   writeSessionToken(normalized.session_token);

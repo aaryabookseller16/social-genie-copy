@@ -13,3 +13,11 @@ export const XANO_STRIPE_BASE =
 export const XANO_GENIE_VENUES_URL =
   process.env.XANO_GENIE_VENUES_URL ||
   `${XANO_ORIGIN}/api:mY7zYhwk/genie_v1`;
+
+/** Xano datasource to read and write (e.g. `tamu_capstone`). Empty uses Xano's default (live). */
+export const XANO_DATA_SOURCE = (process.env.XANO_DATA_SOURCE || "").trim();
+
+/** Headers that point a Xano request at XANO_DATA_SOURCE, or none when it is unset. */
+export function xanoDataSourceHeaders(): Record<string, string> {
+  return XANO_DATA_SOURCE ? { "X-Data-Source": XANO_DATA_SOURCE } : {};
+}

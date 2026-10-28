@@ -10,6 +10,7 @@ browser bundle at build time, so never put secrets in them.
 | `XANO_AUTH_BASE` | server | no | `${XANO_BASE_URL}/api:dRDS80y8` | `xanoAuthFetch` |
 | `XANO_STRIPE_BASE` | server | no | `${XANO_BASE_URL}/api:jQf3GatY` | `xanoStripeFetch` |
 | `XANO_GENIE_VENUES_URL` | server | no | `${XANO_BASE_URL}/api:mY7zYhwk/genie_v1` | `lib/server/xanoCatalog.ts` |
+| `XANO_DATA_SOURCE` | server | no | none (Xano's live datasource) | Sent as the `X-Data-Source` header on every Xano request. Capstone work uses `tamu_capstone`. |
 | `NEXT_PUBLIC_ONESIGNAL_APP_ID` | client | no | `2b0988a9-9a1e-4039-9131-e4859ea641e2` | `components/shared/NotificationsBoot.tsx` |
 | `NEXT_PUBLIC_APP_BASE_URL` | both | no | `https://genie.socialbevy.com` | `api/subscription/create` (Stripe return URLs) |
 | `APP_BASE_URL` | server | no | (fallback for the above) | `api/subscription/create` |

@@ -20,24 +20,19 @@ Live: **https://genie.socialbevy.com**
 - **PWA and push**: installable, with web push through OneSignal
 - **Mobile-first UI** with light and dark themes
 
-## 🧪 Capstone status: Predictive Genie (as of Oct 15, 2026)
-The capstone's Genie AI work runs on the Xano branch `flutter-v2-sandbox-tamu-capstone`, not in production, until the sponsor approves it. Plan: [docs/genie_plan.md](docs/genie_plan.md). Change record: [xano/CHANGELOG.md](xano/CHANGELOG.md).
+## 🧪 Capstone status: Predictive Genie (as of Oct 21, 2026)
+The capstone's Genie AI work runs on the Xano branch `flutter-v2-sandbox-tamu-capstone` and the `tamu_capstone` datasource, not in production, until the sponsor approves it. Plan: [docs/genie_plan.md](docs/genie_plan.md). Change record: [xano/CHANGELOG.md](xano/CHANGELOG.md).
 
 **Working on the capstone branch**
-- **Model-picked venues:** on venue searches with results, gpt-4o chooses the best 3 from the ranked shortlist and writes a one-line reason for each. If the model fails, Genie falls back to the ranked list. Replies follow the user's language.
-- **User context storage (GEN-010):** one versioned preference document per user or guest device, with stated and inferred sources, removal tombstones, size caps, and compact rendering for the prompt. See [docs/architecture/base_genie_improvements.md](docs/architecture/base_genie_improvements.md#2-user-context-files).
-- **Migration (GEN-011):** existing social-profile tags were copied into user contexts on Oct 12 (551 of 551 tags).
-- **Quick-pick onboarding (GEN-012):** skippable cards in Genie's greeting save the picks as stated preferences.
+- **Model-picked venues:** on venue searches with results, gpt-4o chooses the best 3 and writes a one-line reason for each, using the six-section system prompt (pick-v2.2). If the model fails, Genie falls back to the ranked list. Replies follow the user's language. A venue the model picks twice appears once, and picked venues do not repeat in "more nearby".
+- **Request-first search (GEN-071):** one ranker for every venue request. A small model call reads the message in any language and turns it into a mode and filters (type, cuisine, neighborhood, price, energy, open now, keywords), so English and Spanish requests get the same shortlist. Closed and non-hospitality venues are never shortlisted, a location adds a radius and a distance term, and every shortlisted venue has a logged score breakdown. See [docs/architecture/ranking.md](docs/architecture/ranking.md).
+- **User context (GEN-010 to GEN-013):** one versioned preference document per account or guest device, with stated and learned preferences, removal tombstones and size caps. It is filled by quick-pick onboarding, the preferences screen and venue saves, follows the user to their account at sign-in, and is used as a small ranking bonus and a tiebreaker in the pick prompt. See [docs/architecture/user_context.md](docs/architecture/user_context.md).
+- **Learning from chat (GEN-014):** after each reply, Genie quietly saves likes and dislikes the user states or reacts with ("not into happy hours", "the first one is too loud"), judged by the model. Dislikes rank matching venues lower and are never mentioned unless asked.
 - **Tests and CI:** Vitest unit tests; GitHub Actions runs lint, typecheck, tests and build on every pull request.
 
-**Written but not live yet**
-- **Chat reads the user context (GEN-013):** preferences used as a tiebreaker when Genie picks venues. The code is on a branch not yet merged to `main`, and waits on the owner's decision about which account table to use (`User` or `genie_user`).
-- **Duplicate-pick fixes (Oct 15):** a venue the model picks twice appears only once, and picked venues no longer repeat in "more nearby". These are in the repo but not yet deployed to Xano.
-
 **Not built yet**
-- Genie updating a user's context from chat (decided Oct 13; design not yet merged to `main`)
-- Preferences inferred from behavior, decay and expiry, deletion and retention, a consent flow for sensitive tags, and a preference editing UI
-- Follow-up handling (conversation state), the system prompt rewrite, and a multi-step tool loop
+- Decay and expiry of learned preferences, deletion and retention, a consent flow for sensitive tags, and a preference editing UI
+- Follow-up handling (conversation state) and a multi-step tool loop
 - Track 2: neighborhood demand forecast and proactive notifications
 
 ## 🧱 Stack

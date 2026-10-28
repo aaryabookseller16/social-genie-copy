@@ -105,7 +105,7 @@ Each user gets a context file that Genie reads and updates. This is how Genie le
 |---|---|
 | **Create** | Runs once per user, at sign-up. |
 | **Read** | Available to Genie. |
-| **Update** | Available to Genie. **This is the most important part of the system, because it is how Genie learns.** **(open)** How update works for Genie still needs to be planned. Note that the plan currently makes the preference tool read-only for the model ("the model cannot edit"), so letting Genie propose updates is a change to decide on. |
+| **Update** | Available to Genie. **This is the most important part of the system, because it is how Genie learns.** **Decided (2026-10-13):** Genie gets an update tool. This replaces the plan's read-only preference tool. Design: [user_context.md, section 7](user_context.md#7-planned-genie-update-tool). |
 | **Delete** | Only on explicit user request. If a user deletes their account, the context file is deleted after a retention period. **(open)** Proposed: 3 months with no reactivation. Not available to Genie. |
 
 Genie should only have access to **Read** and **Update**.
@@ -121,7 +121,7 @@ Decide which tools Genie can call. The plan's tool table (plan 5.5) and our addi
 | City graph and catalog search | Find venues and events by category, place, vibe | Existing / confirm what it exposes |
 | Venue and event lookup | Hours, address, links | Existing |
 | User context read | Compact active-preference summary | New |
-| User context update | Let Genie propose changes to the file | **Not in the plan.** The plan's preference tool is read-only. |
+| User context update | Let Genie change the file | **Decided 2026-10-13:** in scope. Replaces the plan's read-only preference tool. See [user_context.md](user_context.md#7-planned-genie-update-tool). |
 | Booking and maps link builder | Action links per pick | Connect existing links |
 | Forecast lookup | Expected busyness for a neighborhood and time window | New in Track 2, optional later in chat |
 
@@ -161,7 +161,7 @@ Each tool must also be described in the system prompt (section 1, part 4).
 - How do we infer preferences from past usage, beyond explicit statements?
 - How should past usage be structured in the file?
 - How should the context be presented to the model for efficiency?
-- How should Genie's update function work, given the plan's preference tool is read-only? (Most important.)
+- ~~Should Genie be able to update the context?~~ Decided 2026-10-13: yes. Design in [user_context.md](user_context.md#7-planned-genie-update-tool).
 - Is 3 months with no reactivation the right retention period after account deletion?
 
 **Tools**
