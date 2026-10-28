@@ -3,6 +3,7 @@
 // loops `pages` batches starting at `page`.
 // dry_run (default true) only counts; it writes nothing. With dry_run = false it
 // creates the context row if needed and applies the tags as stated adds.
+// Ops are sent in chunks of at most 40, the per-call cap in fn_genie_update_user_context_dev.
 function "genie/fn_genie_migrate_social_profile_to_context_dev" {
   input {
     bool dry_run?=true
@@ -27,6 +28,10 @@ function "genie/fn_genie_migrate_social_profile_to_context_dev" {
         {field: "group_size", category: "group_size"}
         {field: "typical_time", category: "typical_time"}
       ]
+    }
+
+    var $max_ops_per_call {
+      value = 40
     }
 
     var $profiles_scanned {
@@ -250,14 +255,51 @@ function "genie/fn_genie_migrate_social_profile_to_context_dev" {
                   input = {user_id: $owner_user_id, device_id: $dev_id}
                 } as $ctx_row
 
-                function.run "genie/fn_genie_update_user_context_dev" {
-                  input = {
-                    user_id         : $owner_user_id
-                    device_id       : $dev_id
-                    expected_version: $ctx_row.version
-                    ops             : $ops
+                // Apply the ops in chunks of at most $max_ops_per_call, carrying the version forward.
+                var $version {
+                  value = $ctx_row.version
+                }
+
+                var $chunk {
+                  value = []
+                }
+
+                var $op_index {
+                  value = 0
+                }
+
+                foreach ($ops) {
+                  each as $op {
+                    array.push $chunk {
+                      value = $op
+                    }
+
+                    math.add $op_index {
+                      value = 1
+                    }
+
+                    conditional {
+                      if (($chunk|count) == $max_ops_per_call || $op_index == $tag_count) {
+                        function.run "genie/fn_genie_update_user_context_dev" {
+                          input = {
+                            user_id         : $owner_user_id
+                            device_id       : $dev_id
+                            expected_version: $version
+                            ops             : $chunk
+                          }
+                        } as $update_result
+
+                        var.update $version {
+                          value = $update_result.version
+                        }
+
+                        var.update $chunk {
+                          value = []
+                        }
+                      }
+                    }
                   }
-                } as $update_result
+                }
 
                 conditional {
                   if ($existing == null) {

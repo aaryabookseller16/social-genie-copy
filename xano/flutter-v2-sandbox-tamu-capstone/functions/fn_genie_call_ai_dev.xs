@@ -3,14 +3,18 @@
 function "genie/fn_genie_call_ai_dev" {
   input {
     json ai_payload
-  
+
     // Optional overrides. Defaults keep the original behavior for existing callers.
     text model?
+
     int max_tokens?
     int timeout?
-  
+
     // When true, ask OpenAI for a JSON object response (response_format json_object).
     bool json_mode?
+
+    // Optional sampling temperature (GEN-014). Empty keeps the default 0.6.
+    decimal? temperature?
   }
 
   stack {
@@ -20,42 +24,42 @@ function "genie/fn_genie_call_ai_dev" {
     var $messages {
       value = $input.ai_payload|get:"messages"|first_notempty:[]
     }
-  
+
     var $metadata {
       value = $input.ai_payload|get:"metadata"|first_notempty:{}
     }
-  
+
     // -----------------------------
     // 1) Defaults / outputs
     // -----------------------------
     var $ai_response {
       value = null
     }
-  
+
     var $status_code {
       value = 0
     }
-  
+
     var $assistant_reply {
       value = null
     }
-  
+
     var $error_out {
       value = null
     }
-  
+
     var $model {
       value = $input.model|first_notempty:"gpt-4o"
     }
-  
+
     var $max_tokens {
       value = $input.max_tokens|first_notempty:350
     }
-  
+
     var $timeout {
       value = $input.timeout|first_notempty:30
     }
-  
+
     var $params {
       value = {
         model      : $model
@@ -64,19 +68,29 @@ function "genie/fn_genie_call_ai_dev" {
         max_tokens : $max_tokens
       }
     }
-  
+
+    // GEN-014: caller-chosen temperature, only when one is passed.
     conditional {
-      if ($input.json_mode == true) {
+      if ($input.temperature != null) {
         var.update $params {
-          value = $params|merge:{response_format: {type: "json_object"}}
+          value = $params|set:"temperature":$input.temperature
         }
       }
     }
-  
+
+    conditional {
+      if ($input.json_mode) {
+        var.update $params {
+          value = $params
+            |merge:{response_format: {type: "json_object"}}
+        }
+      }
+    }
+
     var $t_start_ms {
       value = now|to_ms
     }
-  
+
     // -----------------------------
     // 2) Call OpenAI
     // -----------------------------
@@ -84,24 +98,23 @@ function "genie/fn_genie_call_ai_dev" {
       url = "https://api.openai.com/v1/chat/completions"
       method = "POST"
       params = $params
-    
       headers = []
         |push:"Content-Type: application/json"
         |push:"Authorization: Bearer " ~ $env.OPENAI_API_KEY
       timeout = $timeout
     } as $ai_response
-  
+
     var $latency_ms {
       value = (now|to_ms) - $t_start_ms
     }
-  
+
     // -----------------------------
     // 3) Status code (robust)
     // -----------------------------
     var.update $status_code {
       value = ($ai_response|get:"response":{}|get:"status":null)|first_notempty:($ai_response|get:"status":null)|first_notempty:0
     }
-  
+
     // -----------------------------
     // 4) Parse assistant reply (only if 200)
     // -----------------------------
@@ -118,7 +131,7 @@ function "genie/fn_genie_call_ai_dev" {
         }
       }
     }
-  
+
     // -----------------------------
     // 5) Error capture (no early return)
     // -----------------------------
@@ -129,7 +142,7 @@ function "genie/fn_genie_call_ai_dev" {
         }
       }
     }
-  
+
     // -----------------------------
     // 6) Debug logs (optional)
     // -----------------------------
