@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
  
 import { type RawGenieVenue } from "@/app/lib/genieTypes";
+import { scheduleLearnFromMessage } from "@/app/lib/server/learnFromMessage";
 import { getAuthenticatedUser } from "@/app/lib/server/requestAuth";
 import { xanoFetch, XanoError } from "@/app/lib/server/xanoProxy";
  
@@ -59,6 +60,10 @@ export async function POST(request: NextRequest) {
       channel: String(body.channel ?? "web"),
       external_user_id: resolvedExternalUserId,
       user_name: resolvedUserName,
+      device_id:
+        typeof body.device_id === "string" && body.device_id.trim()
+          ? body.device_id.trim()
+          : undefined,
       city_context:
         typeof body.city_context === "string" ? body.city_context : undefined,
       session_token:
@@ -101,7 +106,20 @@ export async function POST(request: NextRequest) {
         body: upstreamBody,
       }
     );
- 
+
+    // After the reply is sent, learn any likes or dislikes from this message (GEN-014).
+    scheduleLearnFromMessage({
+      message: upstreamBody.message,
+      previousReply: typeof body.previous_reply === "string" ? body.previous_reply : undefined,
+      externalUserId: upstreamBody.external_user_id,
+      deviceId: upstreamBody.device_id,
+      // Xano creates the token on a first message, so prefer the one in the reply.
+      sessionToken:
+        typeof upstreamJson.session_token === "string"
+          ? upstreamJson.session_token
+          : upstreamBody.session_token,
+    });
+
     // ── Normalize venues ──────────────────────────────────────────────────
     // v2 merges primary + more_nearby into a single venues array
     const rawVenues = Array.isArray(upstreamJson.venues)
