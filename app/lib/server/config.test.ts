@@ -61,4 +61,24 @@ describe("server Xano config", () => {
     expect(config.XANO_STRIPE_BASE).toBe("https://stripe.example.test");
     expect(config.XANO_GENIE_VENUES_URL).toBe("https://venues.example.test");
   });
+
+  it("sends no datasource header when XANO_DATA_SOURCE is unset", async () => {
+    vi.stubEnv("XANO_DATA_SOURCE", "");
+    vi.resetModules();
+
+    const config = await import("./config");
+    expect(config.XANO_DATA_SOURCE).toBe("");
+    expect(config.xanoDataSourceHeaders()).toEqual({});
+  });
+
+  it("points requests at XANO_DATA_SOURCE when it is set", async () => {
+    vi.stubEnv("XANO_DATA_SOURCE", " tamu_capstone ");
+    vi.resetModules();
+
+    const config = await import("./config");
+    expect(config.XANO_DATA_SOURCE).toBe("tamu_capstone");
+    expect(config.xanoDataSourceHeaders()).toEqual({
+      "X-Data-Source": "tamu_capstone",
+    });
+  });
 });

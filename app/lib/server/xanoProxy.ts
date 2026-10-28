@@ -7,7 +7,12 @@
  *   Stripe: /api:jQf3GatY  — native Stripe products/sessions
  */
 
-import { XANO_AUTH_BASE, XANO_GENIE_BASE, XANO_STRIPE_BASE } from "./config";
+import {
+  XANO_AUTH_BASE,
+  XANO_GENIE_BASE,
+  XANO_STRIPE_BASE,
+  xanoDataSourceHeaders,
+} from "./config";
 
 type XanoRequestInit = {
   method?: string;
@@ -63,6 +68,7 @@ async function baseFetch<T = unknown>(
   }
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    ...xanoDataSourceHeaders(),
   };
   if (authToken) {
     headers.Authorization = `Bearer ${authToken}`;

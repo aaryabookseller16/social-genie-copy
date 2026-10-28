@@ -1,5 +1,5 @@
 import { type RawGenieVenue } from "../genieTypes";
-import { XANO_GENIE_VENUES_URL } from "./config";
+import { XANO_GENIE_VENUES_URL, xanoDataSourceHeaders } from "./config";
 
 export async function fetchCatalogVenues(limit = 200): Promise<RawGenieVenue[]> {
   const url = new URL(XANO_GENIE_VENUES_URL);
@@ -10,6 +10,7 @@ export async function fetchCatalogVenues(limit = 200): Promise<RawGenieVenue[]> 
 
   const response = await fetch(url.toString(), {
     method: "GET",
+    headers: xanoDataSourceHeaders(),
     cache: "no-store",
   });
 
