@@ -204,7 +204,7 @@ Example, reason-line phrasing:
 |---|---|---|
 | City Graph and catalog search | Find venues and events by category, place, vibe. For now, the City Graph is the structured map of Houston's venues, events, and neighborhoods. *Confirm what it exposes.* | EXISTING / CONNECT |
 | Venue and event lookup | Details: hours, address, links | EXISTING |
-| Preference read | Compact active-preference summary (read-only; the model cannot edit) | NEW |
+| Preference read and update | Compact active-preference summary; the model can also update it (decided 2026-10-13, replaces "read-only; the model cannot edit"; see `docs/architecture/user_context.md` section 7) | NEW |
 | Booking and maps link builder | Action links per pick | CONNECT (5.8) |
 | Forecast lookup | Expected busyness for a neighborhood and window | NEW in Track 2, optional later in chat |
 | External busyness and event APIs | More data sources | Future |
