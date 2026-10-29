@@ -100,6 +100,19 @@ export type RawGenieEvent = {
   source_type?: string;
   discovery_source?: string[];
 };
+// Conversation v1: why a venue or event was picked (or mentioned in a follow-up).
+export type GeniePickReason = {
+  kind?: "venue" | "event" | string;
+  venue_id?: number;
+  event_id?: number;
+  venue_name?: string;
+  reason?: string;
+};
+
+// Conversation v1: "request" = a new search with fresh picks; "followup" = a reply about
+// venues or events already shown in the conversation.
+export type GenieTurnKind = "request" | "followup";
+
 export type RawHandleMessageResponse = {
   reply?: string;
   session_id?: number;
@@ -127,6 +140,14 @@ export type RawHandleMessageResponse = {
   profile_strength_tier?: string;
   filters?: Partial<GenieNormalizedFilters>;
   result?: RawHandleMessageResponse;
+  conversation_id?: string;
+  turn_kind?: string;
+  turn_index?: number;
+  request_index?: number | null;
+  refers_to_request_index?: number | null;
+  turn_venues?: RawGenieVenue[];
+  turn_events?: RawGenieEvent[];
+  pick_reasons?: GeniePickReason[];
 };
 
 export type GenieResponseEnvelope = {
@@ -148,6 +169,13 @@ export type GenieResponseEnvelope = {
   filters: GenieNormalizedFilters;
   debug?: Record<string, unknown>;
   raw?: unknown;
+  // Conversation v1 (optional: older responses don't have them)
+  conversation_id?: string;
+  turn_kind?: GenieTurnKind;
+  turn_index?: number;
+  request_index?: number | null;
+  refers_to_request_index?: number | null;
+  pick_reasons?: GeniePickReason[];
 };
 
 export type RuntimeQuickChip = {

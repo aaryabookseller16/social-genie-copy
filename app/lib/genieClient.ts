@@ -22,6 +22,10 @@ export type { GenieFilters, GenieResponseEnvelope, GenieVenue };
 // "love the first one" can be understood when learning the user's tastes (GEN-014).
 let lastReplySummary = "";
 
+// Conversation v1: the first message after a page load starts a new conversation; later ones
+// continue it with the stored session token.
+let conversationStarted = false;
+
 export type CallGenieOptions = {
   coords?: { lat: number; lng: number } | null;
   radiusMeters?: number;
@@ -29,6 +33,10 @@ export type CallGenieOptions = {
   // When false, coords are dropped from the request even if provided — used
   // when an explicit city in the message takes priority over device location.
   includeCoords?: boolean;
+  // Conversation v1: force the turn kind, e.g. "request" for quick chips.
+  turnHint?: "request" | "followup";
+  // Conversation v1: start a new conversation even if a session token is stored.
+  newConversation?: boolean;
 };
 
 export async function callGenie(
@@ -38,7 +46,14 @@ export async function callGenie(
   const config = getRuntimeConfig();
   const token = readAuthToken();
   const account = readConsumerAccount();
-  const { coords, radiusMeters, cityContext, includeCoords = true } = options;
+  const {
+    coords,
+    radiusMeters,
+    cityContext,
+    includeCoords = true,
+    turnHint,
+    newConversation,
+  } = options;
   const hasCoords =
     includeCoords &&
     Boolean(coords && Number.isFinite(coords.lat) && Number.isFinite(coords.lng));
@@ -51,6 +66,8 @@ export async function callGenie(
     device_id: getOrCreateDeviceId(),
     previous_reply: lastReplySummary || undefined,
     session_token: readSessionToken(),
+    new_conversation: newConversation || !conversationStarted ? true : undefined,
+    turn_hint: turnHint,
     city_context:
       typeof cityContext === "string" && cityContext.trim().length > 0
         ? cityContext.trim()
@@ -125,6 +142,7 @@ export async function callGenie(
   }
 
   const data = (await res.json()) as RawHandleMessageResponse;
+  conversationStarted = true;
   lastReplySummary = buildReplySummary(data);
   const normalized = normalizeHandleMessageResponse(data, message);
 

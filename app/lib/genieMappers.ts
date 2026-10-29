@@ -168,5 +168,18 @@ export function normalizeHandleMessageResponse(
     },
     debug: response.debug,
     raw: rawResponse,
+    conversation_id:
+      typeof response.conversation_id === "string" ? response.conversation_id : undefined,
+    turn_kind:
+      response.turn_kind === "request" || response.turn_kind === "followup"
+        ? response.turn_kind
+        : undefined,
+    turn_index: typeof response.turn_index === "number" ? response.turn_index : undefined,
+    request_index: typeof response.request_index === "number" ? response.request_index : null,
+    refers_to_request_index:
+      typeof response.refers_to_request_index === "number"
+        ? response.refers_to_request_index
+        : null,
+    pick_reasons: Array.isArray(response.pick_reasons) ? response.pick_reasons : [],
   };
 }

@@ -1,10 +1,13 @@
 // V2 Genie chat endpoint. Replaces ep_external_genie_message_dev as the primary chat endpoint.
 // Adds weather awareness, neighborhood routing, and ambient recommendations.
-// Version: 1.5.5 (Final Stability)
-// Genie_Dev copy (4200), the one the web app calls. User context (2026-10-22), added without
-// changing existing lines: optional device_id passed to the handler, so a guest's saved
-// preferences are read in chat (the genie_v15 copy, 4369, got this in GEN-013); the
-// handler's context and search diagnostics are added to the response.
+// Version: 1.7.0 (conversation v1: request vs follow-up turns in one conversation)
+// Conversation v1: one session_token is one conversation. Send the token from the last reply to
+// continue it; send new_conversation = true (or no token) to start a new one. turn_hint
+// ("request" | "followup") lets the client force the turn kind (e.g. quick chips = request).
+// Genie_Dev copy (4200), the one the web app calls. Since 2026-10-28 (review fix A) it is an
+// exact copy of the genie_v15 endpoint (4369) except api_group; before, it was the old 1.5.5
+// body. Keep the two in sync: xano/tests/chat/endpoint_parity.py compares the snapshots and
+// the responses of both.
 query "genie/ep_genie_chat_v2_dev" verb=POST {
   api_group = "Genie_Dev"
 
@@ -45,8 +48,17 @@ query "genie/ep_genie_chat_v2_dev" verb=POST {
     // Session ID if available
     text? session_id?
 
-    // Device ID from the web app; finds a guest's user context
+    // Device ID from the web app; finds a guest's user context (GEN-013)
     text? device_id? filters=trim
+
+    // Include diagnostic blocks and stage timings when explicitly requested
+    bool debug?
+
+    // Conversation v1: start a new conversation even if a session_token is sent
+    bool new_conversation?
+
+    // Conversation v1: optional turn kind hint, "request" | "followup"
+    text? turn_hint? filters=trim
   }
 
   stack {
@@ -60,6 +72,15 @@ query "genie/ep_genie_chat_v2_dev" verb=POST {
         // --- 1. Session Token Initialization ---
         var $v_session_token {
           value = ($input.session_token ?? "")|trim
+        }
+
+        // Conversation v1: a new conversation always gets a new token.
+        conditional {
+          if ($input.new_conversation) {
+            var.update $v_session_token {
+              value = ""
+            }
+          }
         }
 
         conditional {
@@ -189,90 +210,46 @@ query "genie/ep_genie_chat_v2_dev" verb=POST {
             session_query_number: $input.session_query_number
             session_id          : $final_session_id|to_text
             device_id           : $input.device_id
+            turn_hint           : $input.turn_hint
           }
         } as $genie_response
 
         // --- 5. Assemble final response ---
-        var $v_reply {
-          value = $genie_response|get:"reply":""
-        }
-
-        var $v_venues {
-          value = $genie_response|get:"venues":[]
-        }
-
-        var $v_events {
-          value = $genie_response|get:"events":[]
-        }
-
-        var $v_query_mode {
-          value = $genie_response|get:"query_mode":"venue"
-        }
-
-        var $v_weather_text {
-          value = $genie_response|get:"weather_context_text":""
-        }
-
-        var $v_avoid_outdoor {
-          value = $genie_response|get:"should_avoid_outdoor":false
-        }
-
-        var $v_promote_outdoor {
-          value = $genie_response
-            |get:"should_promote_outdoor":false
-        }
-
-        var $v_neighborhood_context {
-          value = $genie_response|get:"neighborhood_context":null
-        }
-
-        var $v_is_outdoor_sensitive {
-          value = $genie_response|get:"is_outdoor_sensitive":false
-        }
-
-        var $v_detected_neighborhood {
-          value = $genie_response|get:"detected_neighborhood":""
-        }
-
-        // User context and search diagnostics from the handler (same keys as the genie_v15 copy).
-        var $v_context {
-          value = $genie_response|get:"context":null
-        }
-
-        var $v_search {
-          value = $genie_response|get:"search":null
+        // Conversation v1: the handler already returns every field (with its own defaults), so the
+        // response is the handler's object plus the endpoint's session fields. Built with |set and
+        // |unpick on whole objects, not a ``` block of per-field |get defaults, which came back
+        // null or dropped keys in testing.
+        var $base_result {
+          value = $genie_response ?? {}
         }
 
         var.update $final_result {
-          value = {
-            success               : true
-            reply                 : $v_reply
-            venues                : $v_venues
-            events                : $v_events
-            query_mode            : $v_query_mode
-            weather_context_text  : $v_weather_text
-            should_avoid_outdoor  : $v_avoid_outdoor
-            should_promote_outdoor: $v_promote_outdoor
-            neighborhood_context  : $v_neighborhood_context
-            is_outdoor_sensitive  : $v_is_outdoor_sensitive
-            detected_neighborhood : $v_detected_neighborhood
-            session_id            : $final_session_id
-            session_token         : $v_session_token
-            context               : $v_context
-            search                : $v_search
+          value = (((($base_result|set:"success":true)|set:"session_id":$final_session_id)|set:"session_token":$v_session_token)|set:"conversation_id":$v_session_token)
+        }
+
+        // Diagnostic blocks only when debug is requested.
+        conditional {
+          if ($input.debug != true) {
+            var.update $final_result {
+              value = $final_result|unpick:["search", "search_filters", "city", "llm", "context", "timings", "turn", "debug", "genie_message_id"]
+            }
           }
         }
       }
 
       catch {
-        var.update $final_result {
+        // Log the full error, then rethrow so the caller gets a real error
+        // response instead of an HTTP 200 with success:false and a null message.
+        debug.log {
           value = {
-            success   : false
+            checkpoint: "EP_GENIE_CHAT_V2_FAILED"
             error     : $error.message
-            error_type: $error.name
-            stack     : $error.
-            debug_note: "caught in outer try_catch"
           }
+        }
+
+        throw {
+          name = "GenieChatError"
+          value = "Genie chat failed: " ~ ($error|json_encode)
         }
       }
     }

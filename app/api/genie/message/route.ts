@@ -90,6 +90,10 @@ export async function POST(request: NextRequest) {
         typeof body.session_id === "number" ? String(body.session_id) : undefined,
       session_query_number:
         typeof body.session_query_number === "number" ? body.session_query_number : undefined,
+      // Conversation v1: start a new conversation, or force the turn kind ("request" | "followup").
+      new_conversation: body.new_conversation === true ? true : undefined,
+      turn_hint:
+        body.turn_hint === "request" || body.turn_hint === "followup" ? body.turn_hint : undefined,
     };
  
     if (!upstreamBody.message) {
@@ -139,7 +143,11 @@ export async function POST(request: NextRequest) {
 );
 
 const venues = allVenues.slice(0, 3);
-const moreNearbyVenues = allVenues.slice(3, 15);
+// Conversation v1 sends its own "more nearby" list (picks removed); older responses don't.
+const moreNearbyVenues =
+  rawMoreVenues.length > 0
+    ? rawMoreVenues.map((venue) => mapPublicVenue(venue as RawGenieVenue))
+    : allVenues.slice(3, 15);
  
     // ── Events ────────────────────────────────────────────────────────────
     const events = Array.isArray(upstreamJson.events)
@@ -209,6 +217,22 @@ const moreNearbyVenues = allVenues.slice(3, 15);
         typeof upstreamJson.profile_strength_tier === "string"
           ? upstreamJson.profile_strength_tier
           : undefined,
+      // Conversation v1: which kind of turn this was and what it refers to.
+      conversation_id:
+        typeof upstreamJson.conversation_id === "string" ? upstreamJson.conversation_id : undefined,
+      turn_kind: typeof upstreamJson.turn_kind === "string" ? upstreamJson.turn_kind : undefined,
+      turn_index: typeof upstreamJson.turn_index === "number" ? upstreamJson.turn_index : undefined,
+      request_index:
+        typeof upstreamJson.request_index === "number" ? upstreamJson.request_index : null,
+      refers_to_request_index:
+        typeof upstreamJson.refers_to_request_index === "number"
+          ? upstreamJson.refers_to_request_index
+          : null,
+      turn_venues: Array.isArray(upstreamJson.turn_venues)
+        ? upstreamJson.turn_venues.map((venue) => mapPublicVenue(venue as RawGenieVenue))
+        : [],
+      turn_events: Array.isArray(upstreamJson.turn_events) ? upstreamJson.turn_events : [],
+      pick_reasons: Array.isArray(upstreamJson.pick_reasons) ? upstreamJson.pick_reasons : [],
     });
   } catch (error) {
     if (error instanceof XanoError) {

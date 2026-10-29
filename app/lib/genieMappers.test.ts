@@ -106,3 +106,34 @@ describe("normalizeHandleMessageResponse", () => {
     expect(result.response_mode).toBe("supported_no_results");
   });
 });
+
+describe("normalizeHandleMessageResponse conversation fields", () => {
+  it("keeps the conversation v1 turn fields", () => {
+    const result = normalizeHandleMessageResponse({
+      reply: "The first one has a patio.",
+      venues: [venue(1), venue(2), venue(3)],
+      conversation_id: "conv-1",
+      turn_kind: "followup",
+      turn_index: 2,
+      request_index: null,
+      refers_to_request_index: 1,
+      pick_reasons: [{ kind: "venue", venue_id: 1, reason: "Has a patio." }],
+    }, "which has a patio?");
+
+    expect(result.conversation_id).toBe("conv-1");
+    expect(result.turn_kind).toBe("followup");
+    expect(result.turn_index).toBe(2);
+    expect(result.request_index).toBeNull();
+    expect(result.refers_to_request_index).toBe(1);
+    expect(result.pick_reasons).toEqual([{ kind: "venue", venue_id: 1, reason: "Has a patio." }]);
+  });
+
+  it("leaves them empty for an older response or an unknown turn kind", () => {
+    const result = normalizeHandleMessageResponse({ reply: "Hi", turn_kind: "other" }, "hi");
+
+    expect(result.turn_kind).toBeUndefined();
+    expect(result.request_index).toBeNull();
+    expect(result.refers_to_request_index).toBeNull();
+    expect(result.pick_reasons).toEqual([]);
+  });
+});
