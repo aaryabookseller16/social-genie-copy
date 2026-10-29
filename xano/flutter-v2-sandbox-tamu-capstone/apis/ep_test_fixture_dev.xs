@@ -11,6 +11,9 @@
 //   session      {session_token}                   -> the session row (id, user, meta)
 //   delete_user_only {external_user_id}           -> deletes only the genie_user row (its sessions
 //                                                     stay, to test a session without an owner)
+//   build_prompt {prompt_type, message, candidates, user_context, conversation_text}
+//                                                  -> the prompts fn_genie_build_prompt_dev builds
+//                                                     (read-only, 2026-10-28)
 //   cleanup      {external_user_ids, device_ids, session_tokens}
 //                                                  -> deletes those test users, their contexts,
 //                                                     sessions and messages, the device contexts and
@@ -29,6 +32,13 @@ query "genie/ep_test_fixture_dev" verb=POST {
     text[]? external_user_ids?
     text[]? device_ids?
     text[]? session_tokens?
+
+    // build_prompt (read-only test action)
+    text? prompt_type?
+    text? message?
+    json? candidates?
+    text? user_context?
+    text? conversation_text?
   }
 
   stack {
@@ -233,6 +243,29 @@ query "genie/ep_test_fixture_dev" verb=POST {
 
         var.update $out {
           value = {ok: true, session: $srow_out}
+        }
+      }
+
+      elseif ($input.action == "build_prompt") {
+        // Read-only: returns the prompts fn_genie_build_prompt_dev builds (prompt tests).
+        function.run "genie/fn_genie_build_prompt_dev" {
+          input = {
+            prompt_type      : $input.prompt_type ?? "pick"
+            message          : $input.message ?? ""
+            candidates       : $input.candidates ?? []
+            event_candidates : []
+            city             : "Houston"
+            now_text         : "Wednesday, October 28, 2026 7:00 PM"
+            weather_text     : ""
+            match_quality    : "strong"
+            user_context     : $input.user_context ?? ""
+            conversation_text: $input.conversation_text ?? ""
+            turn_note        : ""
+          }
+        } as $built
+
+        var.update $out {
+          value = {ok: true, built: $built}
         }
       }
 
