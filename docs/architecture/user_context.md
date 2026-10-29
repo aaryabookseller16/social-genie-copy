@@ -4,7 +4,7 @@
 
 Each Genie user has one **user context**: a JSON preference document. Genie reads it at the start of a venue turn and uses it in two places, always below the request itself:
 
-1. **Ranking.** The user's tastes are passed to the request-first search (`fn_genie_search_venues_dev`) as preference keywords, a small bonus that only reorders venues that fit the request about equally. **Not live since 2026-10-23:** Zach's conversation v1 deploy replaced the search, which no longer accepts `preference_keywords` / `avoid_keywords`; the handler still sends them and Xano ignores them. Left as is (2026-10-27 decision); changelog #95.
+1. **Ranking.** The user's tastes are passed to the request-first search (`fn_genie_search_venues_dev`) as preference keywords, a small bonus that only reorders venues that fit the request about equally. Lost in Zach's conversation v1 deploy (2026-10-23) and **live again since his GEN-071 v2 ranker (2026-10-28, changelog #105)**, which declares `preference_keywords` / `avoid_keywords` again.
 2. **Picking.** The rendered preferences go into the pick prompt, where they only break ties.
 
 Before sign-in the context belongs to the device. At sign-in it is merged into (or claimed by) the account in `genie_user`. It is filled by quick-pick onboarding, the social-profile intake screen, and venue saves.
@@ -19,7 +19,7 @@ This document describes what is built. The design comes from `docs/genie_plan.md
 | Migration of social-profile tags | GEN-011 | Run into the `tamu_capstone` datasource on 2026-10-21 (53 created, 12 updated, 550/572 tags; the rest are over the 10-per-category cap). The 2026-10-12 run is still in the live datasource, waiting for the owner. |
 | Quick-pick onboarding (web + Xano) | GEN-012 | Deployed |
 | Size caps, render budget, resolver | GEN-013 | Deployed |
-| Context read in chat + prompt tiebreaker | GEN-013 | Deployed 2026-10-21 (additive on Zach's pick-v2.2 prompt and run_turn v2.1b) |
+| Context read in chat + prompt tiebreaker | GEN-013 | Deployed 2026-10-21; preference rules re-added to Zach's conversation v1 prompts as section 7 (`pick-v3.1` / `converse-v1.1`) on 2026-10-28 |
 | Request-first search with preference keywords | GEN-013 | Deployed 2026-10-21 (Zach's `fn_genie_search_venues_dev`, fixed) |
 | Guest-to-account linking at sign-in | GEN-013 | Deployed in `merge_guest_profile` |
 | Social profile and venue saves write the context | GEN-013 | Deployed (`update_social_profile`, `track_signal`) |
@@ -185,13 +185,20 @@ User preferences:
 - Stated entries first, then by confidence high to low. Inferred entries are marked `(learned)`.
 - Whole category lines are added until the next one would exceed `max_chars` (default 600); `truncated` reports a cut.
 
-`fn_genie_build_prompt_dev` (pick-v2.2) adds the block to the user text with "(Preferences are a tiebreaker only.)" and three rules at the end of section 6, **only when there is a context** (the version then reads `pick-v2.2+prefs`):
+The rendered text goes into the **user** message as `Saved preferences: …` (both prompt types of Zach's conversation v1: `pick` for new requests, `converse` for follow-ups). There is no tool call: the handler (1936) reads the context in code on every venue or follow-up turn.
 
-- Saved preferences only break ties between candidates that fit equally well; the request always wins. This overrides step 3c ("no saved preferences") for that request.
-- A reason may mention a preference the pick clearly matches ("fits your taste for rooftop spots"), never "your profile says", a list of preferences, or one that was not given.
-- Preferences never change the reply language or what is said about open status.
+**How the model is told to use it** (review fix B, 2026-10-28). Zach's conversation v1 rewrite (2026-10-23, `pick-v3` / `converse-v1`) dropped the earlier preference rules; only the general principle "use … the saved preferences if they are given" was left. They are back as section 7 of the system prompt, added by `fn_genie_build_prompt_dev` **only when there is a context** (the version then reads `pick-v3.1` / `converse-v1.1`):
 
-Without a context the prompt is byte-identical to Zach's pick-v2.2. In ranking, `fn_genie_search_venues_dev` adds +1 per preference keyword found in the venue's text (at most 2), below one request keyword (+3); preferences never filter or relax. (Not live since 2026-10-23, see section 1.) The render format is provisional until GEN-053.
+- Tiebreaker only: the request always wins; preferences only choose between options that fit about equally well.
+- A "not into" item is a dislike: don't choose a venue whose own fields clearly match it (e.g. energetic, dancing or loud for "Loud & Lit") unless the user asked for that or nothing else fits.
+- What the user says in this conversation overrides a saved preference.
+- Wording: a reason may say "fits your taste for rooftop spots" for a clear match with a like; never "your profile", "your preference", "you told me", never a list of preferences, never a dislike or what the user avoids unless asked.
+- Saved preferences never change the reply language.
+- Follow-ups only: on "which is better for me?" or comparisons, choose with likes and dislikes and explain with the place's own qualities ("it's the calmest of the three").
+
+Without a context the prompts are byte-identical to Zach's `pick-v3` / `converse-v1` (checked by hash, `xano/tests/user_context/prompt_snapshot.py`). Tests: `xano/tests/user_context/prompt_rules_tests.py`. Known gap (2026-10-28, 24/27): on "which is better for me?" the follow-up picks the right place but often explains it with "your preference…" (1/3 clean). See `xano/tests/user_context/RESULTS_review_fixes.md`.
+
+In ranking, `fn_genie_search_venues_dev` takes the preference and avoid keywords again since GEN-071 v2 (2026-10-28, changelog #105); see `docs/architecture/ranking.md`. The render format is provisional until GEN-053.
 
 ---
 
@@ -265,7 +272,7 @@ Entries get an optional `sentiment`: `like` (the default; older entries have non
 
 - Render: likes as before; dislikes on one line, `- not into: Happy Hour, Loud & Lit (learned)`, inside the 600-character budget.
 - Handler (1936): dislikes are kept out of the preference keywords and sent to the search as `avoid_keywords` (−2 per hit, at most −4, never a filter). Debug: `context.avoid`, `search.avoid_keywords`. The search no longer accepts `avoid_keywords` since 2026-10-23 (section 1); dislikes still reach the prompt ("not into").
-- Prompt (2091, 6b block): don't pick a venue whose own fields clearly match a "not into:" item unless asked or nothing else fits; never mention dislikes unless asked.
+- Prompt (2091, section 7 since 2026-10-28, see section 4): don't pick a venue whose own fields clearly match a "not into:" item unless asked or nothing else fits; never mention dislikes unless asked.
 
 ### Verified
 

@@ -66,14 +66,19 @@ There is **no tool loop**. The context is read by code, not by the model:
    - experience: Happy Hour, Karaoke (learned)
    - not into: Loud & Lit (learned)
    ```
-3. `fn_genie_build_prompt_dev` (2091) puts that text into the **user message** as "Saved preferences". The system prompt only says how to use it:
+3. `fn_genie_build_prompt_dev` (2091) puts that text into the **user message** as "Saved preferences". When there is a context, the system prompt gets a section 7 that says how to use it (version `pick-v3.1` / `converse-v1.1`; added 2026-10-28, after Zach's conversation v1 rewrite had dropped the earlier rules):
    - preferences only break ties, and the request always wins;
-   - a reason may mention a matching taste, but never "your profile says";
-   - avoid a venue that clearly matches a "not into" item, unless the user asks for it.
+   - don't choose a venue that clearly matches a "not into" item, unless the user asks for that kind of place;
+   - what the user says in this conversation beats a saved preference;
+   - a reason may mention a matching like ("fits your taste for rooftop spots"), but never "your profile" or "your preference", never a list, never a dislike unless asked;
+   - preferences never change the reply language;
+   - on follow-ups like "which is better for me?", choose with likes and dislikes and explain with the place's qualities.
+
+   Without a context the prompts are exactly Zach's (checked by hash).
 
 The chat response's debug field `context` shows what was read: `source`, `count`, `keywords`, `avoid`.
 
-**Ranking note:** preferences used to give a small bonus in the venue search. Zach's 2026-10-23 rewrite of the search removed those inputs. As decided on 2026-10-27, that was left as is, so today preferences only reach the model through the prompt.
+**Ranking note:** Zach's 2026-10-23 rewrite of the search dropped the preference inputs; his GEN-071 v2 ranker (2026-10-28) takes them again, so saved likes and dislikes affect ranking as well as the prompt.
 
 ---
 
@@ -125,10 +130,11 @@ A job runs every 10 minutes and learns only from sessions with new messages.
 |---|---|
 | Data model, caps, render, resolver | Deployed (capstone) |
 | Quick picks, intake, social preferences, venue saves, sign-in merge write the context | Deployed (capstone), on both Genie_Dev and genie_v15 |
-| Context read in chat + prompt rules | Deployed (capstone) |
+| Context read in chat + prompt rules | Deployed (capstone); rules re-added as section 7 on 2026-10-28 |
 | Learning per message | Deployed and **active** |
-| Batch learning job | Deployed and tested, **off** (`$batch_job_on = false`) until the workflow is pushed |
-| Preference bonus in the venue search | Not live since 2026-10-23 (search rewrite); left as is |
+| Batch learning job | Running every 10 minutes since the merge (2026-10-28, cap 10 per run); the per-message skip for signed-in users (`$batch_job_on`) stays **off** until a day of runs is checked |
+| Preference bonus in the venue search | Live again since Zach's GEN-071 v2 ranker (2026-10-28) |
+| Web chat endpoint (4200) | Same as the Flutter one (4369, conversation v1) since 2026-10-28; the web app forwards `new_conversation` / `turn_hint` and passes the turn fields through |
 
 ### What it does in practice (from the test runs)
 
@@ -228,7 +234,7 @@ The fix was to find the owner by `external_user_id` with `verified == true`. It 
 ## 7. Known issues and next steps
 
 **To switch the batch job on**
-1. Commit and push the branch, including `.github/workflows/learn-user-context.yml`.
+1. ~~Commit and push the branch, including `.github/workflows/learn-user-context.yml`.~~ Done: merged to `main` on 2026-10-28 (PR #91); the schedule runs, cap 10 per run.
 2. Set `$batch_job_on = true` in `ep_learn_from_message_dev` (4566 and 4567).
 3. Remove the per-message call for signed-in users from the web route once a few scheduled runs look right.
 
