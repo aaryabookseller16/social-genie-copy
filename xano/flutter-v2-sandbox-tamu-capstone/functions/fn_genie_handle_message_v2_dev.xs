@@ -1520,9 +1520,10 @@ function "genie/fn_genie_handle_message_v2_dev" {
                   }
                 }
 
-                // Conversation v1: ask for more rows when already-shown venues will be left out.
+                // GEN-071: the search leaves out already-shown venues itself (exclude_ids), before
+                // ranking and relaxing, so it always returns up to 10 new venues.
                 var $s_limit {
-                  value = (($exclude_venue_ids|count) > 0) ? 25 : 10
+                  value = 10
                 }
 
                 var $search_started_at {
@@ -1547,11 +1548,31 @@ function "genie/fn_genie_handle_message_v2_dev" {
                     lng                : $s_lng
                     radius_m           : $s_radius
                     language           : $s_language
+                    exclude_ids        : $exclude_venue_ids
+                    avoid_outdoor      : $should_avoid_outdoor
                   }
                 } as $search_result
 
                 var.update $search_ms {
                   value = ("now"|to_ms) - $search_started_at
+                }
+
+                // GEN-071: how many already-shown venues the search left out (for the "that's
+                // everything I've got" reply when nothing new is left).
+                var $s_debug {
+                  value = ($search_result|get:"debug":{}) ?? {}
+                }
+
+                var $s_excluded {
+                  value = ($s_debug|get:"excluded":{}) ?? {}
+                }
+
+                var $s_already_shown {
+                  value = (($s_excluded|get:"already_shown":0) ?? 0)|to_int
+                }
+
+                var.update $excluded_count {
+                  value = $excluded_count + $s_already_shown
                 }
 
                 var $s_cards_raw {
@@ -1636,6 +1657,8 @@ function "genie/fn_genie_handle_message_v2_dev" {
                     energy        : $s_energy
                     geo_used      : $geo_used
                     excluded      : $excluded_count
+                    excluded_why  : $s_excluded
+                    avoid_outdoor : $should_avoid_outdoor
                     ranking       : (($search_result|get:"debug") ?? {})|get:"ranking"
                   }
                 }

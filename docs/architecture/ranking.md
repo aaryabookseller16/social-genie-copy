@@ -2,7 +2,16 @@
 
 How Genie builds the shortlist the model chooses from. The model only picks among these venues, so this step caps answer quality. GEN-071 (2026-10-22) made one ranker handle every venue turn on the capstone branch. Xano objects are on `flutter-v2-sandbox-tamu-capstone`; changelog rows #76–#83 in `xano/CHANGELOG.md`.
 
-> **Status (2026-10-27):** Zach's conversation v1 deploy (2026-10-23) replaced `fn_genie_search_venues_dev`. The user-context terms (`preference_keywords`, `avoid_keywords`) below are no longer accepted by the live search, so saved likes and dislikes only reach the prompt. Left as is by decision; see `xano/genie-workflow-and-architecture.md` (Known gaps) and changelog #95.
+> **Status (2026-10-28):** The Oct 22 ranker described below was overwritten on 2026-10-23, when the conversation v1 deploy re-pasted an older repo snapshot of `fn_genie_search_venues_dev`. Its code was never committed. It has been rebuilt from this document as GEN-071 v2 (changelog #105–#108). Same design: one weights object, a per-venue breakdown, a relaxed-fit bonus, a neighborhood area, price buckets, cuisine aliases, saved likes and dislikes, location and `data_gaps`.
+>
+> What v2 adds:
+> - It reads Google review text (`review_highlights_json`, 96% of venues), the `meal_services` / `dietary_tags` flags, patio and hookah, and computes late night from the hours.
+> - Synonym lists for request words and for saved preference values (e.g. "Loud & Lit" → loud, energetic, packed).
+> - A bonus when the venue's name carries the requested word, and half weight for mood words.
+> - The area widens when too few venues in it have what was asked for.
+> - New exclusions: already shown in this conversation, listings, strip clubs; and a rain penalty.
+>
+> The weights in section 5 are the Oct 22 values; the current ones are the `W` object in `xano/tests/ranking/gen071_eval/ranker_core.js`. Offline eval and results: `xano/tests/ranking/gen071_eval/README.md`. Not used, because the fields are empty or defaulted in the data: the `ms_*` flags, `has_*` / `good_for_*`, Yelp, Foursquare and `google_serves_*`.
 
 ## Pipeline (venue turn)
 
@@ -64,7 +73,9 @@ The weights live in one `w` object at the top of the JavaScript step in 2192, wi
 
 ## 6. Observability
 
-`search.ranking` in the chat response (and the search debug) lists every shortlisted venue with `score`, `breakdown` (the parts above, which add up to the score), `km`, `gaps` and hit counts. `search.filters` is the model's filters and `search.source` says whether they came from the model or the English rules.
+`search.ranking` in the chat response (and the search debug) lists every shortlisted venue with `score`, `breakdown` (the parts above, which add up to the score), `km`, `gaps` and hit counts.
+
+Each venue sent to the model also carries `matches` (changelog #109) when something matched: what was asked for and where it was found, for example `karaoke: in 2 reviews` or `fits your saved taste: chill & intimate`. Review text is not in the fields the model sees, so without it the model cannot explain review-only matches. **GEN-073 follow-up:** the pick prompt does not mention `matches` or `data_gaps` yet. Add a rule to ground reasons in them: quote the match, never claim a feature that is not in the fields or `matches`, and say details are limited when `data_gaps` lists vibe. In testing (2026-10-28), "rooftop bar in Midtown" got a Midtown venue with no data ("perfect for your rooftop bar search") and a closed one over two rooftop bars that ranked higher. The weather line "Proactively surface patio and rooftop venues" also pushed it toward patio venues. `search.filters` is the model's filters and `search.source` says whether they came from the model or the English rules.
 
 ## 7. Thin data
 

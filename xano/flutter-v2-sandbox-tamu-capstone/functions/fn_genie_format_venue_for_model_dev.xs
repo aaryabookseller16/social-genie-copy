@@ -1,5 +1,6 @@
 // Converts a venue row into a model-safe object using an explicit field whitelist.
 // Computes open status when needed and omits fields that are empty or unavailable.
+// GEN-071 (additive): data_gaps lists the missing vibe / hours / price / rating fields.
 function "genie/fn_genie_format_venue_for_model_dev" {
   input {
     json venue
@@ -99,6 +100,84 @@ function "genie/fn_genie_format_venue_for_model_dev" {
       if (($t_occasion|count) > 0) {
         var.update $out {
           value = $out|set:"occasion_tags":$t_occasion
+        }
+      }
+    }
+
+    // GEN-071: data_gaps names what this venue has no data for (vibe, hours, price, rating), so the
+    // model can see that a field is missing instead of guessing. Left out when nothing is missing.
+    var $gaps {
+      value = []
+    }
+
+    var $g_vibe {
+      value = (($v|get:"vibe_notes":"") ?? "")|trim
+    }
+
+    conditional {
+      if ($g_vibe == "") {
+        array.push $gaps {
+          value = "vibe"
+        }
+      }
+    }
+
+    var $g_periods {
+      value = ($f_hours ?? {})|get:"periods":null
+    }
+
+    var $g_has_hours {
+      value = false
+    }
+
+    conditional {
+      if ($g_periods|is_array) {
+        var.update $g_has_hours {
+          value = ($g_periods|count) > 0
+        }
+      }
+    }
+
+    conditional {
+      if ($g_has_hours == false) {
+        array.push $gaps {
+          value = "hours"
+        }
+      }
+    }
+
+    var $g_band {
+      value = (($v|get:"price_band":"") ?? "")|trim
+    }
+
+    var $g_level {
+      value = (($v|get:"price_level":0) ?? 0)|to_int
+    }
+
+    conditional {
+      if ($g_band == "" && $g_level <= 0) {
+        array.push $gaps {
+          value = "price"
+        }
+      }
+    }
+
+    var $g_rating {
+      value = (($v|get:"google_rating":0) ?? 0)|to_decimal
+    }
+
+    conditional {
+      if ($g_rating <= 0) {
+        array.push $gaps {
+          value = "rating"
+        }
+      }
+    }
+
+    conditional {
+      if (($gaps|count) > 0) {
+        var.update $out {
+          value = $out|set:"data_gaps":$gaps
         }
       }
     }
