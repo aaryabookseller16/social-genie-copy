@@ -3,8 +3,9 @@
 // tasks only on the live branch, so the schedule lives outside Xano), or on demand by tests.
 // - Always works on the tamu_capstone datasource (db.set_datasource), whatever the caller sends.
 // - Picks sessions with a user message newer than their meta.learned_through_message_id, from
-//   the last lookback_hours (default 48), oldest pending first, at most cap (default 25) per run.
-//   The rest wait for the next run.
+//   the last lookback_hours (default 48), oldest pending first, at most cap (default 10) per run.
+//   The rest wait for the next run. The cap was lowered from 25 on 2026-10-28: 25 sessions took
+//   about 52 s in one request, too close to a request timeout.
 // - Runs fn_genie_learn_from_session_dev for each inside a try_catch, so one bad session never
 //   stops the run.
 // - $job_enabled is the kill switch (set it to false here to stop learning); tests can pass
@@ -16,7 +17,7 @@ query "genie/ep_learn_job_run_dev" verb=POST {
   api_group = "Genie_Dev"
 
   input {
-    int? cap?=25
+    int? cap?=10
     int? lookback_hours?=48
     int[]? session_ids?
     int[]? only_user_ids?
@@ -57,13 +58,13 @@ query "genie/ep_learn_job_run_dev" verb=POST {
     conditional {
       if ($run_enabled) {
         var $cap {
-          value = ($input.cap ?? 25)|to_int
+          value = ($input.cap ?? 10)|to_int
         }
 
         conditional {
           if ($cap < 1 || $cap > 100) {
             var.update $cap {
-              value = 25
+              value = 10
             }
           }
         }

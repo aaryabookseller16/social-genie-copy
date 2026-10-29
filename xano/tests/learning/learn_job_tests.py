@@ -15,6 +15,7 @@ Usage: python3 xano/tests/learning/learn_job_tests.py [--only F1,J2,...] [--reps
 """
 import argparse
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -32,6 +33,9 @@ JOB_URL = f"{DEV}/genie/ep_learn_job_run_dev"
 USER_63 = "a8c0b52f-06df-4e0c-8636-220ee55c61b4"  # capstone test user 63 (default-datasource check)
 
 RUN = f"r{int(time.time())}"
+# Mirrors $batch_job_on in ep_learn_from_message_dev (4566/4567); off until a day of scheduled
+# runs is checked (2026-10-28).
+BATCH_JOB_ON = os.environ.get("BATCH_JOB_ON", "0") == "1"
 created_ext, created_devices, created_tokens = [], [], []
 results = []
 
@@ -165,9 +169,13 @@ def f1_f3_r1(rep):
           r2.get("chunks") == 0 and r2.get("ops") == 0 and c2["version"] == v1 and ev1 == ev2,
           f"chunks={r2.get('chunks')} ops={r2.get('ops')} version {v1}->{c2['version']}")
 
-    if rep == 1:  # R5 positive: the per-message endpoint leaves a verified user's own session to the job
+    if rep == 1:  # R5: with $batch_job_on, the per-message endpoint leaves a verified user's own session to the job
         lm = learn_message(ext, "I love jazz", tok)
-        check("R5 per-message skips a verified user's own session", lm.get("skipped") == "batch_job", f"skipped={lm.get('skipped')}")
+        if BATCH_JOB_ON:
+            check("R5 per-message skips a verified user's own session", lm.get("skipped") == "batch_job", f"skipped={lm.get('skipped')}")
+        else:
+            check("R5 switch off: per-message still learns a verified user's own session", lm.get("skipped") is None,
+                  f"skipped={lm.get('skipped')} (set BATCH_JOB_ON=1 once $batch_job_on is true)")
 
     marker_before = r.get("marker_to")
     chat(ext, "also I can't stand clubs", tok)
