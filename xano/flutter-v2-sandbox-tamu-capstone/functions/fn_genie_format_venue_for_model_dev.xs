@@ -1,6 +1,5 @@
 // Converts a venue row into a model-safe object using an explicit field whitelist.
 // Computes open status when needed and omits fields that are empty or unavailable.
-// GEN-071 (additive): data_gaps lists the missing vibe / hours / price / rating fields.
 function "genie/fn_genie_format_venue_for_model_dev" {
   input {
     json venue
@@ -68,8 +67,28 @@ function "genie/fn_genie_format_venue_for_model_dev" {
       }
     }
   
+    // Duplicates in the data ("brunch", "brunch") are removed. Some rows store cuisine_tags as
+    // something other than a list, so only a list is used.
+    var $t_cuisine_raw {
+      value = ($v|get:"cuisine_tags":[]) ?? []
+    }
+
     var $t_cuisine {
-      value = $v|get:"cuisine_tags":[]
+      value = []
+    }
+
+    conditional {
+      if ($t_cuisine_raw|is_array) {
+        var.update $t_cuisine {
+          value = ($t_cuisine_raw|filter:($$|is_text))|unique
+        }
+      }
+
+      elseif (($t_cuisine_raw|is_text) && (($t_cuisine_raw|trim) != "")) {
+        var.update $t_cuisine {
+          value = [$t_cuisine_raw|trim]
+        }
+      }
     }
   
     var $t_diet {
@@ -100,6 +119,141 @@ function "genie/fn_genie_format_venue_for_model_dev" {
       if (($t_occasion|count) > 0) {
         var.update $out {
           value = $out|set:"occasion_tags":$t_occasion
+        }
+      }
+    }
+
+    // GEN-073: basic facts the prompt's field guide refers to.
+    // kind: what sort of place it is, from the Google types (so a venue with no vibe notes can still
+    // be described as "a bar in Midtown"). Google also tags many bars and lounges night_club
+    // (PJ's Sports Bar, karaoke bars), so "nightclub" is used only when it is not a bar or a
+    // restaurant.
+    var $g_types_raw {
+      value = ($v|get:"google_types":[]) ?? []
+    }
+
+    var $g_types {
+      value = []
+    }
+
+    conditional {
+      if ($g_types_raw|is_array) {
+        var.update $g_types {
+          value = $g_types_raw
+        }
+      }
+    }
+
+    var $kind {
+      value = ""
+    }
+
+    conditional {
+      if (($g_types|in:"bar") && ($g_types|in:"restaurant")) {
+        var.update $kind {
+          value = "bar and restaurant"
+        }
+      }
+
+      elseif ($g_types|in:"bar") {
+        var.update $kind {
+          value = "bar"
+        }
+      }
+
+      elseif ($g_types|in:"restaurant") {
+        var.update $kind {
+          value = "restaurant"
+        }
+      }
+
+      elseif ($g_types|in:"night_club") {
+        var.update $kind {
+          value = "nightclub"
+        }
+      }
+
+      elseif (($g_types|in:"cafe") || ($g_types|in:"bakery")) {
+        var.update $kind {
+          value = "cafe"
+        }
+      }
+    }
+
+    conditional {
+      if ($kind != "") {
+        var.update $out {
+          value = $out|set:"kind":$kind
+        }
+      }
+    }
+
+    // serves: the meal services marked true (brunch, happy hour, late night...). The ms_* columns
+    // are not used: they are defaulted in the data (ms_brunch is true for 80% of venues).
+    var $serves {
+      value = []
+    }
+
+    try_catch {
+      try {
+        var $ms {
+          value = ($v|get:"meal_services":{}) ?? {}
+        }
+
+        foreach ($ms|keys) {
+          each as $ms_key {
+            conditional {
+              if (($ms|get:$ms_key:false) == true) {
+                array.push $serves {
+                  value = $ms_key|replace:"_":" "
+                }
+              }
+            }
+          }
+        }
+      }
+
+      catch {
+        var.update $serves {
+          value = []
+        }
+      }
+    }
+
+    conditional {
+      if (($serves|count) > 0) {
+        var.update $out {
+          value = $out|set:"serves":$serves
+        }
+      }
+    }
+
+    // Hookah is free text like patio: only "yes" is sent.
+    var $hookah {
+      value = ((($v|get:"hookah":"") ?? "")|trim)|to_lower
+    }
+
+    conditional {
+      if ($hookah == "yes") {
+        var.update $out {
+          value = $out|set:"hookah":"yes"
+        }
+      }
+    }
+
+    // Price: price_level stands in when price_band is empty (both mean the same scale).
+    var $p_band {
+      value = (($v|get:"price_band":"") ?? "")|trim
+    }
+
+    var $p_level {
+      value = (($v|get:"price_level":0) ?? 0)|to_int
+    }
+
+    conditional {
+      if ($p_band == "" && $p_level > 0 && $p_level <= 4) {
+        var.update $out {
+          value = $out|set:"price_band":(["", "$", "$$", "$$$", "$$$$"]|get:$p_level:"")
         }
       }
     }

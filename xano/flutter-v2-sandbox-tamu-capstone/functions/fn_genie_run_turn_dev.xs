@@ -53,6 +53,31 @@ function "genie/fn_genie_run_turn_dev" {
 
     // Conversation v1: genie_social_events rows the model may talk about (converse only)
     json event_rows?
+
+    // GEN-073: model-ready venues from fn_genie_search_venues_dev (its "venues", same order as
+    // `venues`). When given they are the candidates, so the search's matches and distance reach
+    // the model and the venues are not loaded and formatted a second time.
+    json model_candidates?
+
+    // GEN-073: what the search understood and relaxed, as plain text for the pick prompt
+    text search_summary?
+
+    // GEN-073: sampling temperature (default 0.3: picks and wording should be consistent)
+    decimal? temperature?
+
+    // GEN-073: language code of the user's message from the filter step (e.g. "es"), so the
+    // reply language does not drift toward the English data
+    text reply_language?
+
+    // GEN-073: "omit" when the request does not ask about time (now, tonight, open...): the pick
+    // prompt then gets no open_now / today_hours. Empty keeps the hours. Text, not bool: Xano
+    // treats a false sent to a nullable bool as not sent.
+    text hours_mode?
+
+    // GEN-073: {venue_id: matches} saved from the request turn that showed these venues
+    // ({"123": ["karaoke: in 3 reviews"]}). A follow-up runs no search, so this is how its
+    // reloaded candidates get the same match notes the pick saw.
+    json venue_matches?
   }
 
   stack {
@@ -121,8 +146,36 @@ function "genie/fn_genie_run_turn_dev" {
       value = []
     }
 
+    // Only real venue objects count: an input that was not sent arrives as "" and must not
+    // become a one-item list.
+    var $pre_formatted {
+      value = []
+    }
+
+    foreach (($input.model_candidates ?? [])|safe_array) {
+      each as $mc {
+        conditional {
+          if ($mc != null && ($mc|is_text) == false && (($mc|get:"venue_id":0)|to_int) > 0) {
+            array.push $pre_formatted {
+              value = $mc
+            }
+          }
+        }
+      }
+    }
+
+    var $max_cand {
+      value = $input.max_candidates|first_notempty:10
+    }
+
     conditional {
-      if ((($input.venues|safe_array)|count) > 0) {
+      if (($pre_formatted|count) > 0) {
+        var.update $candidates {
+          value = $pre_formatted|slice:0:$max_cand
+        }
+      }
+
+      elseif ((($input.venues|safe_array)|count) > 0) {
         function.run "genie/fn_genie_load_candidate_venues_dev" {
           input = {
             venues        : $input.venues
@@ -142,6 +195,50 @@ function "genie/fn_genie_run_turn_dev" {
       else {
         var.update $fail_reason {
           value = "no_candidates"
+        }
+      }
+    }
+
+    // GEN-073: add saved match notes to candidates that have none. An input that was not sent
+    // arrives as "", so only an object is used.
+    var $vm {
+      value = $input.venue_matches ?? {}
+    }
+
+    conditional {
+      if (($vm|is_text) == false && ($vm|is_array) == false && (($vm|keys)|count) > 0) {
+        var $with_matches {
+          value = []
+        }
+
+        foreach ($candidates) {
+          each as $cand_m {
+            var $cm_key {
+              value = (($cand_m|get:"venue_id":0)|to_int)|to_text
+            }
+
+            var $cm_saved {
+              value = (($vm|get:$cm_key:[]) ?? [])|safe_array
+            }
+
+            conditional {
+              if ((($cand_m|get:"matches":[])|safe_array|count) == 0 && ($cm_saved|count) > 0) {
+                array.push $with_matches {
+                  value = $cand_m|set:"matches":$cm_saved
+                }
+              }
+
+              else {
+                array.push $with_matches {
+                  value = $cand_m
+                }
+              }
+            }
+          }
+        }
+
+        var.update $candidates {
+          value = $with_matches
         }
       }
     }
@@ -175,6 +272,29 @@ function "genie/fn_genie_run_turn_dev" {
       }
     }
 
+    // GEN-073: on a request that does not ask about time, the hours are left out of the data. A
+    // visible open_now: false made the model write "though currently closed" despite every rule
+    // against it; it cannot mention what it is not told. Follow-ups keep the hours ("is it open?").
+    conditional {
+      if ($is_converse == false && (($input.hours_mode ?? "")|trim) == "omit") {
+        var $no_hours {
+          value = []
+        }
+
+        foreach ($candidates) {
+          each as $cand_h {
+            array.push $no_hours {
+              value = $cand_h|unpick:["open_now", "today_hours"]
+            }
+          }
+        }
+
+        var.update $candidates {
+          value = $no_hours
+        }
+      }
+    }
+
     var.update $candidate_count {
       value = ($candidates|count) + ($event_candidates|count)
     }
@@ -199,6 +319,8 @@ function "genie/fn_genie_run_turn_dev" {
             user_context     : $input.user_context
             conversation_text: $input.conversation_text
             turn_note        : $input.turn_note
+            search_summary   : $input.search_summary
+            reply_language   : $input.reply_language
           }
         } as $prompt
 
@@ -273,13 +395,18 @@ function "genie/fn_genie_run_turn_dev" {
           value = {messages: $messages}
         }
 
+        var $temperature {
+          value = $input.temperature ?? 0.3
+        }
+
         function.run "genie/fn_genie_call_ai_dev" {
           input = {
-            ai_payload: $ai_payload
-            model     : $model
-            max_tokens: $input.max_tokens|first_notempty:800
-            timeout   : $input.timeout|first_notempty:30
-            json_mode : true
+            ai_payload : $ai_payload
+            model      : $model
+            max_tokens : $input.max_tokens|first_notempty:800
+            timeout    : $input.timeout|first_notempty:30
+            json_mode  : true
+            temperature: $temperature
           }
         } as $ai_resp
 
@@ -375,19 +502,63 @@ function "genie/fn_genie_run_turn_dev" {
           value = $ordered
         }
 
-        // Report-only check: phrases the prompt forbids. Never changes the reply.
+        // Report-only checks. They never change the reply; they measure how well the prompt holds.
+        // 1) Phrases the prompt rules out: contrasts, absences, closed status, profile talk.
         var $flag_terms {
           value = [
             "lacks"
             "though"
             "but it"
-            "currently closed"
-            "now closed"
+            "but no"
+            "yet no"
+            "not a "
+            "isn't"
+            "doesn't"
+            "does not"
+            "closed"
             "opens later"
             "opens at"
-            "does not have"
-            "doesn't have"
+            "your profile"
+            "your preference"
+            "your saved"
+            "you told me"
           ]
+        }
+
+        // 2) Unsupported claims: a feature named in a pick's reason that appears nowhere in that
+        // venue's data (fields or matches). Words are padded with a space so "view" does not match
+        // "review".
+        var $claim_terms {
+          value = [
+            " rooftop"
+            " patio"
+            " outdoor"
+            " karaoke"
+            " live music"
+            " live band"
+            " jazz"
+            " dj"
+            " dancing"
+            " dance floor"
+            " date"
+            " romantic"
+            " group"
+            " birthday"
+            " view"
+            " hookah"
+            " brunch"
+            " happy hour"
+            " late night"
+            " sports"
+            " trivia"
+            " cigar"
+            " wine"
+          ]
+        }
+
+        // Every picked venue's data together, for the intro check below.
+        var $picked_data {
+          value = ""
         }
 
         foreach ($validation.picks) {
@@ -410,6 +581,121 @@ function "genie/fn_genie_run_turn_dev" {
 
                     array.push $reason_flags {
                       value = $flag_row
+                    }
+                  }
+                }
+              }
+            }
+
+            // The venue's own data as one lower-case text, for the unsupported-claim check.
+            var $pk2_data {
+              value = ""
+            }
+
+            var $pk2_matches {
+              value = []
+            }
+
+            foreach ($candidates) {
+              each as $cv {
+                conditional {
+                  if ((($cv|get:"venue_id":0)|to_int) == ($pk2_id|to_int)) {
+                    var.update $pk2_data {
+                      value = (" " ~ (($cv|json_encode)|to_lower))|replace:"_":" "
+                    }
+
+                    var.update $pk2_matches {
+                      value = (($cv|get:"matches":[]) ?? [])|safe_array
+                    }
+                  }
+                }
+              }
+            }
+
+            var.update $picked_data {
+              value = $picked_data ~ $pk2_data
+            }
+
+            var $pk2_text {
+              value = " " ~ ($pk2_reason|to_lower)
+            }
+
+            // 3) A feature that only reviews mention ("karaoke: in 2 reviews") written as a fact:
+            // the reason names it without saying guests or reviews mention it.
+            var $pk2_hedged {
+              value = ($pk2_text|contains:"guest") || ($pk2_text|contains:"review") || ($pk2_text|contains:"mention") || ($pk2_text|contains:"people say")
+            }
+
+            foreach ($pk2_matches) {
+              each as $pm {
+                var $pm_text {
+                  value = (($pm ?? "")|to_text)|to_lower
+                }
+
+                var $pm_term {
+                  value = ((($pm_text|split:":")|first) ?? "")|trim
+                }
+
+                conditional {
+                  if (($pm_text|contains:" review") && $pm_term != "" && ($pk2_text|contains:$pm_term) && $pk2_hedged == false) {
+                    var $rf_row {
+                      value = {venue_id: $pk2_id, term: "review_as_fact:" ~ $pm_term}
+                    }
+
+                    array.push $reason_flags {
+                      value = $rf_row
+                    }
+                  }
+                }
+              }
+            }
+
+            conditional {
+              if ($pk2_data != "" && ($pk2|get:"kind":"venue") != "event") {
+                foreach ($claim_terms) {
+                  each as $ct {
+                    conditional {
+                      if (($pk2_text|contains:$ct) && (($pk2_data|contains:($ct|trim)) == false)) {
+                        var $claim_row {
+                          value = {venue_id: $pk2_id, term: "unsupported:" ~ ($ct|trim)}
+                        }
+
+                        array.push $reason_flags {
+                          value = $claim_row
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        // 4) The intro of a request names a feature that none of the picks has in its data
+        // ("more rooftop options" over three bars without a rooftop).
+        conditional {
+          if ($is_converse == false && $picked_data != "") {
+            var $intro_text {
+              value = " " ~ ((($validation|get:"intro":"") ?? "")|to_lower)
+            }
+
+            // An intro that says the feature is missing ("No more rooftop bars nearby...") or
+            // scarce ("just one rooftop bar") is the honest answer, not a claim.
+            var $intro_hedged {
+              value = ($intro_text|contains:" no ") || ($intro_text|contains:"no more") || ($intro_text|contains:"none") || ($intro_text|contains:"just one") || ($intro_text|contains:"only one") || ($intro_text|contains:"not ")
+            }
+
+            foreach ($claim_terms) {
+              each as $ct2 {
+                conditional {
+                  if ($intro_hedged == false && ($intro_text|contains:$ct2) && (($picked_data|contains:($ct2|trim)) == false)) {
+                    var $intro_row {
+                      value = {venue_id: null, term: "unsupported_intro:" ~ ($ct2|trim), where: "intro"}
+                    }
+
+                    array.push $reason_flags {
+                      value = $intro_row
                     }
                   }
                 }

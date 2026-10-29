@@ -1,37 +1,5 @@
-// Searches active venues in a city and ranks them for the request (GEN-071). The top 10 are the
+// Searches active venues in a city and ranks them for the request. The top 10 are the
 // shortlist the model picks from, so this step caps answer quality.
-// Steps: load the city's open venues -> one ranking step (api.lambda) that excludes unsuitable
-// records, tests the filters, scores every venue and relaxes filters when too few match -> the
-// model-safe venue objects and app cards for the top 10, plus a per-venue score breakdown.
-// What it reads (from the 2026-10-28 fill-rate audit of tamu_capstone, 704 Houston venues):
-//   - name, vibe_notes (61%), cuisine_tags (24%), meal_services and dietary_tags flags, patio and
-//     hookah (yes/no), google_types, as strong evidence;
-//   - crowd, music, best_time_to_go, energy_level (58%), as medium evidence (music is often "Jazz"
-//     on venues that are not jazz bars, so it counts less);
-//   - Google review text (review_highlights_json, 96%: 272 of the 278 venues without vibe notes have
-//     reviews), as weaker evidence: 4-5 star reviews only, and a mention right after "no", "not",
-//     "without"... does not count;
-//   - Google rating (Bayesian), review count, hours (open now, late night), price_band (price_level
-//     when empty), location.
-//   Not used: the ms_* meal flags (ms_brunch is true for 80% of venues: defaulted) and every
-//   has_* / good_for_* / Yelp / Foursquare / google_serves_* field (empty in the data).
-// Scoring (weights in one W object at the top of the ranking step; each venue's breakdown adds up to
-// its score): rating, popularity, data completeness, keyword fit (synonyms included, mood words such
-// as "cozy" count half), cuisine fit, meal-service fit, venue type, energy, exact price, the venue's
-// name carrying a requested word, saved likes (bonus) and dislikes (penalty, never a filter),
-// distance, rain (outdoor-led venues), and a bonus for relaxed filters the venue still meets.
-// Relaxing: meal service, open now, price, radius x2, radius, venue type, neighborhood, cuisine, until
-// 3 match; and the area (neighborhood / radius) also widens when fewer than 3 venues in it have what
-// was asked for ("rooftop bar in Midtown": Midtown has one rooftop).
-// Never shortlisted: already shown in this conversation (exclude_ids), lodging, listings (Airbnb-style
-// names, no Google types and no rating), blocked names (vape, smoke shop...), no data at all, not a
-// hospitality business, rating under 3.0 with 30+ reviews, strip clubs unless asked for.
-// No paid-placement, vendor or sb_* field is read.
-// Each model venue gets `matches` (only when something matched): what was asked for and where it
-// was found ("karaoke: in 2 reviews", "fits your saved taste: chill & intimate"). GEN-073 will add
-// a pick-prompt rule to use it.
-// Offline eval (2026-10-28, xano/tests/ranking/gen071_eval): 19/22 labelled requests vs 11/22 for the
-// previous version; the 3 misses are label strictness (see the eval README).
 function "genie/fn_genie_search_venues_dev" {
   input {
     // City to search (genie_venues.city_id)
@@ -816,6 +784,19 @@ function "genie/fn_genie_search_venues_dev" {
           }
         }
 
+        // GEN-073: distance from the user in km, only when their location was used.
+        var $t_dist {
+          value = $t|get:"km":null
+        }
+
+        conditional {
+          if ($t_dist != null) {
+            var.update $formatted {
+              value = $formatted|set:"distance_km":$t_dist
+            }
+          }
+        }
+
         function.run "genie/fn_genie_slim_venue_row_dev" {
           input = {venue: $t_row}
         } as $card
@@ -862,7 +843,7 @@ function "genie/fn_genie_search_venues_dev" {
             gaps     : $t_gaps
           }
         }
-
+  
         array.push $ranking {
           value = $rank_row
         }

@@ -227,6 +227,16 @@ function "genie/fn_genie_handle_message_v2_dev" {
       value = {enabled: $search_enabled, used: false}
     }
 
+    // GEN-073: the search's model-ready venues (same order as the cards) and a plain-text summary
+    // of what it understood and widened. Both go to the pick prompt; empty when no search ran.
+    var $search_model_venues {
+      value = []
+    }
+
+    var $search_summary_text {
+      value = ""
+    }
+
     // GEN-071: model filters (any language) and one ranker. Kill switches: set to false to skip.
     var $filters_model_enabled {
       value = true
@@ -1637,10 +1647,127 @@ function "genie/fn_genie_handle_message_v2_dev" {
                   }
                 }
 
+                // GEN-073: hand the model what the search knows. The model venues are filtered the
+                // same way as the cards, so ids line up.
+                conditional {
+                  if ($s_used) {
+                    foreach ((($search_result|get:"venues") ?? [])|safe_array) {
+                      each as $s_mv {
+                        conditional {
+                          if (($exclude_venue_ids|in:(($s_mv|get:"venue_id":0)|to_int)) == false && ($search_model_venues|count) < 10) {
+                            array.push $search_model_venues {
+                              value = $s_mv
+                            }
+                          }
+                        }
+                      }
+                    }
+
+                    var $sum_args {
+                      value = {
+                        venue_type   : $s_venue_type
+                        cuisine      : $s_cuisine
+                        meal_service : $s_meal
+                        open_now     : $s_open_now
+                        keywords     : $s_keywords
+                        neighborhood : $s_hood
+                        price_band   : $s_price
+                        energy       : $s_energy
+                        geo_used     : $geo_used
+                        relaxed      : ($search_result|get:"relaxed") ?? []
+                        already_shown: $s_already_shown
+                        venues       : $search_model_venues
+                      }
+                    }
+
+                    // A failure here only drops the summary line; it never fails the search.
+                    try_catch {
+                      try {
+                        api.lambda {
+                          code = """
+                            const a = $var.sum_args && typeof $var.sum_args === "object" ? $var.sum_args : {};
+                            const t = (v) => (typeof v === "string" ? v.trim() : "");
+                            const hood = t(a.neighborhood);
+                            const kind = t(a.venue_type);
+                            const cuisine = t(a.cuisine);
+                            const meal = t(a.meal_service).replace(/_/g, " ");
+                            const kws = Array.isArray(a.keywords) ? a.keywords.filter((k) => typeof k === "string" && k.trim() !== "") : [];
+                            const parts = [];
+                            if (kind) parts.push("a " + kind);
+                            if (cuisine) parts.push(cuisine + " food");
+                            if (meal) parts.push(meal);
+                            if (!kind && !cuisine && !meal && (kws.length || t(a.neighborhood) || a.geo_used === true)) parts.push("a place");
+                            if (kws.length) parts.push("must have: " + kws.join(", "));
+                            if (hood) parts.push("area: " + hood);
+                            if (a.geo_used === true) parts.push("near the user");
+                            if (t(a.price_band)) parts.push("price: " + t(a.price_band));
+                            if (t(a.energy)) parts.push("energy: " + t(a.energy).toLowerCase());
+                            if (a.open_now === true) parts.push("open now");
+                            const out = [];
+                            if (parts.length) out.push("Looking for " + parts.join("; ") + ".");
+                            const notes = {
+                              neighborhood: "Few places in " + (hood || "that area") + " have what was asked for, so nearby places are included.",
+                              venue_type: "Few places of that kind matched, so other kinds of places are included.",
+                              cuisine: "Few places serve " + (cuisine || "that food") + ", so other food is included.",
+                              price_band: "Few places matched that price, so other prices are included.",
+                              open_now: "Few matching places are open right now, so some may be closed.",
+                              meal_service: "Few places list " + (meal || "that service") + ", so others are included.",
+                              radius_x2: "Few matches close to the user, so places farther away are included.",
+                              radius: "Few matches close to the user, so places farther away are included.",
+                            };
+                            for (const r of Array.isArray(a.relaxed) ? a.relaxed : []) {
+                              if (notes[r] && !out.includes(notes[r])) out.push(notes[r]);
+                            }
+                            if (Number(a.already_shown) > 0) out.push("Places already shown in this conversation are left out.");
+                            // How many of the places show what was asked for (their matches), so the
+                            // intro never promises a feature the picks do not have. When at least 3 do,
+                            // only those go to the model: it cannot pick a place without a rooftop for
+                            // a rooftop request (the prompt alone did not hold against a nearby patio).
+                            const vs = Array.isArray(a.venues) ? a.venues : [];
+                            let keep = vs;
+                            if (kws.length) {
+                              const showing = vs.filter((v) => v && Array.isArray(v.matches) && v.matches.some((m) => kws.some((k) => String(m).toLowerCase().indexOf(k.toLowerCase() + ":") === 0)));
+                              const shows = showing.length;
+                              if (vs.length && shows === 0) out.push("None of these places show " + kws.join(" or ") + ".");
+                              else if (vs.length && shows < 3) out.push("Only " + shows + " of these places " + (shows === 1 ? "shows " : "show ") + kws.join(" or ") + ".");
+                              if (shows >= 3) keep = showing;
+                            }
+                            return { summary: out.join(" "), venues: keep };
+                            """
+                          timeout = 5
+                        } as $sum_out
+
+                        var.update $search_summary_text {
+                          value = ($sum_out|get:"summary":"") ?? ""
+                        }
+
+                        var $sum_keep {
+                          value = (($sum_out|get:"venues":[]) ?? [])|safe_array
+                        }
+
+                        conditional {
+                          if (($sum_keep|count) > 0) {
+                            var.update $search_model_venues {
+                              value = $sum_keep
+                            }
+                          }
+                        }
+                      }
+
+                      catch {
+                        var.update $search_summary_text {
+                          value = ""
+                        }
+                      }
+                    }
+                  }
+                }
+
                 var.update $search_debug {
                   value = {
                     enabled       : true
                     used          : $s_used
+                    summary       : $search_summary_text
                     match_quality : $s_quality
                     relaxed       : ($search_result|get:"relaxed") ?? []
                     count         : ($search_result|get:"count") ?? 0
@@ -1679,10 +1806,67 @@ function "genie/fn_genie_handle_message_v2_dev" {
       }
     }
 
+    // GEN-073: the language the filter step detected, for both model prompts.
+    var $reply_lang {
+      value = ($mf|get:"language") ?? ""
+    }
+
+    // GEN-073: does the request ask about time? Only then does the pick prompt get the venues'
+    // open_now / today_hours (an open_now: false in view made the model write "though currently
+    // closed"). The filter step's open_now, or a time word in the message (English and Spanish).
+    var $time_asked {
+      value = (($mf|get:"open_now") ?? false) == true
+    }
+
+    var $time_msg {
+      value = " " ~ (($input.message ?? "")|to_lower) ~ " "
+    }
+
+    var $time_words {
+      value = [
+        "tonight"
+        " now"
+        " open"
+        " late"
+        "today"
+        "this evening"
+        " hours"
+        "esta noche"
+        "ahora"
+        "abiert"
+        " hoy"
+        "tarde"
+      ]
+    }
+
+    foreach ($time_words) {
+      each as $tw {
+        conditional {
+          if ($time_msg|contains:$tw) {
+            var.update $time_asked {
+              value = true
+            }
+          }
+        }
+      }
+    }
+
+    // run_turn takes this as text: Xano treats a false sent to a nullable bool as not sent.
+    var $hours_mode {
+      value = $time_asked ? "" : "omit"
+    }
+
+    // GEN-073: the legacy weather text ends with an instruction ("Proactively surface patio and
+    // rooftop venues.") that pulled picks toward patios over what was asked for. The pick prompt
+    // gets the conditions only.
+    var $pick_weather_text {
+      value = (($weather_context_text ?? "")|replace:"Proactively surface patio and rooftop venues.":"")|trim
+    }
+
     // GEN-071: the model's filters and the city also go into the search debug, which the chat
     // endpoint already returns.
     var.update $search_debug {
-      value = ($search_debug|set:"filters":$mf)|set:"city":$city_debug
+      value = (($search_debug|set:"filters":$mf)|set:"city":$city_debug)|set:"time_asked":$time_asked
     }
 
     // GEN-072: search is the only source of venues on a venue turn. A search exception is its own
@@ -1771,6 +1955,9 @@ function "genie/fn_genie_handle_message_v2_dev" {
 
             // Conversation v1: a request always uses the pick prompt (3 choices); the
             // conversation goes in as history so "cheaper" or "same vibe" make sense.
+            // GEN-073: model_candidates are the search's own model venues (with matches and
+            // distance) and search_summary its plain-text summary. Both are empty when no search
+            // ran, and run_turn then loads the venues itself.
             function.run "genie/fn_genie_run_turn_dev" {
               input = {
                 message      : $search_message
@@ -1779,9 +1966,13 @@ function "genie/fn_genie_handle_message_v2_dev" {
                 match_quality: $search_match_quality
                 user_context : $user_context_text
                 now_text     : $now_text
-                weather_text : $weather_context_text
+                weather_text : $pick_weather_text
                 prompt_type  : "pick"
                 history      : $conv|get:"history":[]
+                model_candidates: $search_model_venues
+                search_summary  : $search_summary_text
+                reply_language  : $reply_lang
+                hours_mode      : $hours_mode
               }
             } as $model_result
 
@@ -1883,6 +2074,8 @@ function "genie/fn_genie_handle_message_v2_dev" {
             });
             const venueIds = [];
             const eventIds = [];
+            // GEN-073: match notes saved with each pick ("karaoke: in 3 reviews"), by venue id.
+            const matches = {};
             for (const r of reqs) {
               for (const id of (Array.isArray(r.shown_venue_ids) ? r.shown_venue_ids : [])) {
                 const n = Number(id);
@@ -1892,11 +2085,19 @@ function "genie/fn_genie_handle_message_v2_dev" {
                 const n = Number(id);
                 if (n > 0 && !eventIds.includes(n) && eventIds.length < 10) eventIds.push(n);
               }
+              for (const p of (Array.isArray(r.picks) ? r.picks : [])) {
+                const n = Number(p && p.venue_id);
+                if (n > 0 && !matches[String(n)] && Array.isArray(p.matches) && p.matches.length) matches[String(n)] = p.matches;
+              }
             }
-            return { venues: venueIds.map((id) => ({ id: id })), event_ids: eventIds };
+            return { venues: venueIds.map((id) => ({ id: id })), event_ids: eventIds, matches: matches };
             """
           timeout = 5
         } as $fu_cands
+
+        var $fu_matches {
+          value = ($fu_cands|get:"matches":{}) ?? {}
+        }
 
         var $fu_event_rows {
           value = []
@@ -1936,12 +2137,14 @@ function "genie/fn_genie_handle_message_v2_dev" {
                 city             : $resolved_city_name
                 user_context     : $user_context_text
                 now_text         : $now_text
-                weather_text     : $weather_context_text
+                weather_text     : $pick_weather_text
                 prompt_type      : "converse"
+                reply_language   : $reply_lang
                 history          : $conv|get:"history":[]
                 conversation_text: $conv|get:"requests_text":""
                 turn_note        : ($refers_to_request_index != null) ? ($refers_to_request_index|to_text) : ""
                 event_rows       : $fu_event_rows
+                venue_matches    : $fu_matches
                 max_candidates   : 15
                 max_tokens       : 400
               }
@@ -2391,6 +2594,24 @@ function "genie/fn_genie_handle_message_v2_dev" {
                   }
                 }
 
+                // GEN-073: the search's match notes for this venue ("karaoke: in 3 reviews"), so a
+                // follow-up about it can use them (the follow-up runs no search).
+                var $tv_matches {
+                  value = []
+                }
+
+                foreach ($search_model_venues) {
+                  each as $smv {
+                    conditional {
+                      if ((($smv|get:"venue_id":0)|to_int) == $tv_id) {
+                        var.update $tv_matches {
+                          value = (($smv|get:"matches":[]) ?? [])|safe_array
+                        }
+                      }
+                    }
+                  }
+                }
+
                 conditional {
                   if ($tv_id > 0) {
                     array.push $shown_venue_ids {
@@ -2403,6 +2624,7 @@ function "genie/fn_genie_handle_message_v2_dev" {
                         venue_id  : $tv_id
                         venue_name: $tv_name
                         reason    : $tv_reason
+                        matches   : $tv_matches
                       }
                     }
 
